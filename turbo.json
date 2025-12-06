@@ -6,6 +6,10 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"]
     },
+    "@belucha/cms#build": {
+      "cache": false,
+      "outputs": []
+    },
     "dev": {
       "cache": false,
       "persistent": true
@@ -15,12 +19,6 @@
     },
     "clean": {
       "cache": false
-    }
-  },
-  "pipeline": {
-    "@belucha/cms#build": {
-      "cache": false,
-      "outputs": []
     }
   }
 }
