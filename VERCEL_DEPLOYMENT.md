@@ -23,9 +23,10 @@ Belucha projesi 3 ayrı uygulamadan oluşur:
 
 ### 1.2 Framework ve Build Ayarları
 
-**Root Directory** ayarını yapın:
-- Settings → General → Root Directory
+**Root Directory** ayarını yapın (ÖNEMLİ: vercel.json'da değil, Vercel Dashboard'da):
+- Vercel Dashboard → Project Settings → General → Root Directory
 - **Değer**: `apps/shop`
+- **Not**: Bu ayar vercel.json dosyasında değil, sadece Vercel Dashboard'da yapılır!
 
 **Build Settings** (otomatik algılanmalı, yoksa manuel ekleyin):
 - Framework Preset: **Next.js**
@@ -64,9 +65,10 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_... (veya pk_test_...)
 
 ### 2.2 Framework ve Build Ayarları
 
-**Root Directory**:
-- Settings → General → Root Directory
+**Root Directory** (ÖNEMLİ: vercel.json'da değil, Vercel Dashboard'da):
+- Vercel Dashboard → Project Settings → General → Root Directory
 - **Değer**: `apps/sellercentral`
+- **Not**: Bu ayar vercel.json dosyasında değil, sadece Vercel Dashboard'da yapılır!
 
 **Build Settings**:
 - Framework Preset: **Next.js**
