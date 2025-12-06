@@ -19,7 +19,7 @@ export default function RecommendedPage() {
               Für Sie empfohlen
             </h1>
             <p style={{ fontSize: "18px", color: "#6b7280", marginBottom: "32px" }}>
-              Personalisierte Produktempfehlungen
+              Personalisierte Produktempfehlungen!
             </p>
           </div>
           <ProductGrid />
