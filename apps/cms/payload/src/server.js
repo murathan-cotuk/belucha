@@ -8,11 +8,12 @@ import { fileURLToPath } from 'url'
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
 
-// Load .env.local file (try multiple paths)
+// Load .env.local file (try multiple paths - root first, then payload directory)
 const envPaths = [
-  path.resolve(dirname, '../.env.local'),
-  path.resolve(dirname, '../../.env.local'),
-  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(dirname, '../../../../.env.local'), // Root: belucha/.env.local
+  path.resolve(dirname, '../../../.env.local'),  // Root: belucha/.env.local (alternative)
+  path.resolve(process.cwd(), '.env.local'),      // Current working directory
+  path.resolve(dirname, '../.env.local'),          // Payload directory: apps/cms/payload/.env.local
 ]
 
 // Load environment variables
