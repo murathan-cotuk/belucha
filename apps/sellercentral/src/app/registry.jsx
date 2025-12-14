@@ -10,6 +10,8 @@ export default function StyledComponentsRegistry({ children }) {
   useServerInsertedHTML(() => {
     const styles = styledComponentsStyleSheet.getStyleElement();
     styledComponentsStyleSheet.instance.clearTag();
+    // getStyleElement() returns an array of React elements
+    // Fragment içinde array'i render edebiliriz
     return <>{styles}</>;
   });
 

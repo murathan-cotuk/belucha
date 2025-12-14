@@ -37,10 +37,9 @@ if (!process.env.PAYLOAD_SECRET) {
 
 const app = express()
 
-// Redirect root to admin
-app.get('/', (_, res) => {
-  res.redirect('/admin')
-})
+// Essential Express middleware
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
 const start = async () => {
   // Ensure secret is set - PayloadCMS v3 requires secret in both config and init
@@ -52,24 +51,87 @@ const start = async () => {
   console.log('🔑 Secret key set:', secretKey ? secretKey.substring(0, 15) + '...' : 'NOT FOUND!')
   console.log('🔑 Process.env.PAYLOAD_SECRET:', process.env.PAYLOAD_SECRET ? 'SET' : 'NOT SET')
   
-  // Initialize Payload - secret is also in config
-  await payload.init({
-    secret: secretKey,
-    express: app,
-    config,
-    onInit: async () => {
-      payload.logger.info(`Payload Admin URL: ${payload.getAdminURL()}`)
-      payload.logger.info(`GraphQL API: ${payload.getAdminURL()}/api/graphql`)
-    },
-  })
+  try {
+    // Initialize Payload - secret is also in config
+    // Payload.init() will automatically register all routes (/admin, /api, /api/graphql)
+    await payload.init({
+      secret: secretKey,
+      express: app,
+      config,
+      onInit: async () => {
+        payload.logger.info(`Payload Admin URL: ${payload.getAdminURL()}`)
+        payload.logger.info(`GraphQL API: ${process.env.PAYLOAD_PUBLIC_SERVER_URL || 'http://localhost:3001'}/api/graphql`)
+        console.log('✅ MongoDB connection established')
+        console.log('✅ Payload CMS initialized successfully')
+        console.log('✅ Routes registered: /admin, /api, /api/graphql')
+      },
+    })
 
-  // Add your own express routes here
+    // Add your own express routes here (after Payload init)
+    // Redirect root to admin (after Payload routes are registered)
+    app.get('/', (_, res) => {
+      res.redirect('/admin')
+    })
 
-  const port = process.env.PORT || 3001
+    // Debug: List all registered routes
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('\n📋 Registered routes:')
+      app._router?.stack?.forEach((middleware) => {
+        if (middleware.route) {
+          console.log(`   ${Object.keys(middleware.route.methods).join(', ').toUpperCase()} ${middleware.route.path}`)
+        } else if (middleware.name === 'router') {
+          console.log(`   Router: ${middleware.regexp}`)
+        }
+      })
+      console.log('')
+    }
 
-  app.listen(port, () => {
-    payload.logger.info(`Server listening on port ${port}`)
-  })
+    const port = process.env.PORT || 3001
+
+    // Try to start server, if port is in use, provide clear instructions
+    let server
+    try {
+      server = app.listen(port, () => {
+        payload.logger.info(`Server listening on port ${port}`)
+        console.log(`✅ Server running at http://localhost:${port}`)
+        console.log(`✅ Admin Panel: http://localhost:${port}/admin`)
+        console.log(`✅ GraphQL API: http://localhost:${port}/api/graphql`)
+      })
+
+      server.on('error', (error) => {
+        if (error.code === 'EADDRINUSE') {
+          console.error(`\n❌ Port ${port} is already in use.`)
+          console.error(`\n🔧 Hızlı Çözüm:`)
+          console.error(`   PowerShell'de şu komutu çalıştırın:`)
+          console.error(`   Get-NetTCPConnection -LocalPort ${port} -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`)
+          console.error(`\n   Veya manuel:`)
+          console.error(`   netstat -ano | findstr :${port}`)
+          console.error(`   taskkill /F /PID <PID_NUMBER>`)
+          console.error(`\n   Veya farklı port kullanın (.env.local): PORT=3002\n`)
+          process.exit(1)
+        } else {
+          throw error
+        }
+      })
+    } catch (error) {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`\n❌ Port ${port} is already in use.`)
+        console.error(`\n🔧 Hızlı Çözüm:`)
+        console.error(`   PowerShell'de şu komutu çalıştırın:`)
+        console.error(`   Get-NetTCPConnection -LocalPort ${port} -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`)
+        console.error(`\n   Veya manuel:`)
+        console.error(`   netstat -ano | findstr :${port}`)
+        console.error(`   taskkill /F /PID <PID_NUMBER>`)
+        console.error(`\n   Veya farklı port kullanın (.env.local): PORT=3002\n`)
+        process.exit(1)
+      } else {
+        throw error
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error initializing Payload CMS:', error)
+    process.exit(1)
+  }
 }
 
 start()

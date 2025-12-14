@@ -37,7 +37,8 @@ const Logo = styled(Link)`
   font-size: 24px;
   font-weight: 700;
   color: #0ea5e9;
-  font-family: "Aeonik", sans-serif;
+  font-family: "Manrope", sans-serif;
+  text-decoration: none;
 `;
 
 const Menu = styled.nav`
@@ -47,16 +48,17 @@ const Menu = styled.nav`
   padding: 0 16px;
 `;
 
-const MenuItem = styled(Link)`
+const MenuItemLink = styled(Link)`
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
   border-radius: 8px;
-  color: ${({ active }) => (active ? "#0ea5e9" : "#9ca3af")};
-  background-color: ${({ active }) => (active ? "#1e3a5f" : "transparent")};
+  color: ${({ $active }) => ($active ? "#0ea5e9" : "#9ca3af")};
+  background-color: ${({ $active }) => ($active ? "#1e3a5f" : "transparent")};
   transition: all 0.2s ease;
-  font-weight: ${({ active }) => (active ? "600" : "400")};
+  font-weight: ${({ $active }) => ($active ? "600" : "400")};
+  text-decoration: none;
 
   &:hover {
     background-color: #374151;
@@ -157,14 +159,14 @@ export default function DashboardLayout({ children }) {
         </SidebarHeader>
         <Menu>
           {menuItems.map((item) => (
-            <MenuItem
+            <MenuItemLink
               key={item.href}
               href={item.href}
-              active={pathname === item.href}
+              $active={pathname === item.href}
             >
               <i className={item.icon} />
               <span>{item.label}</span>
-            </MenuItem>
+            </MenuItemLink>
           ))}
         </Menu>
       </Sidebar>

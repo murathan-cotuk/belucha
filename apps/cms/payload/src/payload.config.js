@@ -25,6 +25,11 @@ export default buildConfig({
   admin: {
     user: 'sellers',
   },
+  routes: {
+    admin: '/admin',
+    api: '/api',
+    graphQL: '/api/graphql',
+  },
   collections: [
     Products,
     Categories,
