@@ -146,6 +146,21 @@ cd ../.. && npm install && turbo run build --filter=@belucha/shop
 - `turbo.json` dosyasında shop ve sellercentral için `dependsOn: []` ayarlandı
 - Böylece bağımlılıklar build edilmez
 
+### Sorun 8: Sellercentral'da "Module not found: Can't resolve '@/components/...'"
+
+**Hata:**
+```
+Module not found: Can't resolve '@/components/DashboardLayout'
+Module not found: Can't resolve '@/components/DashboardHome'
+```
+
+**Çözüm:** ✅ **Düzeltildi!**
+- Sellercentral'da `jsconfig.json` dosyası eksikti
+- `apps/sellercentral/jsconfig.json` dosyası oluşturuldu
+- Path alias'ları (`@/*`) yapılandırıldı
+- Shop app'teki gibi aynı yapılandırma kullanıldı (`@/*` → `./src/*`)
+- `@/components/DashboardLayout` → `./src/components/DashboardLayout` olarak çözülür
+
 ### Sorun 7: "Vulnerable version of Next.js detected" (CVE-2025-66478)
 
 **Hata:**
