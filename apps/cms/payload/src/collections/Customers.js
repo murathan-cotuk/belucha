@@ -3,10 +3,20 @@ export default {
   admin: {
     useAsTitle: 'email',
   },
+  auth: true, // Enable authentication for customers
   access: {
     read: () => true,
     create: () => true,
-    update: () => true,
+    update: ({ req: { user } }) => {
+      if (user) {
+        return {
+          id: {
+            equals: user.id,
+          },
+        }
+      }
+      return false
+    },
     delete: () => false,
   },
   fields: [
@@ -15,6 +25,13 @@ export default {
       type: 'email',
       required: true,
       unique: true,
+    },
+    {
+      name: 'googleId',
+      type: 'text',
+      admin: {
+        description: 'Google OAuth ID',
+      },
     },
     {
       name: 'firstName',

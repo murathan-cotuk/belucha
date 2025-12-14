@@ -70,5 +70,12 @@ export default {
       ],
       defaultValue: 'pending',
     },
+    {
+      name: 'googleId',
+      type: 'text',
+      admin: {
+        description: 'Google OAuth ID',
+      },
+    },
   ],
 }
