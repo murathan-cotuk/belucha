@@ -268,21 +268,21 @@ export default function Navbar() {
                       {user.firstName} {user.lastName}
                     </UserName>
                   )}
-                  <DropdownItem href="/account" onClick={() => setIsDropdownOpen(false)}>
-                    Konto
-                  </DropdownItem>
-                  <DropdownItem href="/favorites" onClick={() => setIsDropdownOpen(false)}>
-                    Merkzettel
-                  </DropdownItem>
-                  <DropdownItem href="/orders" onClick={() => setIsDropdownOpen(false)}>
-                    Bestellungen
-                  </DropdownItem>
-                  <DropdownItem href="/invoices" onClick={() => setIsDropdownOpen(false)}>
-                    Rechnungen
-                  </DropdownItem>
-                  <DropdownItem href="/help" onClick={() => setIsDropdownOpen(false)}>
-                    Hilfe
-                  </DropdownItem>
+              <DropdownItem href="/account" onClick={() => setIsDropdownOpen(false)}>
+                Konto
+              </DropdownItem>
+              <DropdownItem href="/favorites" onClick={() => setIsDropdownOpen(false)}>
+                Merkzettel
+              </DropdownItem>
+              <DropdownItem href="/orders" onClick={() => setIsDropdownOpen(false)}>
+                Bestellungen
+              </DropdownItem>
+              <DropdownItem href="/invoices" onClick={() => setIsDropdownOpen(false)}>
+                Rechnungen
+              </DropdownItem>
+              <DropdownItem href="/help" onClick={() => setIsDropdownOpen(false)}>
+                Hilfe
+              </DropdownItem>
                   <DropdownButton
                     onClick={() => {
                       logout();
@@ -294,9 +294,9 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
-                  <DropdownItem href="/login" onClick={() => setIsDropdownOpen(false)}>
-                    Anmelden
-                  </DropdownItem>
+              <DropdownItem href="/login" onClick={() => setIsDropdownOpen(false)}>
+                Anmelden
+              </DropdownItem>
                   <DropdownItem href="/register" onClick={() => setIsDropdownOpen(false)}>
                     Registrieren
                   </DropdownItem>

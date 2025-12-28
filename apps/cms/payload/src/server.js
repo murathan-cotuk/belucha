@@ -8,6 +8,12 @@ if (!process.env.PAYLOAD_SECRET) {
   process.exit(1)
 }
 
+const mongoUrl = process.env.PAYLOAD_MONGO_URL || process.env.DATABASE_URI || process.env.MONGODB_URI
+if (!mongoUrl) {
+  console.error('❌ Database URL is required. Set PAYLOAD_MONGO_URL, DATABASE_URI, or MONGODB_URI environment variable.')
+  process.exit(1)
+}
+
 const app = express()
 
 // Essential Express middleware
