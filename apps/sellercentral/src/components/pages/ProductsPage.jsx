@@ -378,10 +378,20 @@ export default function ProductsPage() {
 
   const { data: productsData, loading: productsLoading, refetch } = useQuery(GET_PRODUCTS);
   const { data: sellersData } = useQuery(GET_SELLERS);
-  const { data: categoriesData } = useQuery(GET_CATEGORIES);
+  const { data: categoriesData, loading: categoriesLoading, error: categoriesError } = useQuery(GET_CATEGORIES);
   const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT);
 
   const categories = categoriesData?.Categories?.docs || [];
+
+  // Debug: Log categories data
+  useEffect(() => {
+    if (categoriesData) {
+      console.log('Categories loaded:', categories.length, categories);
+    }
+    if (categoriesError) {
+      console.error('Categories error:', categoriesError);
+    }
+  }, [categoriesData, categoriesError, categories.length]);
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef(null);
 
@@ -646,7 +656,21 @@ export default function ProductsPage() {
                 </CategoryButton>
                 {categoryDropdownOpen && (
                   <CategoryDropdownMenu>
-                    {categories.length === 0 ? (
+                    {categoriesLoading ? (
+                      <div style={{ padding: "16px", textAlign: "center", color: "#6b7280" }}>
+                        <i className="fas fa-spinner fa-spin" style={{ marginRight: "8px" }} />
+                        Loading categories...
+                      </div>
+                    ) : categoriesError ? (
+                      <div style={{ padding: "16px", textAlign: "center", color: "#ef4444" }}>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px" }} />
+                        Error loading categories: {categoriesError.message}
+                        <br />
+                        <small style={{ marginTop: "8px", display: "block", fontSize: "12px" }}>
+                          Check GraphQL API connection
+                        </small>
+                      </div>
+                    ) : categories.length === 0 ? (
                       <div style={{ padding: "16px", textAlign: "center", color: "#6b7280" }}>
                         <i className="fas fa-info-circle" style={{ marginRight: "8px" }} />
                         No categories found. Please run the seed script:
@@ -658,7 +682,7 @@ export default function ProductsPage() {
                     ) : Object.keys(groupedCategories).length === 0 ? (
                       <div style={{ padding: "16px", textAlign: "center", color: "#6b7280" }}>
                         <i className="fas fa-info-circle" style={{ marginRight: "8px" }} />
-                        Loading categories...
+                        No categories to display
                       </div>
                     ) : (
                       Object.entries(groupedCategories).map(([parentName, cats]) => (
