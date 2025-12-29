@@ -52,7 +52,12 @@ export default buildConfig({
     schemaOutputFile: path.resolve(dirname, 'generated-schema.graphql'),
   },
   plugins: [],
-  serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL || 'http://localhost:3001',
+  // Override Railway's auto-generated URL with the correct production URL
+  // Railway auto-generates PAYLOAD_PUBLIC_SERVER_URL but we need the production URL
+  serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL_OVERRIDE || 
+             (process.env.RAILWAY_ENVIRONMENT === 'production' 
+               ? 'https://beluchacms-production.up.railway.app' 
+               : process.env.PAYLOAD_PUBLIC_SERVER_URL || 'http://localhost:3001'),
   cors: [
     'http://localhost:3000',
     'http://localhost:3002',

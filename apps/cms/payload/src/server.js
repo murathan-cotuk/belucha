@@ -1,6 +1,22 @@
 import express from 'express'
 import payload from 'payload'
 import config from './payload.config.js'
+import dotenv from 'dotenv'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import fs from 'fs'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// Load .env.local file if it exists
+const envPath = path.resolve(__dirname, '../.env.local')
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath })
+  console.log('✅ Loaded .env.local from:', envPath)
+} else {
+  console.log('⚠️  .env.local not found, using environment variables')
+}
 
 // Production: Fail-fast if required env vars are missing
 if (!process.env.PAYLOAD_SECRET) {

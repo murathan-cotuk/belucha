@@ -517,7 +517,7 @@ function DashboardLayoutContent({ children }) {
     <Container>
       <Sidebar isOpen={sidebarOpen} $collapsed={sidebarCollapsed}>
         <SidebarHeader $collapsed={sidebarCollapsed}>
-          <Logo href="/inventory" $collapsed={sidebarCollapsed}>
+          <Logo href="/" $collapsed={sidebarCollapsed}>
             {sidebarCollapsed ? "SC" : "Seller Central"}
           </Logo>
         </SidebarHeader>
