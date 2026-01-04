@@ -3,9 +3,17 @@ import { mongooseAdapter } from '@payloadcms/db-mongodb'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import dotenv from 'dotenv'
+import fs from 'fs'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
+
+// Load .env.local file if it exists (before reading env vars)
+const envPath = path.resolve(dirname, '../.env.local')
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath })
+}
 
 import Products from './collections/Products.js'
 import Categories from './collections/Categories.js'
