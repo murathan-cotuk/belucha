@@ -9,12 +9,13 @@ import fs from 'fs'
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
 
-// Load .env.local file if it exists (before reading env vars)
+// Load .env.local
 const envPath = path.resolve(dirname, '../.env.local')
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath })
 }
 
+// Collections
 import Products from './collections/Products.js'
 import Categories from './collections/Categories.js'
 import Brands from './collections/Brands.js'
@@ -23,20 +24,18 @@ import Customers from './collections/Customers.js'
 import Orders from './collections/Orders.js'
 import Media from './collections/Media.js'
 
-// Production: Fail-fast if required env vars are missing
-const mongoUrl = process.env.PAYLOAD_MONGO_URL || process.env.DATABASE_URI || process.env.MONGODB_URI
-if (!mongoUrl) {
-  throw new Error('Database URL is required. Set PAYLOAD_MONGO_URL, DATABASE_URI, or MONGODB_URI environment variable.')
-}
+// Check required env vars
+const mongoUrl = process.env.PAYLOAD_MONGO_URL || process.env.DATABASE_URI
+if (!mongoUrl) throw new Error('Database URL is required. Set PAYLOAD_MONGO_URL or DATABASE_URI')
 
-if (!process.env.PAYLOAD_SECRET) {
-  throw new Error('PAYLOAD_SECRET is required but not set')
-}
+if (!process.env.PAYLOAD_SECRET) throw new Error('PAYLOAD_SECRET is required')
 
+// Payload config
 export default buildConfig({
   secret: process.env.PAYLOAD_SECRET,
   admin: {
-    user: 'sellers',
+    user: 'sellers', // Sellers collection'ında admin olacak
+    path: '/admin', // Explicit admin path
   },
   routes: {
     admin: '/admin',
@@ -60,12 +59,10 @@ export default buildConfig({
     schemaOutputFile: path.resolve(dirname, 'generated-schema.graphql'),
   },
   plugins: [],
-  // Override Railway's auto-generated URL with the correct production URL
-  // Railway auto-generates PAYLOAD_PUBLIC_SERVER_URL but we need the production URL
+  // Priority: 1. OVERRIDE (Railway production URL), 2. Auto-generated, 3. Localhost
   serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL_OVERRIDE || 
-             (process.env.RAILWAY_ENVIRONMENT === 'production' 
-               ? 'https://beluchacms-production.up.railway.app' 
-               : process.env.PAYLOAD_PUBLIC_SERVER_URL || 'http://localhost:3001'),
+             process.env.PAYLOAD_PUBLIC_SERVER_URL || 
+             'http://localhost:3001',
   cors: [
     'http://localhost:3000',
     'http://localhost:3002',
