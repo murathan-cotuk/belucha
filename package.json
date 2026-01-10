@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "cross-env": "^7.0.3",
-    "next": "16.0.10"
+    "next": "16.0.10",
+    "scheduler": "^0.27.0"
   },
   "devDependencies": {
     "@turbo/gen": "^2.6.1",
