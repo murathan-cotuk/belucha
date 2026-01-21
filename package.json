@@ -10,6 +10,7 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.35.0",
     "cross-env": "^7.0.3",
     "next": "16.0.10",
     "scheduler": "^0.27.0"
