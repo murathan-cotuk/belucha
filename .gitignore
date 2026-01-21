@@ -100,3 +100,6 @@ desktop.ini
 ../deepvision/
 ../ecommezzo/
 
+
+# Sentry Config File
+.env.sentry-build-plugin
