@@ -9,7 +9,33 @@ npm run dev
 Bu komut şu app'leri başlatacak:
        - Shop App: http://localhost:3000
        - Sellercentral: http://localhost:3002
-       - Medusa Backend: http://localhost:9000 (ayrı repo'da çalışacak)
+       - Medusa Backend: http://localhost:9000
+
+GIT WORKFLOW
+============
+
+DOĞRU ÇALIŞMA SIRASI:
+----------------------
+
+1. DEV BRANCH'İNDE ÇALIŞ:
+   git checkout dev
+   git add .
+   git commit -m "feat: yeni özellik"
+   git push origin dev
+
+2. TEST ET (dev branch'inde):
+   npm run dev
+   # Her şey çalışıyor mu kontrol et
+
+3. MAIN'E MERGE ET (sadece test başarılıysa):
+   git checkout main
+   git merge dev
+   git push origin main
+
+⚠️  ÖNEMLİ:
+   - Dev branch = Development (geliştirme)
+   - Main branch = Production (canlı)
+   - Main'e sadece test edilmiş, çalışan kodlar gider!
 
        2. MEDUSA BACKEND:
        -------------------
