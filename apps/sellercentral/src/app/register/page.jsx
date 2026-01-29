@@ -4,9 +4,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import styled from "styled-components";
-import { useMutation, gql } from "@apollo/client";
-import { ApolloProvider } from "@apollo/client";
-import { apolloClient } from "@belucha/lib";
+// GraphQL removed - will migrate to Medusa REST API
 import { Button, Input, Card } from "@belucha/ui";
 
 const Container = styled.div`
@@ -72,15 +70,7 @@ const SuccessMessage = styled.p`
   margin-top: -8px;
 `;
 
-const CREATE_SELLER = gql`
-  mutation CreateSeller($data: JSON!) {
-    createSellers(data: $data) {
-      id
-      storeName
-      slug
-    }
-  }
-`;
+// GraphQL mutation removed - will migrate to Medusa REST API
 
 function RegisterForm() {
   const router = useRouter();
@@ -91,7 +81,7 @@ function RegisterForm() {
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [createSeller, { loading }] = useMutation(CREATE_SELLER);
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -108,23 +98,29 @@ function RegisterForm() {
         status: "pending",
       };
 
-      const result = await createSeller({
-        variables: {
-          data: sellerData,
-        },
-      });
-
-      if (result.data?.createSellers) {
-        setSuccess("Seller account created successfully! Redirecting to login...");
-        // localStorage'a kaydet
-        localStorage.setItem("sellerEmail", formData.email);
-        localStorage.setItem("sellerId", result.data.createSellers.id);
-        
-        // 2 saniye sonra login sayfasına yönlendir
-        setTimeout(() => {
-          router.push("/login");
-        }, 2000);
-      }
+      // TODO: Migrate to Medusa REST API
+      // For now, just save to localStorage
+      setLoading(true);
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Generate a temporary ID
+      const tempId = `seller_${Date.now()}`;
+      
+      setSuccess("Seller account created successfully! Redirecting to login...");
+      // localStorage'a kaydet
+      localStorage.setItem("sellerEmail", formData.email);
+      localStorage.setItem("sellerId", tempId);
+      localStorage.setItem("storeName", formData.storeName);
+      localStorage.setItem("sellerLoggedIn", "true");
+      
+      setLoading(false);
+      
+      // 2 saniye sonra login sayfasına yönlendir
+      setTimeout(() => {
+        router.push("/login");
+      }, 2000);
     } catch (err) {
       console.error("Registration error:", err);
       setError(err.message || "Registration failed. Please try again.");
@@ -186,10 +182,6 @@ function RegisterForm() {
 }
 
 export default function Register() {
-  return (
-    <ApolloProvider client={apolloClient}>
-      <RegisterForm />
-    </ApolloProvider>
-  );
+  return <RegisterForm />;
 }
 

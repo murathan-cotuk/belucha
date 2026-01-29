@@ -3,20 +3,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery, gql, ApolloProvider } from "@apollo/client";
-import { apolloClient } from "@belucha/lib";
+// Apollo Client removed - will migrate to Medusa REST API
 import styled from "styled-components";
 
-const GET_SELLER = gql`
-  query GetSeller($id: String!) {
-    Sellers(where: { id: { equals: $id } }, limit: 1) {
-      docs {
-        id
-        storeName
-      }
-    }
-  }
-`;
+// GraphQL query removed - will migrate to Medusa REST API
 
 const Container = styled.div`
   display: flex;
@@ -408,12 +398,8 @@ function DashboardLayoutContent({ children }) {
   const userMenuRef = useRef(null);
   const sellerId = typeof window !== "undefined" ? localStorage.getItem("sellerId") : null;
 
-  const { data: sellerData } = useQuery(GET_SELLER, {
-    variables: { id: sellerId },
-    skip: !sellerId,
-  });
-
-  const storeName = sellerData?.Sellers?.docs?.[0]?.storeName || "Seller Account";
+  // GraphQL query removed - using localStorage for now
+  const storeName = typeof window !== "undefined" ? localStorage.getItem("storeName") || "Seller Account" : "Seller Account";
 
   useEffect(() => {
     // Login sayfalarında authentication kontrolü yapma
@@ -665,9 +651,5 @@ function DashboardLayoutContent({ children }) {
 }
 
 export default function DashboardLayout({ children }) {
-  return (
-    <ApolloProvider client={apolloClient}>
-      <DashboardLayoutContent>{children}</DashboardLayoutContent>
-    </ApolloProvider>
-  );
+  return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
 }

@@ -1,31 +1,13 @@
 "use client";
 
-import { useQuery, gql } from "@apollo/client";
-import { useCustomerAuth as useAuth, useAuthGuard } from "@belucha/lib";
+"use client";
+
+import { useState, useEffect } from "react";
+import { useCustomerAuth as useAuth, useAuthGuard, getToken } from "@belucha/lib";
 import styled from "styled-components";
 import { Card, Button } from "@belucha/ui";
 import Link from "next/link";
-
-const GET_CUSTOMER = gql`
-  query GetCustomer($id: String!) {
-    Customers(where: { id: { equals: $id } }) {
-      docs {
-        id
-        email
-        firstName
-        lastName
-        gender
-        birthDate
-        phone
-        address
-        addressLine2
-        zipCode
-        city
-        country
-      }
-    }
-  }
-`;
+import { getMedusaClient } from "@/lib/medusa-client";
 
 const Container = styled.div`
   max-width: 1200px;
@@ -100,13 +82,35 @@ export default function AccountPage() {
   useAuthGuard({ requiredRole: 'customer', redirectTo: '/login' });
 
   const { user, logout } = useAuth();
+  const [customer, setCustomer] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const { data, loading, error } = useQuery(GET_CUSTOMER, {
-    variables: { id: user?.id },
-    skip: !user?.id,
-  });
+  useEffect(() => {
+    const fetchCustomer = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoading(true);
+        const token = getToken('customer');
+        if (!token) {
+          setError('No authentication token found');
+          return;
+        }
+        
+        const client = getMedusaClient();
+        const result = await client.getCustomer(token);
+        setCustomer(result.customer);
+      } catch (err) {
+        console.error('Failed to fetch customer:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const customer = data?.Customers?.docs?.[0];
+    fetchCustomer();
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -133,11 +137,11 @@ export default function AccountPage() {
           <InfoGrid>
             <InfoItem>
               <InfoLabel>Vorname</InfoLabel>
-              <InfoValue>{customer?.firstName || "-"}</InfoValue>
+              <InfoValue>{customer?.first_name || customer?.firstName || "-"}</InfoValue>
             </InfoItem>
             <InfoItem>
               <InfoLabel>Nachname</InfoLabel>
-              <InfoValue>{customer?.lastName || "-"}</InfoValue>
+              <InfoValue>{customer?.last_name || customer?.lastName || "-"}</InfoValue>
             </InfoItem>
             <InfoItem>
               <InfoLabel>Email</InfoLabel>
@@ -147,56 +151,42 @@ export default function AccountPage() {
               <InfoLabel>Telefonnummer</InfoLabel>
               <InfoValue>{customer?.phone || "-"}</InfoValue>
             </InfoItem>
-            <InfoItem>
-              <InfoLabel>Geschlecht</InfoLabel>
-              <InfoValue>
-                {customer?.gender === "male"
-                  ? "Männlich"
-                  : customer?.gender === "female"
-                  ? "Weiblich"
-                  : customer?.gender === "other"
-                  ? "Andere"
-                  : "-"}
-              </InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Geburtsdatum</InfoLabel>
-              <InfoValue>
-                {customer?.birthDate
-                  ? new Date(customer.birthDate).toLocaleDateString("de-DE")
-                  : "-"}
-              </InfoValue>
-            </InfoItem>
           </InfoGrid>
         </Section>
 
-        <Section>
-          <SectionTitle>Adresse</SectionTitle>
-          <InfoGrid>
-            <InfoItem>
-              <InfoLabel>Straße</InfoLabel>
-              <InfoValue>{customer?.address || "-"}</InfoValue>
-            </InfoItem>
-            {customer?.addressLine2 && (
-              <InfoItem>
-                <InfoLabel>Adresszusatz</InfoLabel>
-                <InfoValue>{customer.addressLine2}</InfoValue>
-              </InfoItem>
-            )}
-            <InfoItem>
-              <InfoLabel>PLZ</InfoLabel>
-              <InfoValue>{customer?.zipCode || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Stadt</InfoLabel>
-              <InfoValue>{customer?.city || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Land</InfoLabel>
-              <InfoValue>{customer?.country || "-"}</InfoValue>
-            </InfoItem>
-          </InfoGrid>
-        </Section>
+        {customer?.shipping_addresses && customer.shipping_addresses.length > 0 && (
+          <Section>
+            <SectionTitle>Adresse</SectionTitle>
+            <InfoGrid>
+              {customer.shipping_addresses.map((addr, idx) => (
+                <div key={idx}>
+                  <InfoItem>
+                    <InfoLabel>Straße</InfoLabel>
+                    <InfoValue>{addr.address_1 || "-"}</InfoValue>
+                  </InfoItem>
+                  {addr.address_2 && (
+                    <InfoItem>
+                      <InfoLabel>Adresszusatz</InfoLabel>
+                      <InfoValue>{addr.address_2}</InfoValue>
+                    </InfoItem>
+                  )}
+                  <InfoItem>
+                    <InfoLabel>PLZ</InfoLabel>
+                    <InfoValue>{addr.postal_code || "-"}</InfoValue>
+                  </InfoItem>
+                  <InfoItem>
+                    <InfoLabel>Stadt</InfoLabel>
+                    <InfoValue>{addr.city || "-"}</InfoValue>
+                  </InfoItem>
+                  <InfoItem>
+                    <InfoLabel>Land</InfoLabel>
+                    <InfoValue>{addr.country_code || "-"}</InfoValue>
+                  </InfoItem>
+                </div>
+              ))}
+            </InfoGrid>
+          </Section>
+        )}
 
         <Section>
           <SectionTitle>Aktionen</SectionTitle>

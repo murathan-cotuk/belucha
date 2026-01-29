@@ -29,7 +29,6 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "apps/cms/*",
     "apps/medusa-backend"
   ],
   "overrides": {

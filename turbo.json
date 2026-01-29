@@ -6,11 +6,6 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"]
     },
-    "@belucha/cms#build": {
-      "cache": false,
-      "outputs": [],
-      "dependsOn": []
-    },
     "@belucha/shop#build": {
       "dependsOn": [],
       "outputs": [".next/**", "!.next/cache/**"]
@@ -22,6 +17,12 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "medusa-backend#dev": {
+      "cache": false,
+      "persistent": false,
+      "dependsOn": [],
+      "outputs": []
     },
     "lint": {
       "dependsOn": ["^lint"]
