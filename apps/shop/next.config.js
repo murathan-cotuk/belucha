@@ -22,12 +22,7 @@ const nextConfig = {
   },
   // Vercel deployment için optimize
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
-  // Fix Turbopack panic with Turkish characters in path
-  experimental: {
-    turbopack: {
-      root: path.resolve(__dirname, '../../..'), // Set root to monorepo root
-    },
-  },
+  // Turbopack root configuration removed - Next.js 16 handles this automatically
 };
 
 module.exports = withSentryConfig(nextConfig, {
