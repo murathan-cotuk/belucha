@@ -1,6 +1,5 @@
 const path = require('path');
 const { withSentryConfig } = require("@sentry/nextjs");
-const { withPayload } = require("@payloadcms/next/withPayload");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -31,10 +30,7 @@ const nextConfig = {
   },
 };
 
-// withPayload wrapper'ı geri eklendi - PageConfigProvider sorunu için gerekli
-const payloadConfig = withPayload(nextConfig);
-
-module.exports = withSentryConfig(payloadConfig, {
+module.exports = withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
@@ -61,7 +57,6 @@ module.exports = withSentryConfig(payloadConfig, {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname, './src'),
-      '@payload-config': path.resolve(__dirname, './src/payload.config.ts'),
     };
     
     // Node.js modüllerini client-side'da exclude et

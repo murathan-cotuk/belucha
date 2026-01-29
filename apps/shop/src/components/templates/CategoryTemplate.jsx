@@ -1,50 +1,11 @@
 "use client";
 
-import React from "react";
-import { useQuery, gql } from "@apollo/client";
+import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import styled from "styled-components";
 import { Card } from "@belucha/ui";
-
-const GET_CATEGORY = gql`
-  query GetCategory($slug: String!) {
-    Categories(where: { slug: { equals: $slug } }) {
-      docs {
-        id
-        name
-        description
-        image {
-          url
-          alt
-        }
-      }
-    }
-  }
-`;
-
-const GET_CATEGORY_PRODUCTS = gql`
-  query GetCategoryProducts($categorySlug: String!) {
-    Products(where: { category: { slug: { equals: $categorySlug } } }) {
-      docs {
-        id
-        title
-        slug
-        price
-        compareAtPrice
-        images {
-          image {
-            url
-            alt
-          }
-        }
-        seller {
-          storeName
-        }
-      }
-    }
-  }
-`;
+import { getMedusaClient } from "@/lib/medusa-client";
 
 const Container = styled.div`
   max-width: 1280px;
@@ -147,70 +108,74 @@ const ComparePrice = styled.span`
 export default function CategoryTemplate() {
   const params = useParams();
   const slug = params?.slug;
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const { data: categoryData, loading: categoryLoading } = useQuery(
-    GET_CATEGORY,
-    {
-      variables: { slug },
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        const client = getMedusaClient();
+        // Medusa doesn't have categories by default, filter by collection or handle
+        const result = await client.getProducts({ collection_id: slug });
+        setProducts(result.products || []);
+      } catch (err) {
+        console.error('Failed to fetch products:', err);
+        setError(err.message);
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (slug) {
+      fetchProducts();
     }
-  );
+  }, [slug]);
 
-  const { data: productsData, loading: productsLoading } = useQuery(
-    GET_CATEGORY_PRODUCTS,
-    {
-      variables: { categorySlug: slug },
-    }
-  );
-
-  if (categoryLoading || productsLoading) {
+  if (loading) {
     return <Container>Loading...</Container>;
   }
 
-  const category = categoryData?.Categories?.docs?.[0];
-  const products = productsData?.Products?.docs || [];
+  if (error) {
+    return <Container>Error: {error}</Container>;
+  }
 
   return (
     <Container>
-      {category && (
-        <CategoryHeader>
-          {category.image && (
-            <CategoryImage
-              src={category.image.url}
-              alt={category.image.alt || category.name}
-            />
-          )}
-          <CategoryTitle>{category.name}</CategoryTitle>
-          {category.description && (
-            <CategoryDescription>{category.description}</CategoryDescription>
-          )}
-        </CategoryHeader>
-      )}
+      <CategoryHeader>
+        <CategoryTitle>Category: {slug}</Title>
+      </CategoryHeader>
       <Grid>
-        {products.map((product) => (
-          <Link key={product.id} href={`/product/${product.slug}`}>
-            <ProductCard hover>
-              <ImageWrapper>
-                <ProductImage
-                  src={
-                    product.images?.[0]?.image?.url ||
-                    "https://via.placeholder.com/400"
-                  }
-                  alt={product.images?.[0]?.image?.alt || product.title}
-                />
-              </ImageWrapper>
-              <ProductInfo>
-                <ProductTitle>{product.title}</ProductTitle>
-                <SellerName>{product.seller?.storeName}</SellerName>
-                <PriceContainer>
-                  <Price>${product.price}</Price>
-                  {product.compareAtPrice && (
-                    <ComparePrice>${product.compareAtPrice}</ComparePrice>
-                  )}
-                </PriceContainer>
-              </ProductInfo>
-            </ProductCard>
-          </Link>
-        ))}
+        {products.length === 0 ? (
+          <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px", color: "#6b7280" }}>
+            No products found in this category
+          </div>
+        ) : (
+          products.map((product) => (
+            <Link key={product.id} href={`/product/${product.handle || product.id}`}>
+              <ProductCard hover>
+                <ImageWrapper>
+                  <ProductImage
+                    src={
+                      product.images?.[0]?.url ||
+                      product.thumbnail ||
+                      "https://via.placeholder.com/400"
+                    }
+                    alt={product.title}
+                  />
+                </ImageWrapper>
+                <ProductInfo>
+                  <ProductTitle>{product.title}</ProductTitle>
+                  <PriceContainer>
+                    <Price>${product.variants?.[0]?.prices?.[0]?.amount ? (product.variants[0].prices[0].amount / 100).toFixed(2) : '0.00'}</Price>
+                  </PriceContainer>
+                </ProductInfo>
+              </ProductCard>
+            </Link>
+          ))
+        )}
       </Grid>
     </Container>
   );

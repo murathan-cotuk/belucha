@@ -1,40 +1,11 @@
 "use client";
 
-import React from "react";
-import { useQuery, gql } from "@apollo/client";
+import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import styled from "styled-components";
 import { Button, Card } from "@belucha/ui";
-
-const GET_PRODUCT = gql`
-  query GetProduct($slug: String!) {
-    Products(where: { slug: { equals: $slug } }) {
-      docs {
-        id
-        title
-        description
-        price
-        compareAtPrice
-        inventory
-        images {
-          image {
-            url
-            alt
-          }
-        }
-        seller {
-          id
-          storeName
-          slug
-        }
-        category {
-          name
-          slug
-        }
-      }
-    }
-  }
-`;
+import { getMedusaClient } from "@/lib/medusa-client";
+import { useMedusaCart } from "@/hooks/useMedusa";
 
 const Container = styled.div`
   max-width: 1280px;
@@ -135,20 +106,39 @@ const SellerInfo = styled(Card)`
 export default function ProductTemplate() {
   const params = useParams();
   const slug = params?.slug;
-  const [selectedImage, setSelectedImage] = React.useState(0);
+  const [selectedImage, setSelectedImage] = useState(0);
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const { addToCart } = useMedusaCart();
 
-  const { data, loading, error } = useQuery(GET_PRODUCT, {
-    variables: { slug },
-  });
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        setLoading(true);
+        const client = getMedusaClient();
+        // Medusa uses handle or id, try handle first
+        const result = await client.getProduct(slug);
+        setProduct(result.product);
+      } catch (err) {
+        console.error('Failed to fetch product:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (slug) {
+      fetchProduct();
+    }
+  }, [slug]);
 
   if (loading) return <Container>Loading...</Container>;
-  if (error) return <Container>Error: {error.message}</Container>;
-
-  const product = data?.Products?.docs?.[0];
+  if (error) return <Container>Error: {error}</Container>;
   if (!product) return <Container>Product not found</Container>;
 
   const images = product.images || [];
-  const mainImage = images[selectedImage]?.image?.url || "https://via.placeholder.com/600";
+  const mainImage = images[selectedImage]?.url || product.thumbnail || "https://via.placeholder.com/600";
 
   return (
     <Container>
@@ -160,8 +150,8 @@ export default function ProductTemplate() {
               {images.map((img, index) => (
                 <Thumbnail
                   key={index}
-                  src={img.image?.url || "https://via.placeholder.com/80"}
-                  alt={img.image?.alt || product.title}
+                  src={img.url || "https://via.placeholder.com/80"}
+                  alt={img.alt || product.title}
                   onClick={() => setSelectedImage(index)}
                 />
               ))}
@@ -171,16 +161,22 @@ export default function ProductTemplate() {
         <ProductInfo>
           <Title>{product.title}</Title>
           <PriceContainer>
-            <Price>${product.price}</Price>
-            {product.compareAtPrice && (
-              <ComparePrice>${product.compareAtPrice}</ComparePrice>
-            )}
+            <Price>${product.variants?.[0]?.prices?.[0]?.amount ? (product.variants[0].prices[0].amount / 100).toFixed(2) : '0.00'}</Price>
           </PriceContainer>
-          <Description
-            dangerouslySetInnerHTML={{ __html: product.description || "" }}
-          />
+          <Description>
+            {product.description || product.subtitle || "No description available"}
+          </Description>
           <Actions>
-            <Button size="lg" fullWidth>
+            <Button 
+              size="lg" 
+              fullWidth
+              onClick={() => {
+                const variantId = product.variants?.[0]?.id;
+                if (variantId) {
+                  addToCart(variantId, 1);
+                }
+              }}
+            >
               Add to Cart
             </Button>
             <Button size="lg" variant="outline" fullWidth>
@@ -189,14 +185,18 @@ export default function ProductTemplate() {
           </Actions>
           <SellerInfo>
             <p>
-              <strong>Sold by:</strong> {product.seller?.storeName}
+              <strong>Product ID:</strong> {product.id}
             </p>
-            <p>
-              <strong>Category:</strong> {product.category?.[0]?.name}
-            </p>
-            <p>
-              <strong>Stock:</strong> {product.inventory} available
-            </p>
+            {product.collection && (
+              <p>
+                <strong>Collection:</strong> {product.collection.title}
+              </p>
+            )}
+            {product.variants?.[0]?.inventory_quantity !== undefined && (
+              <p>
+                <strong>Stock:</strong> {product.variants[0].inventory_quantity} available
+              </p>
+            )}
           </SellerInfo>
         </ProductInfo>
       </ProductContainer>

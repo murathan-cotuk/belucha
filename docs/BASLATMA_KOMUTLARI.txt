@@ -1,0 +1,137 @@
+TÜM APP'LERİ BAŞLATMA KOMUTLARI
+===============================
+
+1. TÜM APP'LERİ BAŞLATMAK İÇİN:
+---------------------------------
+cd C:\Users\Lenovo\Desktop\Ortam\Yazilim\belucha
+npm run dev
+
+Bu komut şu app'leri başlatacak:
+       - Shop App: http://localhost:3000
+       - Sellercentral: http://localhost:3002
+       - Medusa Backend: http://localhost:9000 (ayrı repo'da çalışacak)
+
+       2. MEDUSA BACKEND:
+       -------------------
+       Medusa backend ayrı bir repo'da çalışacak.
+       Railway'e deploy edilecek.
+
+       3. SHOP APP:
+       ------------
+       http://localhost:3000
+
+       Medusa REST API kullanarak:
+       - Products
+       - Cart
+       - Orders
+       - Customers
+
+4. SELLERCENTRAL:
+------------------
+http://localhost:3002
+
+Seller dashboard - seller'ların kendi ürünlerini yönettikleri panel
+
+5. PORT'LARI DURDURMAK İÇİN:
+------------------------------
+.\kill-ports.ps1
+
+VEYA
+
+taskkill /F /IM node.exe
+
+VERCEL DEPLOYMENT SORUSU
+=========================
+
+SORU: Medusa'yı Vercel'e ayrı mı deploy edeyim?
+
+CEVAP: HAYIR, Medusa'yı Vercel'e deploy ETMEYİN. İşte nedenleri:
+
+❌ VERCEL'E DEPLOY ETMEYİN ÇÜNKÜ:
+
+1. VERCEL SERVERLESS:
+   - Vercel serverless functions kullanır
+   - Medusa backend sürekli çalışan bir servis olmalı
+   - Serverless Medusa için uygun değil
+
+2. DATABASE BAĞLANTISI:
+   - Medusa PostgreSQL veya başka bir database kullanır
+   - Vercel'de database bağlantıları sorunlu olabilir
+   - SQLite Vercel'de çalışmaz
+
+3. REDIS GEREKSİNİMİ:
+   - Medusa Redis kullanır (cache, queue)
+   - Vercel'de Redis kurulumu zor
+
+✅ ÖNERİLEN DEPLOYMENT:
+
+MEDUSA BACKEND İÇİN:
+- Railway.app (railway.app) - ÖNERİLEN
+- Render.com (render.com)
+- DigitalOcean App Platform
+- AWS EC2 / ECS
+- Heroku (ücretli)
+
+NEDEN RAILWAY/RENDER?
+- PostgreSQL desteği var
+- Redis desteği var
+- Sürekli çalışan servisler
+- Environment variables kolay
+- Git-based deployment
+
+DEPLOYMENT YAPISI:
+------------------
+
+       REPO 1: belucha (Ana monorepo)
+       ├── Shop App → Vercel
+       └── Sellercentral → Vercel
+
+       REPO 2: belucha-medusa-backend (Ayrı repo)
+       └── Medusa Backend → Railway/Render
+
+       ÖZET:
+       -----
+       - Shop, Sellercentral → Vercel ✅
+       - Medusa Backend → Railway/Render ✅ (Vercel değil!)
+       - Payload CMS → SİLİNDİ ❌ (Artık yok!)
+
+GIT PUSH
+========
+
+1. BELUCHA REPO'SUNA PUSH:
+---------------------------
+cd C:\Users\Lenovo\Desktop\Ortam\Yazilim\belucha
+git add .
+git commit -m "feat: SEO koleksiyonu eklendi, Medusa entegrasyonu hazır"
+git push origin main
+
+2. MEDUSA BACKEND İÇİN (AYRI REPO):
+------------------------------------
+Medusa backend'i ayrı bir repo'ya taşıdıktan sonra:
+cd belucha-medusa-backend
+git add .
+git commit -m "feat: Medusa backend initial setup"
+git push origin main
+
+       SEO İÇİN MEDUSA CUSTOM FIELDS
+       =============================
+
+       ✅ PLAN:
+       - Medusa Product model'ine SEO fields eklenecek
+       - Veya ayrı SEO collection oluşturulacak (Medusa plugin ile)
+
+       ÖZELLİKLER:
+       - Page Title
+       - Meta Description
+       - Keywords
+       - URL (slug)
+       - Open Graph (Title, Description, Image)
+       - Canonical URL
+       - Robots Meta Tag
+       - Schema.org JSON-LD
+
+       KULLANIM:
+       ---------
+       1. Medusa backend'de custom fields eklenecek
+       2. Medusa admin panelinden SEO bilgileri yönetilecek
+       3. Shop app Medusa REST API'den SEO bilgilerini çekecek

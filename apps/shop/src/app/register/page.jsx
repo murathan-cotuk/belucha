@@ -4,33 +4,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import styled from "styled-components";
-import { useMutation, gql } from "@apollo/client";
+import { useMedusaAuth } from "@/hooks/useMedusaAuth";
 import { useCustomerAuth as useAuth, useAuthGuard } from "@belucha/lib";
-
-const REGISTER_CUSTOMER = gql`
-  mutation RegisterCustomer($data: JSON!) {
-    createCustomers(data: $data) {
-      id
-      email
-      firstName
-      lastName
-    }
-  }
-`;
-
-const LOGIN_CUSTOMER = gql`
-  mutation LoginCustomer($email: String!, $password: String!) {
-    loginCustomers(email: $email, password: $password) {
-      token
-      user {
-        id
-        email
-        firstName
-        lastName
-      }
-    }
-  }
-`;
 
 const Container = styled.div`
   min-height: 100vh;
@@ -436,11 +411,9 @@ export default function RegisterPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
-  const [registerMutation] = useMutation(REGISTER_CUSTOMER);
-  const [loginMutation] = useMutation(LOGIN_CUSTOMER);
+  const { register: registerMedusa, login: loginMedusa, loading } = useMedusaAuth();
   
   // Maymun fonksiyonu: Şifre gizliyken gözler kapalı (blind)
   const isBlind = !showPassword;
@@ -448,25 +421,30 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     try {
-      // Create customer
-      const { data: registerData } = await registerMutation({
-        variables: { data: formData },
-      });
+      // Register customer via Medusa
+      const registerResult = await registerMedusa(
+        formData.email,
+        formData.password,
+        formData.firstName,
+        formData.lastName
+      );
 
-      if (registerData?.createCustomers) {
+      if (registerResult?.customer) {
         // After registration, automatically log in
-        const { data: loginData } = await loginMutation({
-          variables: { email: formData.email, password: formData.password },
-        });
+        const loginResult = await loginMedusa(formData.email, formData.password);
 
-        if (loginData?.loginCustomers?.token) {
-          const { token, user } = loginData.loginCustomers;
-          login(token, user.id);
-          router.push("/");
-          router.refresh();
+        if (loginResult?.customer?.id) {
+          // Store token and user info
+          const token = loginResult.access_token || loginResult.token;
+          if (token) {
+            login(token, loginResult.customer.id);
+            router.push("/");
+            router.refresh();
+          } else {
+            setError("Registration successful, but login failed. Please try logging in manually.");
+          }
         } else {
           setError("Registration successful, but login failed. Please try logging in manually.");
         }
@@ -475,12 +453,7 @@ export default function RegisterPage() {
       }
     } catch (err) {
       console.error("Registration error:", err);
-      const errorMessage = err.graphQLErrors?.[0]?.message || 
-                          err.message || 
-                          "Registration failed. Please try again.";
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+      setError(err.message || "Registration failed. Please try again.");
     }
   };
 

@@ -4,22 +4,8 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import styled from "styled-components";
-import { useMutation, gql } from "@apollo/client";
+import { useMedusaAuth } from "@/hooks/useMedusaAuth";
 import { useCustomerAuth as useAuth, useAuthGuard } from "@belucha/lib";
-
-const LOGIN_CUSTOMER = gql`
-  mutation LoginCustomer($email: String!, $password: String!) {
-    loginCustomers(email: $email, password: $password) {
-      token
-      user {
-        id
-        email
-        firstName
-        lastName
-      }
-    }
-  }
-`;
 
 const Container = styled.div`
   min-height: 100vh;
@@ -397,10 +383,9 @@ export default function LoginPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
-  const [loginMutation] = useMutation(LOGIN_CUSTOMER);
+  const { login: loginMedusa, loading } = useMedusaAuth();
   
   // Maymun fonksiyonu: Şifre gizliyken gözler kapalı (blind)
   const isBlind = !showPassword;
@@ -408,26 +393,25 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     try {
-      const { data } = await loginMutation({
-        variables: { email: formData.email, password: formData.password },
-      });
+      const result = await loginMedusa(formData.email, formData.password);
 
-      if (data?.loginCustomers?.token) {
-        const { token, user } = data.loginCustomers;
-        login(token, user.id);
-        router.push("/");
-        router.refresh();
+      if (result?.customer?.id) {
+        const token = result.access_token || result.token;
+        if (token) {
+          login(token, result.customer.id);
+          router.push("/");
+          router.refresh();
+        } else {
+          setError("Login failed. Please check your credentials.");
+        }
       } else {
         setError("Login failed. Please check your credentials.");
       }
     } catch (err) {
       console.error("Login error:", err);
-      setError(err.graphQLErrors?.[0]?.message || err.message || "An unexpected error occurred. Please try again.");
-    } finally {
-      setLoading(false);
+      setError(err.message || "An unexpected error occurred. Please try again.");
     }
   };
 

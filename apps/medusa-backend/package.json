@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "main": "medusa-config.js",
   "scripts": {
-    "dev": "npx medusa develop",
-    "start": "npx medusa start",
-    "build": "npx medusa build",
-    "migrate": "npx medusa migrations run"
+    "dev": "npx @medusajs/cli dev",
+    "start": "npx @medusajs/cli start",
+    "build": "npx @medusajs/cli build",
+    "migrate": "npx @medusajs/cli migrations run"
   },
   "keywords": [],
   "author": "",
@@ -21,5 +21,8 @@
     "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "medusa": "^0.0.3"
+  },
+  "devDependencies": {
+    "@medusajs/cli": "^2.13.1"
   }
 }
