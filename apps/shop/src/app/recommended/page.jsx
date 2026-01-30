@@ -3,7 +3,7 @@
 import Navbar from "@/components/Navbar";
 import SlimBar from "@/components/SlimBar";
 import Footer from "@/components/Footer";
-import ProductGrid from "@/components/ProductGrid";
+import { ProductGrid } from "@/components/ProductGrid";
 
 export default function RecommendedPage() {
   return (
@@ -19,7 +19,7 @@ export default function RecommendedPage() {
             Personalisierte Produktempfehlungen
           </p>
         </div>
-        <ProductGrid />
+        <ProductGrid products={[]} />
       </main>
       <Footer />
     </div>
