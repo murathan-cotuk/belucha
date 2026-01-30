@@ -64,18 +64,40 @@ const SectionTitle = styled.h2`
 `;
 
 export default function DashboardHome() {
-  const { data, loading } = useQuery(GET_SELLER_STATS);
+  const { data, loading, error } = useQuery(GET_SELLER_STATS, {
+    errorPolicy: 'all', // Hataları graceful handle et
+    skip: !process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT, // GraphQL endpoint yoksa query'yi skip et
+  });
+
+  // GraphQL endpoint yoksa veya hata varsa placeholder göster
+  const hasGraphQL = !!process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT;
+  const showPlaceholder = !hasGraphQL || error;
 
   return (
     <Container>
       <Title>Dashboard</Title>
+      {showPlaceholder && (
+        <div style={{ 
+          padding: '16px', 
+          backgroundColor: '#fef3c7', 
+          border: '1px solid #fbbf24', 
+          borderRadius: '8px', 
+          marginBottom: '24px',
+          color: '#92400e'
+        }}>
+          <p style={{ margin: 0, fontWeight: 600 }}>⚠️ GraphQL endpoint not configured</p>
+          <p style={{ margin: '8px 0 0 0', fontSize: '14px' }}>
+            Seller dashboard features will be available once GraphQL endpoint is configured.
+          </p>
+        </div>
+      )}
       <StatsGrid>
         <StatCard>
-          <StatValue>{data?.Products?.totalDocs || 0}</StatValue>
+          <StatValue>{loading ? '...' : (data?.Products?.totalDocs || 0)}</StatValue>
           <StatLabel>Total Products</StatLabel>
         </StatCard>
         <StatCard>
-          <StatValue>{data?.Orders?.totalDocs || 0}</StatValue>
+          <StatValue>{loading ? '...' : (data?.Orders?.totalDocs || 0)}</StatValue>
           <StatLabel>Total Orders</StatLabel>
         </StatCard>
         <StatCard>
