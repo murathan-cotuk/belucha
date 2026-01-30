@@ -21,8 +21,12 @@ export default function Home() {
           {loading && <p>Loading products from Medusa...</p>}
           {error && (
             <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-              <p>⚠️ Medusa backend not available: {error}</p>
-              <p className="text-sm mt-2">Please start Medusa backend to see products.</p>
+              <p>⚠️ Products temporarily unavailable</p>
+              <p className="text-sm mt-2">
+                {typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+                  ? 'The product catalog is being set up. Please check back soon.'
+                  : 'Medusa backend not available. Please start Medusa backend to see products.'}
+              </p>
             </div>
           )}
           {!loading && !error && products.length === 0 && (
