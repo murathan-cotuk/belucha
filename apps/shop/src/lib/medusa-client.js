@@ -5,7 +5,12 @@
  * REST API kullanarak products, cart, orders yönetimi
  */
 
-const MEDUSA_BACKEND_URL = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000'
+// Get Medusa backend URL from environment variable
+// In production, this should be set to your deployed Medusa backend URL (e.g., Railway, Render)
+const MEDUSA_BACKEND_URL = 
+  typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000')
+    : (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000')
 
 class MedusaClient {
   constructor(baseURL = MEDUSA_BACKEND_URL) {
@@ -16,6 +21,15 @@ class MedusaClient {
    * Generic API request helper
    */
   async request(endpoint, options = {}) {
+    // Check if backend URL is available
+    if (!this.baseURL || this.baseURL === 'http://localhost:9000') {
+      // In production, if backend URL is not set, return empty response
+      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+        console.warn('Medusa backend URL not configured. Please set NEXT_PUBLIC_MEDUSA_BACKEND_URL environment variable.')
+        throw new Error('Medusa backend not configured')
+      }
+    }
+
     const url = `${this.baseURL}${endpoint}`
     const config = {
       headers: {
@@ -35,7 +49,10 @@ class MedusaClient {
 
       return await response.json()
     } catch (error) {
-      console.error(`Medusa API Error (${endpoint}):`, error)
+      // Only log errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`Medusa API Error (${endpoint}):`, error)
+      }
       throw error
     }
   }

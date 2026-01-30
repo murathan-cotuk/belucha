@@ -20,9 +20,14 @@ export function useMedusaProducts() {
         setProducts(data.products || [])
         setError(null)
       } catch (err) {
-        console.error('Failed to fetch Medusa products:', err)
-        setError(err.message)
+        // Gracefully handle errors - don't crash the app
+        const errorMessage = err.message || 'Failed to fetch products'
+        setError(errorMessage)
         setProducts([])
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch Medusa products:', err)
+        }
       } finally {
         setLoading(false)
       }
