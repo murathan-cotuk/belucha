@@ -14,7 +14,7 @@
 ### 1. Shop App .env.local Dosyası Oluştur
 
 **Dosya:** `apps/shop/.env.local`
-
+ 
 **İçeriği:**
 ```
 NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000

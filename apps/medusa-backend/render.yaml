@@ -1,0 +1,19 @@
+# Render deployment configuration
+# Bu dosya Render'de otomatik deploy için kullanılabilir
+# Ama manuel olarak Render Dashboard'dan ayarlamak daha kolay
+
+# services:
+#   - type: web
+#     name: belucha-medusa-backend
+#     env: node
+#     region: frankfurt
+#     rootDir: apps/medusa-backend
+#     buildCommand: npm install && npm run build
+#     startCommand: npm start
+#     healthCheckPath: /health
+#
+# databases:
+#   - name: belucha-medusa-db
+#     databaseName: medusa
+#     user: medusa_user
+#     plan: free
