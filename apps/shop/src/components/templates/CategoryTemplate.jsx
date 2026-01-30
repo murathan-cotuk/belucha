@@ -145,7 +145,7 @@ export default function CategoryTemplate() {
   return (
     <Container>
       <CategoryHeader>
-        <CategoryTitle>Category: {slug}</Title>
+        <CategoryTitle>Category: {slug}</CategoryTitle>
       </CategoryHeader>
       <Grid>
         {products.length === 0 ? (
