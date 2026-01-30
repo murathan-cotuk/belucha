@@ -7,6 +7,8 @@
 3. ✅ GraphQL endpoint graceful error handling eklendi
 4. ✅ Environment variables rehberi oluşturuldu
 5. ✅ Render deployment rehberi hazırlandı
+6. ✅ Sellercentral SSR hatası düzeltildi (ApolloProvider client component'e taşındı)
+7. ✅ Medusa backend build hatası düzeltildi (tsconfig.json ve build script güncellendi)
 
 ---
 
