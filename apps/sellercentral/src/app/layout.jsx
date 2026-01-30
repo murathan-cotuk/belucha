@@ -1,6 +1,8 @@
 import { Inter } from "next/font/google";
 import StyledComponentsRegistry from "./registry";
 import "./globals.css";
+import { ApolloProvider } from "@apollo/client";
+import { apolloClient } from "../lib/apollo-client";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -25,7 +27,11 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className={inter.className}>
-        <StyledComponentsRegistry>{children}</StyledComponentsRegistry>
+        <StyledComponentsRegistry>
+          <ApolloProvider client={apolloClient}>
+            {children}
+          </ApolloProvider>
+        </StyledComponentsRegistry>
       </body>
     </html>
   );
