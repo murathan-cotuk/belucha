@@ -28,7 +28,7 @@ const Sidebar = styled.aside`
   flex-direction: column;
 
   @media (max-width: 768px) {
-    transform: ${({ isOpen }) => (isOpen ? "translateX(0)" : "translateX(-100%)")};
+    transform: ${({ $isOpen }) => ($isOpen ? "translateX(0)" : "translateX(-100%)")};
     width: 260px;
   }
 `;
@@ -501,7 +501,7 @@ function DashboardLayoutContent({ children }) {
 
   return (
     <Container>
-      <Sidebar isOpen={sidebarOpen} $collapsed={sidebarCollapsed}>
+      <Sidebar $isOpen={sidebarOpen} $collapsed={sidebarCollapsed}>
         <SidebarHeader $collapsed={sidebarCollapsed}>
           <Logo href="/" $collapsed={sidebarCollapsed}>
             {sidebarCollapsed ? "SC" : "Seller Central"}
