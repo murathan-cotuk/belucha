@@ -4,7 +4,7 @@
   "main": "medusa-config.js",
   "scripts": {
     "dev": "echo Medusa backend temporarily disabled due to dependency issues. Will be set up separately.",
-    "start": "npx @medusajs/cli start",
+    "start": "node server.js",
     "build": "echo 'Medusa backend build skipped - no TypeScript files to compile'",
     "migrate": "npx @medusajs/cli migrations run"
   },
@@ -19,7 +19,9 @@
     "@medusajs/medusa": "^2.13.1",
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
+    "express": "^4.18.2",
     "medusa": "^0.0.3"
   },
   "devDependencies": {
