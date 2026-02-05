@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-// GraphQL removed - will migrate to Medusa REST API
+import { gql, useQuery } from "@apollo/client";
 import styled from "styled-components";
 import { Card, Button } from "@belucha/ui";
 import Link from "next/link";
@@ -225,9 +225,26 @@ const EmptyStateText = styled.p`
 
 export default function InventoryPage() {
   const [showDropdown, setShowDropdown] = useState(false);
-  const { data, loading, error } = useQuery(GET_PRODUCTS);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const medusaClient = getMedusaAdminClient();
 
-  const products = data?.Products?.docs || [];
+  // TODO: Fetch products from Medusa REST API
+  React.useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        const data = await medusaClient.getProducts();
+        setProducts(data.products || []);
+      } catch (err) {
+        setError(err?.message || "Failed to load products");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
+  }, []);
 
   return (
     <Container>

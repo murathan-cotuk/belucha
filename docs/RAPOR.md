@@ -162,8 +162,9 @@ GET http://localhost:9000/admin-hub/categories?tree=true
 
 **Komut:**
 ```bash
-cd apps/admin
+cd apps/sellercentral
 npm run dev
+# Then navigate to: http://localhost:3002/settings/categories
 ```
 
 **Beklenen:**
@@ -247,7 +248,7 @@ npm run dev
 
 ## ✅ YAPILAN DÜZELTMELER
 
-1. ✅ `apps/admin/src/app/page.jsx` - `"use client"` direktifi düzeltildi
+1. ✅ Platform admin features moved to SellerCentral (`apps/sellercentral/src/app/settings/categories`)
 2. ✅ `singleCategory` duplicate kontrolü yapıldı (sadece 1 tane var)
 3. ✅ Rapor güncellendi (gerçek durum yansıtıldı)
 

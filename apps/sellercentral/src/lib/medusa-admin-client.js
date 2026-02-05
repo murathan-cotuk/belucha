@@ -75,31 +75,32 @@ class MedusaAdminClient {
   }
 
   /**
-   * Product Categories (Medusa Core - deprecated, use Admin Hub)
+   * Admin Hub Categories (Platform owner managed - SINGLE SOURCE OF TRUTH)
+   * 
+   * ⚠️ Product Categories (Medusa Core) deprecated - use Admin Hub instead
    */
-  async getCategories() {
-    return this.request('/admin/product-categories')
-  }
-
-  async createCategory(data) {
-    return this.request('/admin/product-categories', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+  async getAdminHubCategories(filters = {}) {
+    const queryParams = new URLSearchParams({
+      active: 'true',
+      ...filters,
+    }).toString()
+    return this.request(`/admin-hub/v1/categories?${queryParams}`)
   }
 
   /**
-   * Admin Hub Categories (Platform owner managed)
+   * @deprecated Use getAdminHubCategories() instead
+   * Medusa product-categories endpoint (read-only, deprecated)
    */
-  async getAdminHubCategories() {
-    return this.request('/admin-hub/categories?active=true')
+  async getCategories() {
+    console.warn('⚠️  getCategories() is deprecated. Use getAdminHubCategories() instead.')
+    return this.request('/admin/product-categories')
   }
 
   /**
    * Get collections with collection pages (has_collection = true)
    */
   async getCollections() {
-    const data = await this.request('/admin-hub/categories?active=true')
+    const data = await this.request('/admin-hub/v1/categories?active=true')
     // Filter only categories that have collection pages
     const collections = (data.categories || []).filter(cat => cat.has_collection === true)
     return { collections, count: collections.length }

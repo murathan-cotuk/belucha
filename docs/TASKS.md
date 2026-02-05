@@ -27,7 +27,7 @@ STORE_CORS=https://belucha-shop.vercel.app
 
 **Development (.env.local):**
 ```
-ADMIN_CORS=http://localhost:7001,http://localhost:3002
+ADMIN_CORS=http://localhost:3002
 STORE_CORS=http://localhost:3000
 ```
 
@@ -38,7 +38,7 @@ ADMIN_CORS=https://belucha-medusa-backend.onrender.com/admin  ❌
 
 **Doğru:**
 ```
-ADMIN_CORS=https://belucha-admin.vercel.app,https://belucha-sellercentral.vercel.app  ✅
+ADMIN_CORS=https://belucha-sellercentral.vercel.app  ✅
 ```
 
 ---

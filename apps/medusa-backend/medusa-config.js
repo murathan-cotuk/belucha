@@ -27,10 +27,10 @@ module.exports = {
     // CORS configuration
     // store_cors: Frontend shop app origin (müşteri tarafı)
     store_cors: process.env.STORE_CORS || "http://localhost:3000",
-    // admin_cors: Frontend admin panel ve sellercentral origin'leri (virgülle ayrılmış, backend URL'i DEĞİL)
-    // Production: https://belucha-admin.vercel.app,https://belucha-sellercentral.vercel.app
-    // Development: http://localhost:7001,http://localhost:3002
-    admin_cors: process.env.ADMIN_CORS || "http://localhost:7001,http://localhost:3002",
+    // admin_cors: Frontend sellercentral origin (platform admin features integrated)
+    // Production: https://belucha-sellercentral.vercel.app
+    // Development: http://localhost:3002
+    admin_cors: process.env.ADMIN_CORS || "http://localhost:3002",
     
     // Database extra config (PostgreSQL SSL için)
     database_extra: process.env.DATABASE_URL?.includes('render.com') ? {
