@@ -1,35 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-// GraphQL removed - will migrate to Medusa REST API
 import styled from "styled-components";
 import { Card, Button, Input } from "@belucha/ui";
 
-const GET_BRANDS = gql`
-  query GetBrands {
-    Brands(limit: 50) {
-      docs {
-        id
-        name
-        slug
-        description
-        logo {
-          url
-        }
-      }
-    }
-  }
-`;
-
-const CREATE_BRAND = gql`
-  mutation CreateBrand($data: JSON!) {
-    createBrands(data: $data) {
-      id
-      name
-      slug
-    }
-  }
-`;
+// TODO: Migrate to Medusa REST API
+// Brand management will be available soon via Medusa backend
 
 const Container = styled.div`
   max-width: 1200px;
@@ -101,10 +77,10 @@ export default function BrandPage() {
   });
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  const { data, loading, refetch } = useQuery(GET_BRANDS);
-  const [createBrand, { loading: creating }] = useMutation(CREATE_BRAND);
-
-  const brands = data?.Brands?.docs || [];
+  // TODO: Migrate to Medusa REST API
+  const loading = false;
+  const creating = false;
+  const brands = [];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -113,20 +89,13 @@ export default function BrandPage() {
     try {
       const slug = formData.slug || formData.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
-      await createBrand({
-        variables: {
-          data: {
-            name: formData.name,
-            slug: slug,
-            description: formData.description || "",
-          },
-        },
-      });
+      // TODO: Implement Medusa REST API call
+      // const medusaClient = getMedusaAdminClient();
+      // await medusaClient.createBrand({ name: formData.name, slug, description: formData.description || "" });
 
-      setMessage({ type: "success", text: "Brand created successfully!" });
+      setMessage({ type: "info", text: "Brand management will be available soon via Medusa REST API" });
       setFormData({ name: "", slug: "", description: "" });
       setShowForm(false);
-      refetch();
     } catch (error) {
       console.error("Error creating brand:", error);
       setMessage({ type: "error", text: error.message || "An error occurred while creating the brand" });
@@ -143,8 +112,8 @@ export default function BrandPage() {
             padding: "16px",
             marginBottom: "24px",
             borderRadius: "8px",
-            backgroundColor: message.type === "success" ? "#d1fae5" : "#fee2e2",
-            color: message.type === "success" ? "#065f46" : "#991b1b",
+            backgroundColor: message.type === "success" ? "#d1fae5" : message.type === "info" ? "#dbeafe" : "#fee2e2",
+            color: message.type === "success" ? "#065f46" : message.type === "info" ? "#1e40af" : "#991b1b",
           }}
         >
           {message.text}
@@ -203,7 +172,8 @@ export default function BrandPage() {
         ) : brands.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "#6b7280" }}>
             <i className="fas fa-tag" style={{ fontSize: "48px", marginBottom: "16px", color: "#d1d5db" }} />
-            <p>No brands yet. Create your first brand to get started.</p>
+            <p style={{ fontSize: "16px", marginBottom: "8px", fontWeight: "600" }}>Brand management coming soon</p>
+            <p style={{ fontSize: "14px" }}>Brand management will be available soon via Medusa REST API</p>
           </div>
         ) : (
           <BrandsGrid>

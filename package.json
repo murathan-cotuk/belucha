@@ -10,8 +10,6 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "dependencies": {
-    "@medusajs/admin": "^7.1.18",
-    "@medusajs/admin-ui": "^2.1.18",
     "@sentry/nextjs": "^10.35.0",
     "better-sqlite3": "^12.6.2",
     "cross-env": "^7.0.3",

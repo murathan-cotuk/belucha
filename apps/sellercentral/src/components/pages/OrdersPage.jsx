@@ -1,26 +1,11 @@
 "use client";
 
 import React from "react";
-// GraphQL removed - will migrate to Medusa REST API
 import styled from "styled-components";
 import { Card } from "@belucha/ui";
 
-const GET_ORDERS = gql`
-  query GetOrders {
-    Orders(limit: 50) {
-      docs {
-        id
-        orderNumber
-        total
-        status
-        createdAt
-        customer {
-          email
-        }
-      }
-    }
-  }
-`;
+// TODO: Migrate to Medusa REST API
+// Orders management will be available soon via Medusa backend
 
 const Container = styled.div`
   max-width: 1400px;
@@ -80,8 +65,10 @@ const StatusBadge = styled.span`
 `;
 
 export default function OrdersPage() {
-  const { data, loading, error } = useQuery(GET_ORDERS);
-  const orders = data?.Orders?.docs || [];
+  // TODO: Fetch orders from Medusa REST API
+  const loading = false;
+  const error = null;
+  const orders = [];
 
   return (
     <Container>

@@ -8,10 +8,11 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 
 const MEDUSA_BACKEND_URL = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000';
+const ADMIN_HUB_API_URL = `${MEDUSA_BACKEND_URL}/admin-hub/v1`;
 
 export default function CollectionPage() {
   const params = useParams();
-  const slug = params?.slug as string;
+  const slug = params?.slug != null ? String(params.slug) : undefined;
   
   const [category, setCategory] = useState(null);
   const [products, setProducts] = useState([]);
@@ -26,11 +27,11 @@ export default function CollectionPage() {
         setLoading(true);
         
         // 1. Fetch category by slug
-        const categoryRes = await fetch(`${MEDUSA_BACKEND_URL}/admin-hub/categories?slug=${slug}`);
+        const categoryRes = await fetch(`${ADMIN_HUB_API_URL}/categories?slug=${slug}`);
         if (!categoryRes.ok) throw new Error("Category not found");
         
         const categoryData = await categoryRes.json();
-        const categoryItem = categoryData.categories?.find((c: any) => c.slug === slug);
+        const categoryItem = categoryData.categories?.find((c) => c.slug === slug);
         
         if (!categoryItem || !categoryItem.has_collection) {
           throw new Error("Collection not found");
@@ -45,8 +46,8 @@ export default function CollectionPage() {
         const productsData = await productsRes.json();
         setProducts(productsData.products || []);
         
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        setError(err?.message ?? "Error");
       } finally {
         setLoading(false);
       }

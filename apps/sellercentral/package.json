@@ -9,11 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@apollo/client": "^3.8.8",
     "@belucha/lib": "*",
     "@belucha/ui": "*",
     "autoprefixer": "^10.4.16",
-    "graphql": "^16.8.1",
     "next": "16.0.10",
     "postcss": "^8.4.32",
     "react": "^19.2.3",

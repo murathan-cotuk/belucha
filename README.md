@@ -1,6 +1,6 @@
 # Belucha - E-commerce Marketplace Monorepo
 
-A complete e-commerce marketplace platform built with Turborepo, featuring a customer-facing shop, seller dashboard, and Medusa v2 backend.
+A complete e-commerce marketplace platform built with Turborepo, featuring a customer-facing shop, seller dashboard with integrated platform admin, and Medusa v2 backend.
 
 ## 🏗️ Project Structure
 
@@ -8,13 +8,12 @@ A complete e-commerce marketplace platform built with Turborepo, featuring a cus
 belucha/
 ├── apps/
 │   ├── shop/              # Customer-facing Next.js 14 store
-│   ├── sellercentral/     # Seller dashboard Next.js 14 app
-│   ├── admin/             # Super Admin Panel (Next.js 14)
+│   ├── sellercentral/     # Seller dashboard + Platform Admin (Next.js 14)
 │   └── medusa-backend/    # Medusa v2 backend (REST API)
 ├── packages/
 │   ├── ui/                # Shared design system components
 │   ├── lib/               # Shared utilities (Stripe, SEO)
-│   └── config/            # Shared configs (Tailwind, ESLint, TypeScript)
+│   └── config/           # Shared configs (Tailwind, ESLint, TypeScript)
 └── turbo.json             # Turborepo configuration
 ```
 
@@ -50,7 +49,7 @@ belucha/
    
    PORT=9000
    STORE_CORS=http://localhost:3000
-   ADMIN_CORS=http://localhost:3002,http://localhost:7001
+   ADMIN_CORS=http://localhost:3002
    REDIS_URL=redis://localhost:6379
    JWT_SECRET=your-jwt-secret
    COOKIE_SECRET=your-cookie-secret
@@ -62,11 +61,6 @@ belucha/
    ```
 
    **`apps/sellercentral/.env.local`**
-   ```env
-   NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000
-   ```
-
-   **`apps/admin/.env.local`**
    ```env
    NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000
    ```
@@ -104,7 +98,8 @@ belucha/
    ```sql
    ALTER TABLE admin_hub_categories
    ADD COLUMN IF NOT EXISTS is_visible boolean DEFAULT true,
-   ADD COLUMN IF NOT EXISTS has_collection boolean DEFAULT false;
+   ADD COLUMN IF NOT EXISTS has_collection boolean DEFAULT false,
+   ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;
    ```
    
    **Not:** Medusa v2 bazen kendi ORM'ini kullandığı için TypeORM migration script'i uyumlu olmayabilir. O durumda SQL ile manuel ekleme yapın.
@@ -136,10 +131,9 @@ npm run dev
 ```
 
 This will start:
-- **Medusa Backend**: http://localhost:9000
+- **Medusa Backend**: http://localhost:9000 (Admin UI: http://localhost:9000/admin-ui)
 - **Shop app**: http://localhost:3000
-- **Sellercentral app**: http://localhost:3002
-- **Admin Panel**: http://localhost:7001 (or configured port)
+- **Sellercentral app**: http://localhost:3002 (includes Platform Admin features)
 
 ### Run individual apps
 
@@ -156,9 +150,6 @@ npm run dev
 
 cd apps/sellercentral
 npm run dev
-
-cd apps/admin
-npm run dev
 ```
 
 ### Build all apps
@@ -173,65 +164,62 @@ npm run build
 npm run lint
 ```
 
-### Format code
+## 📱 Applications
 
-```bash
-npm run format
-```
+### 🛍️ Shop (`apps/shop`)
 
-## 📦 Applications
-
-### 🏪 Shop App (`apps/shop`)
-
-Customer-facing e-commerce store built with Next.js 14 App Router.
+Customer-facing e-commerce store.
 
 **Features:**
 - Product browsing and search
 - Category navigation (from Admin Hub)
 - Collection pages (`/collections/:slug`)
-- Product detail pages
-- Shopping cart (to be implemented)
-- Checkout with Stripe (to be implemented)
+- Shopping cart
+- User authentication
 
 **Tech Stack:**
 - Next.js 14 (App Router)
-- Tailwind CSS + Styled Components
+- React 19
+- Tailwind CSS
 - Medusa REST API client
-- Aeonik font family
 
-### 📦 Sellercentral App (`apps/sellercentral`)
+### 🏪 SellerCentral (`apps/sellercentral`)
 
-Complete seller dashboard for managing products, orders, and analytics.
+Seller dashboard with integrated platform admin features.
 
 **Features:**
-- Dashboard with statistics
-- Inventory management
 - Product management (create, update, delete)
-- Collection assignment for products
-- Categories view (read-only, from Admin Hub)
-- Store settings
-- Seller registration
+- Order management
+- Inventory tracking
+- Analytics dashboard
+- **Platform Admin:**
+  - Category management (Settings → Categories)
+  - Banner management (Settings → Banners)
+  - Platform settings (Settings → Platform)
 
 **Tech Stack:**
 - Next.js 14 (App Router)
+- React 19
 - Tailwind CSS + Styled Components
 - Medusa REST API client
-- Shared UI components
 
-### 🎛️ Admin Panel (`apps/admin`)
+**Access Platform Admin:**
+- Navigate to: Settings → Categories / Banners / Platform
+- Uses Admin Hub API (`/admin-hub/v1/*`)
 
-Super Admin Panel for platform owners to manage global data.
+### 🎛️ Platform Admin (SellerCentral)
+
+Platform admin features are integrated into SellerCentral under Settings menu.
 
 **Features:**
-- Category management (create, update, delete)
-- Collection sync (categories with `has_collection=true`)
-- Banner management (to be implemented)
-- Platform settings (to be implemented)
+- Category management (Settings → Categories)
+- Banner management (Settings → Banners)
+- Platform settings (Settings → Platform)
+- Global metadata management
 
-**Tech Stack:**
-- Next.js 14 (App Router)
-- Tailwind CSS + Styled Components
-- Medusa REST API client
+**Access:**
+- SellerCentral → Settings → Categories/Banners/Platform
+- Uses Admin Hub API (`/admin-hub/v1/*`)
 
 ### 🔧 Medusa Backend (`apps/medusa-backend`)
 
@@ -248,100 +236,51 @@ Medusa v2 backend with REST API.
 - Medusa v2
 - TypeORM
 - PostgreSQL or SQLite
-- Express.js
 
-## 📚 Shared Packages
+**Admin UI:**
+- Access at: http://localhost:9000/admin-ui
+- Shopify-like interface for monitoring backend status and API endpoints
 
-### `@belucha/ui`
+## 📊 API Endpoints
 
-Shared design system components:
-- Button
-- Input
-- Card
-- (Extendable for more components)
+### Store API (`/store/*`)
+- `GET /store/products` - List products (with filters: `region`, `category`, `collection_id`)
 
-### `@belucha/lib`
+### Admin API (`/admin/*`)
+- `GET /admin/products` - List products
+- `POST /admin/products` - Create product
+- `GET /admin/regions` - List regions
+- `POST /admin/regions` - Create region
+- `GET /admin/product-categories` - List categories (DEPRECATED - read-only)
 
-Shared utilities and configurations:
-- **Stripe**: Payment processing and commission calculations
-- **SEO**: Meta tag generation helpers
+### Admin Hub API v1 (`/admin-hub/v1/*`)
+- `GET /admin-hub/v1/categories` - List categories (with `tree=true`, `is_visible=true` filters)
+- `POST /admin-hub/v1/categories` - Create category
+- `PUT /admin-hub/v1/categories/:id` - Update category
+- `DELETE /admin-hub/v1/categories/:id` - Delete category
+- `GET /admin-hub/v1/banners` - List banners
+- `POST /admin-hub/v1/banners` - Create banner
+- `PUT /admin-hub/v1/banners/:id` - Update banner
+- `DELETE /admin-hub/v1/banners/:id` - Delete banner
 
-### `@belucha/config`
+## 🗄️ Database Schema
 
-Shared configurations:
-- Tailwind CSS configs
-- ESLint configs
-- TypeScript configs
+Medusa v2 uses TypeORM for database management. Key entities:
 
-## 🔌 Integrations
+**Medusa Core:**
+- `product` - Products
+- `product_collection` - Collections
+- `product_category` - Product categories (DEPRECATED - use Admin Hub)
+- `region` - Regions (Medusa core)
+- `order` - Orders
 
-### PostgreSQL / SQLite
+**Custom Entities (Admin Hub):**
+- `admin_hub_categories` - Platform categories (with `has_collection`, `is_visible`)
+- `admin_hub_banners` - Platform banners
 
-Used for:
-- Primary database (via Medusa v2)
-- All data storage (products, orders, categories, regions, etc.)
-- Medusa core entities + custom Admin Hub entities
-
-### Medusa v2 REST API
-
-All apps use Medusa REST API client to consume the backend:
-- Store API (`/store/*`) - Public endpoints for shop
-- Admin API (`/admin/*`) - Admin endpoints for sellercentral
-- Admin Hub API (`/admin-hub/*`) - Super admin endpoints
-
-### Stripe
-
-Used for:
-- Payment processing (to be implemented)
-- Checkout sessions (to be implemented)
-- Seller payouts (to be implemented)
-
-## 🚢 Deployment
-
-### Backend (Medusa)
-
-Deploy to Render, Railway, or any Node.js hosting:
-
-1. **Render Deployment**
-   - Connect your GitHub repo
-   - Set root directory to `apps/medusa-backend`
-   - Build command: `npm install`
-   - Start command: `node server.js`
-   - Add environment variables (see below)
-
-2. **Database**
-   - Set up PostgreSQL (Render, Railway, or cloud provider)
-   - Update `DATABASE_URL` in environment variables
-
-### Frontend Apps (Vercel)
-
-All Next.js apps can be deployed separately on Vercel:
-
-1. **Shop App**
-   - Root directory: `apps/shop`
-   - Add `NEXT_PUBLIC_MEDUSA_BACKEND_URL`
-
-2. **Sellercentral App**
-   - Root directory: `apps/sellercentral`
-   - Add `NEXT_PUBLIC_MEDUSA_BACKEND_URL`
-
-3. **Admin Panel**
-   - Root directory: `apps/admin`
-   - Add `NEXT_PUBLIC_MEDUSA_BACKEND_URL`
-
-### Environment Variables for Production
-
-**Medusa Backend:**
-- `DATABASE_URL` - PostgreSQL connection string
-- `PORT` - Server port (default: 9000)
-- `STORE_CORS` - Shop app URL
-- `ADMIN_CORS` - Sellercentral and Admin app URLs
-- `REDIS_URL` - Redis connection string (optional)
-- `JWT_SECRET` - JWT secret key
-- `COOKIE_SECRET` - Cookie secret key
-
-**Frontend Apps:**
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL` - Medusa backend URL (e.g., `https://your-backend.onrender.com`)
+**Custom Entities (Region/Market):**
+- `regions` - Custom regions (market visibility)
+- `product_regions` - Product-region junction table
 
 ## 🔐 Security
 
@@ -350,29 +289,44 @@ All Next.js apps can be deployed separately on Vercel:
 - Enable CORS properly in production
 - Validate all user inputs
 - Use HTTPS in production
-- Secure MongoDB connection with authentication
+- Secure PostgreSQL connection with SSL (production)
 
-## 📝 Database Schema
+## 📝 Environment Variables for Production
 
-Medusa v2 uses TypeORM for database management. Key entities:
+**Medusa Backend:**
+- `DATABASE_URL` - PostgreSQL connection string
+- `PORT` - Server port (default: 9000)
+- `STORE_CORS` - Shop app URL
+- `ADMIN_CORS` - Sellercentral URLs (platform admin features are integrated)
+- `REDIS_URL` - Redis connection string (optional)
+- `JWT_SECRET` - JWT secret key
+- `COOKIE_SECRET` - Cookie secret key
 
-**Medusa Core:**
-- Products, Variants, Collections, Categories
-- Orders, Customers, Regions
+**Frontend Apps:**
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL` - Medusa backend URL (e.g., `https://your-backend.onrender.com`)
 
-**Custom Entities (Admin Hub):**
-- `admin_hub_categories` - Platform categories (with `has_collection`, `is_visible`)
-- `admin_hub_banners` - Platform banners
-- `regions` - Custom market regions
-- `product_regions` - Product-region junction table
+## 🚀 Deployment
 
-## 🧪 Testing
+### Backend (Render)
 
-(To be implemented)
+1. Connect your GitHub repository
+2. Set root directory: `apps/medusa-backend`
+3. Set build command: `npm install`
+4. Set start command: `node server.js`
+5. Add environment variables (see above)
 
-```bash
-npm run test
-```
+### Frontend Apps (Vercel)
+
+1. Connect your GitHub repository
+2. Set root directory: `apps/shop` (or `apps/sellercentral`)
+3. Set build command: `cd ../.. && npm install && npm run build --filter=@belucha/shop` (adjust filter)
+4. Add environment variables (see above)
+
+## 📚 Documentation
+
+- `docs/TASKS.md` - Current tasks and to-do list
+- `docs/RAPOR.md` - Project status report
+- `docs/PROJE.md` - Architecture and project structure
 
 ## 🤝 Contributing
 
@@ -383,21 +337,4 @@ npm run test
 
 ## 📄 License
 
-[Add your license here]
-
-## 🆘 Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Check the documentation
-- Contact support
-
-## 🔄 Updates
-
-- Keep dependencies updated regularly
-- Monitor security advisories
-- Test thoroughly before deploying
-
----
-
-**Built with ❤️ using Turborepo, Next.js, Medusa v2, PostgreSQL, and Stripe**
+Copyright (c) 2026 Belucha. All rights reserved.

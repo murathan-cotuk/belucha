@@ -332,16 +332,21 @@ const ContentArea = styled.div`
 
 const menuItems = [
   {
+    href: "/",
+    label: "Home",
+    icon: "fas fa-home",
+  },
+  {
     href: "/inventory",
     label: "Products",
     icon: "fas fa-shopping-bag",
     submenu: [
-      { href: "/inventory", label: "Inventory" },
-      { href: "/products/bulk-upload", label: "Bulk Product Upload" },
-      { href: "/products/upload-templates", label: "Upload Templates" },
-      { href: "/products/bulk-images", label: "Upload Images Bulk" },
-      { href: "/products/bulk-videos", label: "Upload Videos Bulk" },
-      { href: "/categories", label: "Categories" },
+      { href: "/inventory", label: "All products" },
+      { href: "/products/single-upload", label: "Add product" },
+      { href: "/products/bulk-upload", label: "Bulk upload" },
+      { href: "/products/upload-templates", label: "Upload templates" },
+      { href: "/products/bulk-images", label: "Bulk images" },
+      { href: "/products/bulk-videos", label: "Bulk videos" },
     ],
   },
   {
@@ -349,31 +354,15 @@ const menuItems = [
     label: "Orders",
     icon: "fas fa-shopping-cart",
     submenu: [
-      { href: "/orders", label: "Orders Dashboard" },
+      { href: "/orders", label: "All orders" },
       { href: "/orders/reports", label: "Reports" },
       { href: "/orders/returns", label: "Returns" },
     ],
   },
   {
-    href: "/advertise",
-    label: "Advertise",
-    icon: "fas fa-bullhorn",
-    submenu: [
-      { href: "/advertise/google", label: "Google Ads" },
-      { href: "/advertise/meta", label: "Meta (Facebook/Instagram)" },
-      { href: "/advertise/tiktok", label: "TikTok Ads" },
-      { href: "/advertise/pinterest", label: "Pinterest Ads" },
-    ],
-  },
-  {
-    href: "/stores",
-    label: "Stores",
-    icon: "fas fa-store",
-  },
-  {
-    href: "/brands",
-    label: "Brands",
-    icon: "fas fa-tag",
+    href: "/customers",
+    label: "Customers",
+    icon: "fas fa-users",
   },
   {
     href: "/analytics",
@@ -381,9 +370,40 @@ const menuItems = [
     icon: "fas fa-chart-line",
   },
   {
+    href: "/marketing",
+    label: "Marketing",
+    icon: "fas fa-bullhorn",
+    submenu: [
+      { href: "/advertise/google", label: "Google Ads" },
+      { href: "/advertise/meta", label: "Meta Ads" },
+      { href: "/advertise/tiktok", label: "TikTok Ads" },
+      { href: "/advertise/pinterest", label: "Pinterest Ads" },
+    ],
+  },
+  {
+    href: "/discounts",
+    label: "Discounts",
+    icon: "fas fa-tag",
+  },
+  {
     href: "/apps",
     label: "Apps",
     icon: "fas fa-th",
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: "fas fa-cog",
+    submenu: [
+      { href: "/settings/general", label: "General" },
+      { href: "/settings/account", label: "Account" },
+      { href: "/settings/notifications", label: "Notifications" },
+      { href: "/settings/payments", label: "Payments" },
+      { href: "/settings/shipping", label: "Shipping" },
+      { href: "/settings/platform", label: "Platform Settings" },
+      { href: "/settings/categories", label: "Categories" },
+      { href: "/settings/banners", label: "Banners" },
+    ],
   },
 ];
 

@@ -1,10 +1,11 @@
 /**
  * Medusa v2 Backend Server
  * 
- * GERÇEK Medusa v2 framework kullanıyor
+ * Sadece bootstrap - Medusa lifecycle'a müdahale etmiyor
+ * Loader'lar Medusa tarafından otomatik keşfedilip yüklenir
  */
 
-// Environment variables yükle (en üstte)
+// Environment variables yükle
 require('dotenv').config()
 try {
   require('dotenv').config({ path: '.env.local' })
@@ -22,87 +23,27 @@ async function start() {
   try {
     console.log('\n🚀 Medusa v2 backend başlatılıyor...\n')
 
-    // Config ve PostgreSQL bağlantısını yükle (MedusaAppLoader'dan önce)
-    try {
-      // Medusa v2 config loader'ını dene
-      let configLoader
-      try {
-        configLoader = require('@medusajs/framework/dist/config/loader').configLoader
-      } catch (e1) {
-        try {
-          configLoader = require('@medusajs/framework/config/loader').configLoader
-        } catch (e2) {
-          // Config loader bulunamadı, MedusaAppLoader kendi yükler
-          console.log('ℹ️  Config loader bulunamadı, MedusaAppLoader kendi yükleyecek')
-        }
-      }
-
-      if (configLoader) {
-        console.log('📋 Config yükleniyor...')
-        await configLoader(path.resolve(__dirname), 'medusa-config')
-        console.log('✅ Config yüklendi')
-      }
-
-      // PostgreSQL connection loader'ını dene
-      let pgConnectionLoader
-      try {
-        pgConnectionLoader = require('@medusajs/framework/dist/database/pg-connection-loader').pgConnectionLoader
-      } catch (e1) {
-        try {
-          pgConnectionLoader = require('@medusajs/framework/database/pg-connection-loader').pgConnectionLoader
-        } catch (e2) {
-          // PG connection loader bulunamadı, MedusaAppLoader kendi yükler
-          console.log('ℹ️  PG connection loader bulunamadı, MedusaAppLoader kendi yükleyecek')
-        }
-      }
-
-      if (pgConnectionLoader) {
-        console.log('🗄️  PostgreSQL bağlantısı yükleniyor...')
-        await pgConnectionLoader()
-        console.log('✅ PostgreSQL bağlantısı yüklendi')
-      }
-    } catch (configError) {
-      console.warn('⚠️  Config/PG loader hatası (MedusaAppLoader kendi yükleyecek):', configError.message)
-    }
-
-    // MedusaAppLoader'ı başlat
+    // MedusaAppLoader - framework kendi lifecycle'ını yönetir
+    // Loader'lar (loaders/*.ts) otomatik keşfedilip yüklenir
     const app = new MedusaAppLoader({
       directory: path.resolve(__dirname),
-      // Alternatif: medusaConfigPath ve cwd kullanılabilir
-      // medusaConfigPath: path.join(__dirname, 'medusa-config.js'),
-      // cwd: __dirname,
     })
 
-    const { app: expressApp, container } = await app.load()
+    const { app: expressApp } = await app.load()
 
-    // RegionService'in register edildiğini kontrol et
-    try {
-      const regionService = container.resolve("regionService")
-      console.log("✅ RegionService container'da mevcut")
-    } catch (e) {
-      console.warn("⚠️  RegionService container'da bulunamadı, loader çalıştırılıyor...")
-      const regionServiceLoader = require("./loaders/region-service-loader").default
-      await regionServiceLoader(container)
-    }
-
-    // AdminHubService'in register edildiğini kontrol et
-    try {
-      const adminHubService = container.resolve("adminHubService")
-      console.log("✅ AdminHubService container'da mevcut")
-    } catch (e) {
-      console.warn("⚠️  AdminHubService container'da bulunamadı, loader çalıştırılıyor...")
-      const adminHubServiceLoader = require("./loaders/admin-hub-service-loader").default
-      await adminHubServiceLoader(container)
-    }
+    // Static files (admin UI)
+    const express = require('express')
+    expressApp.use('/admin-ui', express.static(path.join(__dirname, 'public')))
 
     // Server'ı başlat
     expressApp.listen(PORT, HOST, () => {
-      console.log(`\n✅ GERÇEK Medusa v2 backend başarıyla başlatıldı!`)
+      console.log(`\n✅ Medusa v2 backend başarıyla başlatıldı!`)
       console.log(`📍 Listening on ${HOST}:${PORT}`)
       console.log(`🌐 Health check: http://localhost:${PORT}/health`)
       console.log(`🛍️  Store API: http://localhost:${PORT}/store`)
       console.log(`⚙️  Admin API: http://localhost:${PORT}/admin`)
-      console.log(`\n📝 Mode: GERÇEK Medusa v2 (Production-ready)`)
+      console.log(`📊 Admin UI: http://localhost:${PORT}/admin-ui`)
+      console.log(`\n📝 Mode: Production-ready Medusa v2`)
       console.log(`🗄️  Database: ${process.env.DATABASE_TYPE || 'PostgreSQL'}`)
       console.log(`\n✅ Sellercentral → Medusa ProductService → PostgreSQL → Shop app`)
       console.log(`🌍 Region/Market desteği aktif`)
@@ -111,18 +52,17 @@ async function start() {
       console.log(`   GET /admin/regions - Region'ları listele`)
       console.log(`   POST /admin/regions/:id/products - Ürünü region'a bağla`)
       console.log(`   DELETE /admin/regions/:id/products/:productId - Ürünü region'dan ayır`)
-      console.log(`   GET /admin/product-categories - Kategorileri listele`)
-      console.log(`   POST /admin/product-categories - Yeni kategori oluştur`)
+      console.log(`   GET /admin/product-categories - Kategorileri listele (DEPRECATED - read-only)`)
       console.log(`   GET /store/products?region=DE - Medusa ProductService + RegionService filtre`)
-      console.log(`\n🎯 Admin Hub Endpoints (Super Admin):`)
-      console.log(`   GET /admin-hub/categories - Kategorileri listele`)
-      console.log(`   POST /admin-hub/categories - Yeni kategori oluştur`)
-      console.log(`   PUT /admin-hub/categories/:id - Kategori güncelle`)
-      console.log(`   DELETE /admin-hub/categories/:id - Kategori sil`)
-      console.log(`   GET /admin-hub/banners - Banner'ları listele`)
-      console.log(`   POST /admin-hub/banners - Yeni banner oluştur`)
-      console.log(`   PUT /admin-hub/banners/:id - Banner güncelle`)
-      console.log(`   DELETE /admin-hub/banners/:id - Banner sil\n`)
+      console.log(`\n🎯 Admin Hub API v1 (Super Admin - Single Source of Truth):`)
+      console.log(`   GET /admin-hub/v1/categories - Kategorileri listele`)
+      console.log(`   POST /admin-hub/v1/categories - Yeni kategori oluştur`)
+      console.log(`   PUT /admin-hub/v1/categories/:id - Kategori güncelle`)
+      console.log(`   DELETE /admin-hub/v1/categories/:id - Kategori sil`)
+      console.log(`   GET /admin-hub/v1/banners - Banner'ları listele`)
+      console.log(`   POST /admin-hub/v1/banners - Yeni banner oluştur`)
+      console.log(`   PUT /admin-hub/v1/banners/:id - Banner güncelle`)
+      console.log(`   DELETE /admin-hub/v1/banners/:id - Banner sil\n`)
     })
 
     // Graceful shutdown

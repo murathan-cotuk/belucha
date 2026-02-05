@@ -272,7 +272,7 @@ export default function Navbar() {
       try {
         setLoading(true);
         const MEDUSA_BACKEND_URL = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000';
-        const response = await fetch(`${MEDUSA_BACKEND_URL}/admin-hub/categories?tree=true&is_visible=true`);
+        const response = await fetch(`${MEDUSA_BACKEND_URL}/admin-hub/v1/categories?tree=true&is_visible=true`);
         if (!response.ok) throw new Error("Failed to fetch categories");
         
         const data = await response.json();
@@ -318,7 +318,7 @@ export default function Navbar() {
           {loading ? (
             <span style={{ color: "#6b7280" }}>Loading...</span>
           ) : categories.length > 0 ? (
-            categories.map((category: any) => {
+            categories.map((category) => {
               const hasChildren = category.children && category.children.length > 0;
               const hasCollection = category.has_collection;
               
@@ -336,7 +336,7 @@ export default function Navbar() {
                           {category.name} (All)
                         </SubcategoryLink>
                       )}
-                      {category.children.map((child: any) => (
+                      {category.children.map((child) => (
                         <SubcategoryLink
                           key={child.id}
                           href={child.has_collection ? `/collections/${child.slug}` : '#'}

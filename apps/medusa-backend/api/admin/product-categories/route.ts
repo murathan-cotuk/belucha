@@ -1,10 +1,13 @@
 /**
- * Admin API: Product Categories
+ * Admin API: Product Categories (DEPRECATED - Salt Read-Only)
  * 
- * GET /admin/product-categories - Tüm kategorileri listele
- * POST /admin/product-categories - Yeni kategori oluştur
+ * ⚠️ DEPRECATED: Bu endpoint sadece okuma için kullanılmalı.
+ * Kategori oluşturma/güncelleme Admin Hub üzerinden yapılmalı.
  * 
- * Medusa v2 ProductCategoryService kullanıyor
+ * GET /admin/product-categories - Tüm kategorileri listele (read-only)
+ * POST /admin/product-categories - DEPRECATED (kullanmayın, Admin Hub kullanın)
+ * 
+ * Medusa v2 ProductCategoryService kullanıyor (read-only)
  */
 
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
@@ -14,7 +17,8 @@ export async function GET(
   res: MedusaResponse
 ): Promise<void> {
   try {
-    console.log("📋 Product categories endpoint çağrıldı")
+    // DEPRECATED: Bu endpoint salt read-only, yeni kullanım için Admin Hub kullanın
+    console.log("⚠️  DEPRECATED: /admin/product-categories (use /admin-hub/v1/categories)")
     
     // Medusa v2'de ProductCategoryService'i container'dan al
     // Medusa v2'de service adı: "productCategoryService" veya module service olabilir
@@ -78,29 +82,10 @@ export async function POST(
   req: MedusaRequest,
   res: MedusaResponse
 ): Promise<void> {
-  try {
-    const productCategoryService = req.scope.resolve("productCategoryService")
-    const { name, handle, description, parent_id } = req.body
-
-    if (!name || !handle) {
-      res.status(400).json({
-        message: "name ve handle zorunludur",
-      })
-      return
-    }
-
-    const category = await productCategoryService.create({
-      name,
-      handle,
-      description,
-      parent_category_id: parent_id,
-    })
-
-    res.status(201).json({ product_category: category })
-  } catch (error) {
-    console.error("Product category creation error:", error)
-    res.status(500).json({
-      message: error.message || "Internal server error",
-    })
-  }
+  // DEPRECATED: Kategori oluşturma Admin Hub üzerinden yapılmalı
+  res.status(410).json({
+    message: "This endpoint is deprecated. Use /admin-hub/v1/categories instead.",
+    deprecated: true,
+    alternative: "/admin-hub/v1/categories",
+  })
 }
