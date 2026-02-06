@@ -8,7 +8,7 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{js,jsx,md}\"",
     "clean": "turbo run clean && rm -rf node_modules",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package || true"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.35.0",
@@ -17,11 +17,11 @@
     "dotenv": "^17.2.3",
     "medusa": "^0.0.3",
     "next": "16.0.10",
+    "patch-package": "^8.0.1",
     "scheduler": "^0.27.0"
   },
   "devDependencies": {
     "@turbo/gen": "^2.6.1",
-    "patch-package": "^8.0.1",
     "prettier": "^3.0.0",
     "turbo": "^2.6.1"
   },
