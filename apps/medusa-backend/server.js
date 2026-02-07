@@ -1,8 +1,7 @@
 /**
- * Medusa v2 Backend Server (opsiyonel – local’de "npm run dev" / medusa develop önerilir)
- *
- * Render’da "medusa start" kullanılır; bu dosya production’da çalıştırılmaz.
- * Sadece dotenv + MedusaAppLoader + listen + graceful shutdown.
+ * Medusa v2 Backend Server
+ * dotenv + MedusaAppLoader + app.load() + listen + graceful shutdown.
+ * Render: Start Command = node server.js
  */
 
 require('dotenv').config()
