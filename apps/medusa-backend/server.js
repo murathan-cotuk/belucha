@@ -9,7 +9,7 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-const { MedusaAppLoader } = require('@medusajs/framework')
+const { MedusaAppLoader, configLoader } = require('@medusajs/framework')
 const path = require('path')
 
 const PORT = process.env.PORT || 9000
@@ -18,6 +18,7 @@ const HOST = process.env.HOST || '0.0.0.0'
 async function start() {
   try {
     console.log('\n🚀 Medusa v2 backend başlatılıyor...\n')
+    await configLoader(path.resolve(__dirname), 'medusa-config')
     const app = new MedusaAppLoader({
       cwd: path.resolve(__dirname),
     })

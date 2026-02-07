@@ -16,7 +16,7 @@ class MedusaClient {
   constructor(baseURL = MEDUSA_BACKEND_URL) {
     this.baseURL = baseURL
   }
-
+ 
   /**
    * Generic API request helper
    */
