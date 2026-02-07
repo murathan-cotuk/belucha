@@ -20,6 +20,7 @@
     "@medusajs/auth-emailpass": "^2.0.0",
     "@medusajs/cli": "^2.13.1",
     "@medusajs/file-local": "^2.0.0",
+    "@medusajs/fulfillment-manual": "^2.0.0",
     "@medusajs/framework": "^2.13.1",
     "@medusajs/medusa": "^2.13.1",
     "@medusajs/notification-local": "^2.0.0",
