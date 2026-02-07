@@ -11,17 +11,19 @@ const backends = [
 let written = false
 for (const medusaDir of backends) {
   if (fs.existsSync(medusaDir)) {
+    const filePath = path.join(medusaDir, 'link-modules.js')
     try {
-      fs.writeFileSync(path.join(medusaDir, 'link-modules.js'), content)
+      fs.writeFileSync(filePath, content)
       console.log('patch-link-modules: wrote', medusaDir)
       written = true
     } catch (e) {
-      console.warn('patch-link-modules:', e.message)
+      console.error('patch-link-modules: failed to write', filePath, e.message)
+      process.exit(1)
     }
   }
 }
 if (!written) {
-  console.warn('patch-link-modules: @medusajs/medusa not found in backend or root node_modules, skip')
+  console.error('patch-link-modules: @medusajs/medusa not found in backend or root node_modules')
+  process.exit(1)
 }
-
 process.exit(0)
