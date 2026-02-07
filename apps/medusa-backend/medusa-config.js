@@ -21,7 +21,7 @@ const SERVER_URL =
   process.env.SERVER_URL ||
   (process.env.PORT ? `http://${HOST}:${PORT}` : "http://localhost:9000")
 
-const databaseUrl = process.env.DATABASE_URL || "file:./medusa.db"
+const databaseUrl = process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/medusa"
 const isPostgres = databaseUrl.startsWith("postgres")
 const isRender = databaseUrl.includes("render.com")
 
