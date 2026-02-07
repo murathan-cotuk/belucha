@@ -236,9 +236,10 @@ belucha/
 
 **Render deploy:**
 
-- **Build Command:** `npm install && npm run patch` (postinstall bazen atlanabildiği için patch'i açıkça çalıştırmak link-modules yamasını garanti eder).
-- **Start Command:** `node server.js`
-- **Root Directory:** `apps/medusa-backend`
+- **Root Directory:** `apps/medusa-backend` **veya** repo kökü. Repo kökü ise Start = `node apps/medusa-backend/server.js` (veya `cd apps/medusa-backend && node server.js`).
+- **Build Command (repo köküyse):** `npm install && npm run patch:backend` (kök package.json'daki patch:backend, link-modules yamasını repo root node_modules'a yazar).
+- **Build Command (Root = apps/medusa-backend ise):** `npm install && npm run patch`.
+- **Start Command:** `node server.js` (Root = apps/medusa-backend) veya `node apps/medusa-backend/server.js` (Root = repo kökü).
 - **Migration:** Tek seferlik yapıldı; schema değişince lokal veya Render Shell'den manuel: `npm run db:migrate` (medusa-backend dizininde, DATABASE_URL set).
 - **Environment:** DATABASE_URL, NODE_ENV, JWT_SECRET, COOKIE_SECRET, STORE_CORS, ADMIN_CORS, AUTH_CORS, NODE_OPTIONS (PORT Render tarafından verilir).
 
