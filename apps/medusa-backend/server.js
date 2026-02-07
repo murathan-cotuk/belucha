@@ -9,7 +9,7 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-const { MedusaAppLoader, configLoader } = require('@medusajs/framework')
+const { MedusaAppLoader, configLoader, pgConnectionLoader } = require('@medusajs/framework')
 const path = require('path')
 
 const PORT = process.env.PORT || 9000
@@ -19,6 +19,7 @@ async function start() {
   try {
     console.log('\n🚀 Medusa v2 backend başlatılıyor...\n')
     await configLoader(path.resolve(__dirname), 'medusa-config')
+    await pgConnectionLoader()
     const app = new MedusaAppLoader({
       cwd: path.resolve(__dirname),
     })

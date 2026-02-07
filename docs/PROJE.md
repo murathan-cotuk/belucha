@@ -234,7 +234,13 @@ belucha/
 - **REDIS_URL:** Production'da event/job için Redis kullanılacaksa doldur; yoksa boş bırakıp in-memory ile devam edilebilir (tek instance için genelde yeterli).
 - **JWT_SECRET / COOKIE_SECRET:** Production'da güçlü, rastgele değerler kullan.
 
-Build/Start: Root Directory boş (repo kökü) veya `apps/medusa-backend`; kökte `npm install` çalışıyorsa workspace'ler yükleneceği için backend bağımlılıkları da dahil edilir.
+**Render deploy:**
+
+- **Build Command:** `npm install`
+- **Start Command:** `node server.js`
+- **Root Directory:** `apps/medusa-backend`
+- **Migration:** Tek seferlik yapıldı; schema değişince lokal veya Render Shell'den manuel: `npm run db:migrate` (medusa-backend dizininde, DATABASE_URL set).
+- **Environment:** DATABASE_URL, NODE_ENV, JWT_SECRET, COOKIE_SECRET, STORE_CORS, ADMIN_CORS, AUTH_CORS, NODE_OPTIONS (PORT Render tarafından verilir).
 
 **Vercel (Shop / SellerCentral):**
 
