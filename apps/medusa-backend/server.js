@@ -136,6 +136,7 @@ const { MedusaAppLoader, configLoader, pgConnectionLoader, container } = require
 const { logger } = require('@medusajs/framework/logger')
 const { asValue } = require('@medusajs/framework/awilix')
 const { ContainerRegistrationKeys } = require('@medusajs/utils')
+const express = require('express')
 
 const PORT = process.env.PORT || 9000
 const HOST = process.env.HOST || '0.0.0.0'
@@ -148,35 +149,34 @@ async function start() {
     if (!container.hasRegistration(ContainerRegistrationKeys.LOGGER)) {
       container.register(ContainerRegistrationKeys.LOGGER, asValue(logger))
     }
-    const app = new MedusaAppLoader({
-      cwd: path.resolve(__dirname),
-    })
-    let expressApp
+
+    const app = express()
+    const appLoader = new MedusaAppLoader({ cwd: path.resolve(__dirname) })
+
+    let medusaApp
     try {
-      const result = await app.load()
-      expressApp = result && result.app
+      medusaApp = await appLoader.load()
     } catch (loadErr) {
       console.error('\n❌ app.load() failed:', loadErr.code || loadErr.name, loadErr.message)
       if (loadErr.stack) console.error(loadErr.stack)
-      console.error('\n❌ MedusaAppLoader did not return Express app (e.g. link-modules failed)')
       process.exit(1)
     }
-    if (!expressApp) {
-      console.error('\n❌ MedusaAppLoader did not return Express app (e.g. link-modules failed)')
-      process.exit(1)
-    }
-    expressApp.listen(PORT, HOST, () => {
+
+    const { expressLoader } = require('@medusajs/framework/http')
+    const { app: httpApp } = await expressLoader({ app, container })
+
+    httpApp.listen(PORT, HOST, () => {
       console.log(`\n✅ Medusa v2 backend başarıyla başlatıldı!`)
       console.log(`📍 Listening on ${HOST}:${PORT}\n`)
     })
 
     process.on('SIGTERM', () => {
       console.log('\nSIGTERM received, shutting down gracefully')
-      expressApp.close(() => { process.exit(0) })
+      httpApp.close(() => { process.exit(0) })
     })
     process.on('SIGINT', () => {
       console.log('\nSIGINT received, shutting down gracefully')
-      expressApp.close(() => { process.exit(0) })
+      httpApp.close(() => { process.exit(0) })
     })
   } catch (error) {
     console.error('\n❌ Medusa v2 başlatma hatası:', error.code || error.name, error.message)
