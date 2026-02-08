@@ -9,18 +9,17 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-// Runtime patch: @medusajs/medusa/link-modules (dosya + package.json exports) — @medusajs require öncesi
+// Runtime patch: @medusajs/medusa/link-modules — her bulunan kopyaya uygula (backend + repo root)
 const path = require('path')
 const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
 let patchApplied = false
 let dir = __dirname
-for (let d = 0; d < 10; d++) {
+while (dir) {
   const medusaDir = path.join(dir, 'node_modules', '@medusajs', 'medusa')
   if (fs.existsSync(medusaDir)) {
     try {
-      const filePath = path.join(medusaDir, 'link-modules.js')
-      fs.writeFileSync(filePath, linkContent)
+      fs.writeFileSync(path.join(medusaDir, 'link-modules.js'), linkContent)
       const pkgPath = path.join(medusaDir, 'package.json')
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
       if (!pkg.exports) pkg.exports = {}
@@ -31,17 +30,16 @@ for (let d = 0; d < 10; d++) {
       console.log('link-modules patch applied at:', medusaDir)
       patchApplied = true
     } catch (e) {
-      console.error('link-modules runtime patch failed:', e.message)
+      console.error('link-modules runtime patch failed:', medusaDir, e.message)
       process.exit(1)
     }
-    break
   }
   const parent = path.dirname(dir)
   if (parent === dir) break
   dir = parent
 }
 if (!patchApplied) {
-  console.error('link-modules patch: @medusajs/medusa not found in node_modules (walked from __dirname)')
+  console.error('link-modules patch: @medusajs/medusa not found (walked from __dirname)')
   process.exit(1)
 }
 
