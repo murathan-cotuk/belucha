@@ -9,15 +9,22 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-// Require hook: @medusajs/medusa/link-modules -> @medusajs/link-modules (read-only FS'te bile çalışır)
+// Require hook: @medusajs/medusa/link-modules -> @medusajs/link-modules (require ve require.resolve)
 const Module = require('module')
 const origRequire = Module.prototype.require
-Module.prototype.require = function (id) {
+const patchedRequire = function (id) {
   if (id === '@medusajs/medusa/link-modules') {
     return origRequire.call(this, '@medusajs/link-modules')
   }
   return origRequire.apply(this, arguments)
 }
+patchedRequire.resolve = function (id, options) {
+  if (id === '@medusajs/medusa/link-modules') {
+    return origRequire.resolve.call(this, '@medusajs/link-modules', options)
+  }
+  return origRequire.resolve.apply(this, arguments)
+}
+Module.prototype.require = patchedRequire
 
 // Runtime patch: tüm kopyalara da yaz (yazılabiliyorsa); hook yoksa yedek
 const path = require('path')
