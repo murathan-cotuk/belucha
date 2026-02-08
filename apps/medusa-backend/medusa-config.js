@@ -27,6 +27,7 @@ const isRender = databaseUrl.includes("render.com")
 
 // defineConfig yoksa (eski sürüm) düz export
 let config = {
+  linkModules: { enabled: false },
   projectConfig: {
     databaseUrl,
     databaseDriverOptions:

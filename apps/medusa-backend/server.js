@@ -119,7 +119,7 @@ async function start() {
     })
     let expressApp
     try {
-      const result = await app.load()
+      const result = await app.load({ skipLinks: true })
       expressApp = result && result.app
     } catch (loadErr) {
       console.error('\n❌ app.load() failed:', loadErr.code || loadErr.name, loadErr.message)
