@@ -57,4 +57,21 @@ if (!written) {
   console.error('patch-link-modules: @medusajs/medusa not found (walked from __dirname and cwd)')
   process.exit(1)
 }
+
+// Render bazen Start Command yerine "npm run start" çalıştırıyor; root package.json'da start olsun
+const rootPkgPath = path.join(repoRoot, 'package.json')
+if (fs.existsSync(rootPkgPath)) {
+  try {
+    const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'))
+    if (!rootPkg.scripts) rootPkg.scripts = {}
+    if (rootPkg.scripts.start !== 'node apps/medusa-backend/server.js') {
+      rootPkg.scripts.start = 'node apps/medusa-backend/server.js'
+      fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2))
+      console.log('patch-link-modules: set start script in root package.json')
+    }
+  } catch (e) {
+    console.warn('patch-link-modules: could not update root package.json', e.message)
+  }
+}
+
 process.exit(0)
