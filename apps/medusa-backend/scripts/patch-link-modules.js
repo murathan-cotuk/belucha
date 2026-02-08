@@ -18,9 +18,13 @@ function findMedusaDirs(startDir, maxDepth = 10) {
   return found
 }
 
+// Script is at apps/medusa-backend/scripts/ — repo root is ../../..
+const repoRoot = path.resolve(__dirname, '..', '..', '..')
+const rootMedusa = path.join(repoRoot, 'node_modules', '@medusajs', 'medusa')
+
 const fromScript = findMedusaDirs(__dirname)
 const fromCwd = findMedusaDirs(process.cwd())
-const medusaDirs = [...fromScript, ...fromCwd]
+const medusaDirs = [...new Set([...fromScript, ...fromCwd, ...(fs.existsSync(rootMedusa) ? [rootMedusa] : [])])]
 
 let written = false
 for (const medusaDir of medusaDirs) {

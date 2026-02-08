@@ -29,9 +29,14 @@ function collectMedusaDirs(startDir, maxDepth = 15) {
   return found
 }
 
+// Repo root (server.js is always under apps/medusa-backend): Node resolves from root node_modules
+const repoRoot = path.resolve(__dirname, '..', '..')
+const rootMedusa = path.join(repoRoot, 'node_modules', '@medusajs', 'medusa')
+
 const allMedusaDirs = new Set([
   ...collectMedusaDirs(__dirname),
-  ...collectMedusaDirs(process.cwd())
+  ...collectMedusaDirs(process.cwd()),
+  ...(fs.existsSync(rootMedusa) ? [rootMedusa] : [])
 ])
 
 let patchApplied = false
