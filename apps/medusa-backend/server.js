@@ -10,21 +10,37 @@ try {
 } catch (e) {}
 
 const path = require('path')
+const fs = require('fs')
 
 let backendLinkModulesPath
 try {
   backendLinkModulesPath = require.resolve('@medusajs/link-modules', { paths: [__dirname] })
 } catch (_) {
-  backendLinkModulesPath = null
+  const distIndex = path.resolve(__dirname, 'node_modules', '@medusajs', 'link-modules', 'dist', 'index.js')
+  if (fs.existsSync(distIndex)) {
+    backendLinkModulesPath = distIndex
+  } else {
+    const pkgDir = path.join(__dirname, 'node_modules', '@medusajs', 'link-modules')
+    const pkgPath = path.join(pkgDir, 'package.json')
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+        const main = pkg.main || pkg.module || 'dist/index.js'
+        const candidate = path.resolve(pkgDir, main)
+        if (fs.existsSync(candidate)) backendLinkModulesPath = candidate
+      } catch (__) {}
+    }
+  }
+  if (typeof backendLinkModulesPath === 'undefined') backendLinkModulesPath = null
 }
 
-// Require hook: @medusajs/medusa/link-modules -> backend'deki @medusajs/link-modules (mutlak path) veya fallback
+// Require hook: @medusajs/medusa/link-modules -> { discoveryPath } (framework bu path'i yükleyip resources doldurur)
 const Module = require('module')
 const origRequire = Module.prototype.require
 const patchedRequire = function (id) {
   if (id === '@medusajs/medusa/link-modules') {
     if (backendLinkModulesPath) {
-      return origRequire.call(this, backendLinkModulesPath)
+      return { discoveryPath: backendLinkModulesPath }
     }
     return origRequire.call(this, '@medusajs/link-modules')
   }
@@ -40,7 +56,6 @@ patchedRequire.resolve = function (id, options) {
 Module.prototype.require = patchedRequire
 
 // Runtime patch: tüm kopyalara da yaz (yazılabiliyorsa); hook yoksa yedek
-const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
 
 function collectNodeModulesRoots(startDir, maxDepth = 15) {
@@ -138,7 +153,7 @@ async function start() {
     })
     let expressApp
     try {
-      const result = await app.load({ skipLinks: true })
+      const result = await app.load()
       expressApp = result && result.app
     } catch (loadErr) {
       console.error('\n❌ app.load() failed:', loadErr.code || loadErr.name, loadErr.message)
