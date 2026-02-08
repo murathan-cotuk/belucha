@@ -9,7 +9,17 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-// Runtime patch: @medusajs/medusa/link-modules — tüm kopyaları bul (üst + nested) ve hepsine uygula
+// Require hook: @medusajs/medusa/link-modules -> @medusajs/link-modules (read-only FS'te bile çalışır)
+const Module = require('module')
+const origRequire = Module.prototype.require
+Module.prototype.require = function (id) {
+  if (id === '@medusajs/medusa/link-modules') {
+    return origRequire.call(this, '@medusajs/link-modules')
+  }
+  return origRequire.apply(this, arguments)
+}
+
+// Runtime patch: tüm kopyalara da yaz (yazılabiliyorsa); hook yoksa yedek
 const path = require('path')
 const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
