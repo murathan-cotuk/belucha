@@ -1,0 +1,14 @@
+# Render Blueprint – Medusa backend (opsiyonel: New > Blueprint ile kullan)
+# Dashboard'da manuel servis kullanıyorsan Build/Start'ı aşağıdaki gibi ayarla.
+services:
+  - type: web
+    name: medusa-backend
+    runtime: node
+    # Root Directory: boş (repo kökü)
+    buildCommand: npm install && node apps/medusa-backend/scripts/patch-link-modules.js
+    startCommand: node apps/medusa-backend/server.js
+    envVars:
+      - key: PORT
+        generateValue: true
+      - key: NODE_ENV
+        value: production

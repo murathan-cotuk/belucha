@@ -8,7 +8,7 @@ Repo'da `workspaces` kullanıldığı için Node modülleri **repo root** (`/opt
 
 - **Root Directory:** *boş bırak* (repo kökü; alanı sil veya boş bırak).
 - **Build Command:** `npm install && node apps/medusa-backend/scripts/patch-link-modules.js`
-- **Start Command:** `node apps/medusa-backend/server.js`
+- **Start Command:** **Mutlaka** `node apps/medusa-backend/server.js` yaz. Alanı boş bırakma; boş bırakırsan Render `npm run start` çalıştırır ve "Missing script: start" hatası alabilirsin.
 
 Bu ayarla:
 - Build repo root'ta çalışır, tek `node_modules` root'ta oluşur.
