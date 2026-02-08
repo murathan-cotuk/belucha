@@ -18,7 +18,6 @@ function findMedusaDirs(startDir, maxDepth = 10) {
   return found
 }
 
-// Root = apps/medusa-backend: modüller bazen repo kökünde (src/node_modules). Script __dirname ve cwd üzerinden yukarı çıkıp hepsini patch'le.
 const fromScript = findMedusaDirs(__dirname)
 const fromCwd = findMedusaDirs(process.cwd())
 const medusaDirs = [...fromScript, ...fromCwd]
@@ -32,6 +31,21 @@ for (const medusaDir of medusaDirs) {
     written = true
   } catch (e) {
     console.error('patch-link-modules: failed to write', filePath, e.message)
+    process.exit(1)
+  }
+
+  const pkgPath = path.join(medusaDir, 'package.json')
+  try {
+    const pkgRaw = fs.readFileSync(pkgPath, 'utf8')
+    const pkg = JSON.parse(pkgRaw)
+    if (!pkg.exports) pkg.exports = {}
+    if (typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
+      pkg.exports['./link-modules'] = './link-modules.js'
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
+      console.log('patch-link-modules: updated exports in', pkgPath)
+    }
+  } catch (e) {
+    console.error('patch-link-modules: failed to update package.json', pkgPath, e.message)
     process.exit(1)
   }
 }
