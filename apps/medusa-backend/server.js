@@ -9,37 +9,51 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-// Runtime patch: @medusajs/medusa/link-modules — her bulunan kopyaya uygula (backend + repo root)
+// Runtime patch: @medusajs/medusa/link-modules — __dirname ve process.cwd()'den yukarı çık, her bulunan kopyaya uygula
 const path = require('path')
 const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
-let patchApplied = false
-let dir = __dirname
-while (dir) {
-  const medusaDir = path.join(dir, 'node_modules', '@medusajs', 'medusa')
-  if (fs.existsSync(medusaDir)) {
-    try {
-      fs.writeFileSync(path.join(medusaDir, 'link-modules.js'), linkContent)
-      const pkgPath = path.join(medusaDir, 'package.json')
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-      if (!pkg.exports) pkg.exports = {}
-      if (typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
-        pkg.exports['./link-modules'] = './link-modules.js'
-        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
-      }
-      console.log('link-modules patch applied at:', medusaDir)
-      patchApplied = true
-    } catch (e) {
-      console.error('link-modules runtime patch failed:', medusaDir, e.message)
-      process.exit(1)
-    }
+
+function collectMedusaDirs(startDir, maxDepth = 15) {
+  const found = new Set()
+  let dir = startDir
+  let depth = 0
+  while (dir && depth < maxDepth) {
+    const medusaDir = path.join(dir, 'node_modules', '@medusajs', 'medusa')
+    if (fs.existsSync(medusaDir)) found.add(medusaDir)
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+    depth++
   }
-  const parent = path.dirname(dir)
-  if (parent === dir) break
-  dir = parent
+  return found
+}
+
+const allMedusaDirs = new Set([
+  ...collectMedusaDirs(__dirname),
+  ...collectMedusaDirs(process.cwd())
+])
+
+let patchApplied = false
+for (const medusaDir of allMedusaDirs) {
+  try {
+    fs.writeFileSync(path.join(medusaDir, 'link-modules.js'), linkContent)
+    const pkgPath = path.join(medusaDir, 'package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+    if (!pkg.exports) pkg.exports = {}
+    if (typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
+      pkg.exports['./link-modules'] = './link-modules.js'
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
+    }
+    console.log('link-modules patch applied at:', medusaDir)
+    patchApplied = true
+  } catch (e) {
+    console.error('link-modules runtime patch failed:', medusaDir, e.message)
+    process.exit(1)
+  }
 }
 if (!patchApplied) {
-  console.error('link-modules patch: @medusajs/medusa not found (walked from __dirname)')
+  console.error('link-modules patch: @medusajs/medusa not found (walked from __dirname and process.cwd())')
   process.exit(1)
 }
 
