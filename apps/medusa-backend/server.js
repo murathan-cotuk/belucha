@@ -9,17 +9,30 @@ try {
   require('dotenv').config({ path: '.env.local' })
 } catch (e) {}
 
-// Require hook: @medusajs/medusa/link-modules -> @medusajs/link-modules (require ve require.resolve)
+const path = require('path')
+
+let backendLinkModulesPath
+try {
+  backendLinkModulesPath = require.resolve('@medusajs/link-modules', { paths: [__dirname] })
+} catch (_) {
+  backendLinkModulesPath = null
+}
+
+// Require hook: @medusajs/medusa/link-modules -> backend'deki @medusajs/link-modules (mutlak path) veya fallback
 const Module = require('module')
 const origRequire = Module.prototype.require
 const patchedRequire = function (id) {
   if (id === '@medusajs/medusa/link-modules') {
+    if (backendLinkModulesPath) {
+      return origRequire.call(this, backendLinkModulesPath)
+    }
     return origRequire.call(this, '@medusajs/link-modules')
   }
   return origRequire.apply(this, arguments)
 }
 patchedRequire.resolve = function (id, options) {
   if (id === '@medusajs/medusa/link-modules') {
+    if (backendLinkModulesPath) return backendLinkModulesPath
     return origRequire.resolve.call(this, '@medusajs/link-modules', options)
   }
   return origRequire.resolve.apply(this, arguments)
@@ -27,7 +40,6 @@ patchedRequire.resolve = function (id, options) {
 Module.prototype.require = patchedRequire
 
 // Runtime patch: tüm kopyalara da yaz (yazılabiliyorsa); hook yoksa yedek
-const path = require('path')
 const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
 
