@@ -13,12 +13,14 @@ try {
 const path = require('path')
 const fs = require('fs')
 const linkContent = "module.exports = require('@medusajs/link-modules')\n"
+let patchApplied = false
 let dir = __dirname
 for (let d = 0; d < 10; d++) {
   const medusaDir = path.join(dir, 'node_modules', '@medusajs', 'medusa')
   if (fs.existsSync(medusaDir)) {
     try {
-      fs.writeFileSync(path.join(medusaDir, 'link-modules.js'), linkContent)
+      const filePath = path.join(medusaDir, 'link-modules.js')
+      fs.writeFileSync(filePath, linkContent)
       const pkgPath = path.join(medusaDir, 'package.json')
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
       if (!pkg.exports) pkg.exports = {}
@@ -26,12 +28,21 @@ for (let d = 0; d < 10; d++) {
         pkg.exports['./link-modules'] = './link-modules.js'
         fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
       }
-    } catch (_) {}
+      console.log('link-modules patch applied at:', medusaDir)
+      patchApplied = true
+    } catch (e) {
+      console.error('link-modules runtime patch failed:', e.message)
+      process.exit(1)
+    }
     break
   }
   const parent = path.dirname(dir)
   if (parent === dir) break
   dir = parent
+}
+if (!patchApplied) {
+  console.error('link-modules patch: @medusajs/medusa not found in node_modules (walked from __dirname)')
+  process.exit(1)
 }
 
 const { MedusaAppLoader, configLoader, pgConnectionLoader, container } = require('@medusajs/framework')
@@ -53,7 +64,16 @@ async function start() {
     const app = new MedusaAppLoader({
       cwd: path.resolve(__dirname),
     })
-    const { app: expressApp } = await app.load()
+    let expressApp
+    try {
+      const result = await app.load()
+      expressApp = result && result.app
+    } catch (loadErr) {
+      console.error('\n❌ app.load() failed:', loadErr.code || loadErr.name, loadErr.message)
+      if (loadErr.stack) console.error(loadErr.stack)
+      console.error('\n❌ MedusaAppLoader did not return Express app (e.g. link-modules failed)')
+      process.exit(1)
+    }
     if (!expressApp) {
       console.error('\n❌ MedusaAppLoader did not return Express app (e.g. link-modules failed)')
       process.exit(1)
@@ -72,7 +92,8 @@ async function start() {
       expressApp.close(() => { process.exit(0) })
     })
   } catch (error) {
-    console.error('\n❌ Medusa v2 başlatma hatası:', error)
+    console.error('\n❌ Medusa v2 başlatma hatası:', error.code || error.name, error.message)
+    if (error.stack) console.error(error.stack)
     process.exit(1)
   }
 }
