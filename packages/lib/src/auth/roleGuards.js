@@ -89,7 +89,7 @@ export function serverSideAuthGuard(context, options = {}) {
   // Check role if token exists
   if (isAuthenticated && requiredRole) {
     const claims = getTokenClaims(token);
-    const userRole = claims?.role || claims?.collection; // Payload uses 'collection' field
+    const userRole = claims?.role || claims?.collection; // backend may use 'collection'
     
     // Role mismatch (e.g., seller trying to access customer route)
     if (userRole && userRole !== requiredRole) {

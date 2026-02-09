@@ -9,9 +9,7 @@
     "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist"
   },
   "dependencies": {
-    "@apollo/client": "^3.8.8",
     "stripe": "^14.7.0",
-    "graphql": "^16.8.1",
     "jwt-decode": "^4.0.0"
   },
   "peerDependencies": {
@@ -20,4 +18,3 @@
   },
   "devDependencies": {}
 }
-

@@ -172,6 +172,18 @@ class MedusaAdminClient {
   async getMedusaCollections() {
     return this.request('/admin/collections')
   }
+
+  /**
+   * Orders (admin)
+   */
+  async getOrders(params = {}) {
+    const queryParams = new URLSearchParams(params).toString()
+    return this.request(`/admin/orders${queryParams ? `?${queryParams}` : ''}`)
+  }
+
+  async getOrder(id) {
+    return this.request(`/admin/orders/${id}`)
+  }
 }
 
 // Singleton instance

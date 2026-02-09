@@ -1,11 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import styled from "styled-components";
 import { Card } from "@belucha/ui";
-
-// TODO: Migrate to Medusa REST API
-// Orders management will be available soon via Medusa backend
+import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 const Container = styled.div`
   max-width: 1400px;
@@ -65,10 +64,27 @@ const StatusBadge = styled.span`
 `;
 
 export default function OrdersPage() {
-  // TODO: Fetch orders from Medusa REST API
-  const loading = false;
-  const error = null;
-  const orders = [];
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        setLoading(true);
+        const client = getMedusaAdminClient();
+        const data = await client.getOrders();
+        setOrders(data.orders || []);
+        setError(null);
+      } catch (err) {
+        setError(err?.message || "Failed to load orders");
+        setOrders([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOrders();
+  }, []);
 
   return (
     <Container>
@@ -87,7 +103,7 @@ export default function OrdersPage() {
 
         {error && (
           <div style={{ padding: "16px", backgroundColor: "#fee2e2", borderRadius: "8px", color: "#991b1b" }}>
-            Error loading orders: {error.message}
+            Error loading orders: {error}
           </div>
         )}
 
@@ -112,13 +128,17 @@ export default function OrdersPage() {
             <tbody>
               {orders.map((order) => (
                 <tr key={order.id}>
-                  <TableCell>{order.orderNumber || order.id}</TableCell>
-                  <TableCell>{order.customer?.email || "N/A"}</TableCell>
-                  <TableCell>€{order.total?.toFixed(2) || "0.00"}</TableCell>
+                  <TableCell>
+                    <Link href={`/orders/${order.id}`} style={{ color: "#0ea5e9", textDecoration: "none" }}>
+                      {order.display_id ?? order.id}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{order.email ?? order.customer?.email ?? "N/A"}</TableCell>
+                  <TableCell>€{typeof order.total === "number" ? order.total.toFixed(2) : (order.total ?? "0.00")}</TableCell>
                   <TableCell>
                     <StatusBadge status={order.status}>{order.status || "pending"}</StatusBadge>
                   </TableCell>
-                  <TableCell>{new Date(order.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>{order.created_at ? new Date(order.created_at).toLocaleDateString() : (order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—")}</TableCell>
                 </tr>
               ))}
             </tbody>

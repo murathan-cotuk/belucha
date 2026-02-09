@@ -80,16 +80,20 @@ export async function POST(
 ): Promise<void> {
   try {
     const adminHubService: AdminHubService = req.scope.resolve("adminHubService")
-    const { 
-      name, 
-      slug, 
-      description, 
-      parent_id, 
-      active, 
-      is_visible, 
-      has_collection, 
-      sort_order, 
-      metadata 
+    const {
+      name,
+      slug,
+      description,
+      parent_id,
+      active,
+      is_visible,
+      has_collection,
+      sort_order,
+      seo_title,
+      seo_description,
+      long_content,
+      banner_image_url,
+      metadata,
     } = req.body
 
     if (!name || !slug) {
@@ -108,6 +112,10 @@ export async function POST(
       is_visible: is_visible !== undefined ? is_visible : true,
       has_collection: has_collection !== undefined ? has_collection : false,
       sort_order: sort_order || 0,
+      seo_title: seo_title ?? null,
+      seo_description: seo_description ?? null,
+      long_content: long_content ?? null,
+      banner_image_url: banner_image_url ?? null,
       metadata,
     })
 
