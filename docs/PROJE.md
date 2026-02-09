@@ -16,3 +16,45 @@ Bu ayarla:
 - Start doğrudan `node apps/medusa-backend/server.js` ile yapılır; root package.json'da "start" script'i aranmaz.
 
 **Eski ayar (Root = apps/medusa-backend)** bu monorepo'da MODULE_NOT_FOUND verebilir; çünkü yükleme root'taki node_modules üzerinden olur ve orası build sırasında patch'lenmiyor.
+
+## Mimari karar – Kategori sayfaları ve CMS
+
+Kategori sayfaları hem ürün listesi hem içerik sayfası (landing) olacak; ayrı bir CMS (Payload vb.) şu an eklenmedi. **Seçenek 1** uygulandı: **Admin Hub kategorileri genişletildi** – SEO (seo_title, seo_description), banner (banner_image_url) ve uzun içerik (long_content) alanları eklendi. Kategori verisi ve bu içerik alanları sadece Admin Hub üzerinden yönetiliyor. Siteyi kullanmaya başlamadan önce Payload (veya başka headless CMS) değerlendirilecek.
+
+**Yetkilendirme:** Admin Hub (`/admin-hub/*` – kategoriler, bannerlar, navbar/landing/SEO içeriği) **sadece Super Admin (platform sahibi)** tarafından yönetilir. Seller’lar kategori oluşturamaz; navbar, landing, SEO ve banner içeriğine erişemez. Seller Central’da seller’lar sadece ürün ve sipariş sayfalarını kullanır. İleride auth eklendiğinde Admin Hub route’ları super-admin rolüne kısıtlanacak.
+
+## Medusa veri modeli ve API
+
+- **Region:** Bölge (kargo, fiyat); backend'de custom RegionService ile product–region eşlemesi. Store: `/store/products?region=DE`.
+- **Product / Variant / Inventory / Price list:** Medusa core; ürün listesi ve detay store/admin API üzerinden.
+- **Sales Channel:** Medusa core; storefront hangi kanalda yayında ise ona göre filtre.
+- **Admin Hub (Categories, Banners):** Platform sahibi (Super Admin) yönetimi; store'da `/store/categories` (tree, slug). Kategoride seo_title, seo_description, long_content, banner_image_url alanları var. Admin'de `/admin-hub/v1/categories`, `/admin-hub/v1/banners`.
+
+**Shop (storefront)** kullandığı endpoint'ler:
+- `GET /store/products` — liste (query: `category`, `collection_id`, `region`).
+- `GET /store/products/:idOrHandle` — tek ürün (id veya handle).
+- `GET /store/categories` — kategori listesi / tree (`?tree=true`, `?slug=...`).
+
+**Seller Central (admin)** kullandığı endpoint'ler:
+- `GET /admin/products` — ürün listesi (Inventory/Products sayfası).
+- `GET /admin/orders` — sipariş listesi (Orders sayfası); `GET /admin/orders/:id` tek sipariş.
+- Admin Hub: `/admin-hub/v1/categories`, `/admin-hub/v1/banners`.
+
+API base URL: `NEXT_PUBLIC_MEDUSA_BACKEND_URL` (env).
+
+## Aşama 1 – Tamamlanan
+
+- **Shop:** Ana sayfa, `category/[slug]`, `collections/[slug]`, `product/[slug]` verisi Medusa store API'den (products, categories, tek ürün). Loading ve hata durumları gösteriliyor.
+- **Seller Central:** Ürün listesi (Inventory) ve sipariş listesi (Orders) Medusa admin API'den; liste + sipariş detay linki (`/orders/:id`). Boş veri ve API hata mesajları handle ediliyor.
+
+## Migration çalıştırma
+
+Admin Hub kategori içerik alanları (seo_title, seo_description, long_content, banner_image_url) için migration: `cd apps/medusa-backend && node scripts/run-migrations.js` (veya projede tanımlı migration komutu). Yeni migration: `1696500000005-AddCategoryContentFields.ts`.
+
+## Test ürünü oluşturma ve Shop'ta kontrol
+
+Backend çalışırken test ürünü oluşturmak için: `node apps/medusa-backend/scripts/create-test-product.js`. Render kullanılıyorsa `BASE_URL=https://...` veya `MEDUSA_BACKEND_URL` ile backend URL'i verilebilir. Ayrıntılar için **docs/TEST.md** dosyasına bakın.
+
+## Vercel Environment Variables
+
+Tüm veri Medusa üzerinden kullanıldığı için **Payload CMS** artık kullanılmıyor. Vercel'da `NEXT_PUBLIC_PAYLOAD_ADMIN_URL` ve `NEXT_PUBLIC_PAYLOAD_GRAPHQL_URL` değişkenleri gerekmez; istersen Vercel proje ayarlarından silebilirsin.

@@ -1,11 +1,1 @@
-{
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"],
-      "@/payload.config": ["./src/payload.config.ts"]
-    }
-  },
-  "exclude": ["node_modules"]
-}
-
+{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}},"exclude":["node_modules"]}

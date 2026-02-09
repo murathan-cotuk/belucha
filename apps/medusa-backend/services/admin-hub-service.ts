@@ -40,6 +40,10 @@ export default class AdminHubService {
     is_visible?: boolean
     has_collection?: boolean
     sort_order?: number
+    seo_title?: string | null
+    seo_description?: string | null
+    long_content?: string | null
+    banner_image_url?: string | null
     metadata?: Record<string, any>
   }): Promise<AdminHubCategory> {
     const category = this.categoryRepository_.create({
@@ -51,6 +55,10 @@ export default class AdminHubService {
       is_visible: data.is_visible !== undefined ? data.is_visible : true,
       has_collection: data.has_collection !== undefined ? data.has_collection : false,
       sort_order: data.sort_order || 0,
+      seo_title: data.seo_title ?? null,
+      seo_description: data.seo_description ?? null,
+      long_content: data.long_content ?? null,
+      banner_image_url: data.banner_image_url ?? null,
       metadata: data.metadata || null,
     })
 
@@ -113,6 +121,10 @@ export default class AdminHubService {
       is_visible: boolean
       has_collection: boolean
       sort_order: number
+      seo_title: string | null
+      seo_description: string | null
+      long_content: string | null
+      banner_image_url: string | null
       metadata: Record<string, any>
     }>
   ): Promise<AdminHubCategory> {

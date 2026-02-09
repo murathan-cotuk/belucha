@@ -42,6 +42,18 @@ export class AdminHubCategory {
   @Column({ type: "integer", default: 0 })
   sort_order: number
 
+  @Column({ type: "varchar", length: 255, nullable: true, name: "seo_title" })
+  seo_title: string | null
+
+  @Column({ type: "text", nullable: true, name: "seo_description" })
+  seo_description: string | null
+
+  @Column({ type: "text", nullable: true, name: "long_content" })
+  long_content: string | null
+
+  @Column({ type: "text", nullable: true, name: "banner_image_url" })
+  banner_image_url: string | null
+
   @Column({ type: "jsonb", nullable: true })
   metadata: Record<string, any> | null
 

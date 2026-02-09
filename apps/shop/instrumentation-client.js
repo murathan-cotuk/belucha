@@ -26,7 +26,6 @@ Sentry.init({
     "localhost",
     /^https:\/\/.*\.railway\.app\/api/,
     /^https:\/\/belucha.*\.vercel\.app\/api/,
-    /^https:\/\/beluchacms.*\.up\.railway\.app\/api/,
     /^\/api/,
   ],
   // Enable logs to be sent to Sentry

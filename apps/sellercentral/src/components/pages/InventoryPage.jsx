@@ -1,30 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { gql, useQuery } from "@apollo/client";
 import styled from "styled-components";
 import { Card, Button } from "@belucha/ui";
 import Link from "next/link";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
-
-const GET_PRODUCTS = gql`
-  query GetProducts {
-    Products(limit: 100) {
-      docs {
-        id
-        title
-        price
-        inventory
-        status
-        slug
-        images {
-          url
-          alt
-        }
-      }
-    }
-  }
-`;
 
 const Container = styled.div`
   max-width: 1400px;
@@ -302,7 +282,7 @@ export default function InventoryPage() {
 
         {error && (
           <div style={{ padding: "16px", backgroundColor: "#fee2e2", borderRadius: "8px", color: "#991b1b" }}>
-            Error loading products: {error.message}
+            Error loading products: {error}
           </div>
         )}
 
