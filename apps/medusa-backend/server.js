@@ -137,9 +137,24 @@ const { logger } = require('@medusajs/framework/logger')
 const { asValue } = require('@medusajs/framework/awilix')
 const { ContainerRegistrationKeys } = require('@medusajs/utils')
 const express = require('express')
+const cors = require('cors')
 
 const PORT = process.env.PORT || 9000
 const HOST = process.env.HOST || '0.0.0.0'
+
+// CORS: Vercel/Render'da frontend origin'leri env ile verin (virgülle ayrılmış).
+// Örnek: CORS_ORIGINS=https://belucha-sellercentral.vercel.app,https://belucha-shop.vercel.app
+function getAllowedOrigins() {
+  const env = process.env.CORS_ORIGINS || process.env.ALLOWED_ORIGINS
+  if (env) {
+    return env.split(',').map((o) => o.trim()).filter(Boolean)
+  }
+  const store = (process.env.STORE_CORS || '').split(',').map((o) => o.trim()).filter(Boolean)
+  const admin = (process.env.ADMIN_CORS || '').split(',').map((o) => o.trim()).filter(Boolean)
+  const combined = [...new Set([...store, ...admin])]
+  if (combined.length) return combined
+  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002']
+}
 
 async function start() {
   try {
@@ -151,6 +166,18 @@ async function start() {
     }
 
     const app = express()
+    const allowedOrigins = getAllowedOrigins()
+    console.log('CORS allowed origins:', allowedOrigins.join(', ') || '(none)')
+    app.use(cors({
+      origin: (origin, cb) => {
+        if (!origin) return cb(null, true) // same-origin / Postman
+        if (allowedOrigins.includes(origin)) return cb(null, true)
+        return cb(null, false)
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    }))
     const appLoader = new MedusaAppLoader({ cwd: path.resolve(__dirname) })
 
     let medusaApp

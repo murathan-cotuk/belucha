@@ -9,6 +9,7 @@ Repo'da `workspaces` kullanıldığı için Node modülleri **repo root** (`/opt
 - **Root Directory:** *boş bırak* (repo kökü; alanı sil veya boş bırak).
 - **Build Command:** `npm install && node apps/medusa-backend/scripts/patch-link-modules.js`
 - **Start Command:** **Mutlaka** `node apps/medusa-backend/server.js` yaz. Alanı boş bırakma; boş bırakırsan Render `npm run start` çalıştırır ve "Missing script: start" hatası alabilirsin.
+- **CORS (Environment Variables):** Seller Central ve Shop Vercel’da ise, backend’in bu origin’lere izin vermesi için Render’da `CORS_ORIGINS` ekle: `https://belucha-sellercentral.vercel.app,https://belucha-shop.vercel.app` (kendi domain’lerinle değiştir). Alternatif: `STORE_CORS` ve `ADMIN_CORS` env’lerini aynı URL’lerle ayarlayabilirsin.
 
 Bu ayarla:
 - Build repo root'ta çalışır, tek `node_modules` root'ta oluşur.
