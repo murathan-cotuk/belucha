@@ -47,8 +47,8 @@ const menuItemsMain = [
     label: "Products",
     icon: ProductIcon,
     subNavigationItems: [
-      { url: "/products/collections", label: "Collections" },
       { url: "/products/inventory", label: "Inventory" },
+      { url: "/products/collections", label: "Collections" },
       { url: "/products/gift-cards", label: "Gift Cards" },
     ],
   },
