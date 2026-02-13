@@ -103,9 +103,14 @@ const NextLink = forwardRef(function NextLink({ url, children, ...rest }, ref) {
 export default function PolarisLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [showMobileNav, setShowMobileNav] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const storeName =
     typeof window !== "undefined"
       ? localStorage.getItem("storeName") || "Seller Account"
@@ -201,17 +206,15 @@ export default function PolarisLayout({ children }) {
     </Navigation>
   );
 
-  const frameLogo = {
-    url: "/",
-    accessibilityLabel: "Belucha",
-    topBarSource: "/logo.svg",
-    width: 120,
-  };
+  const logoSrc = mounted ? "/logo.svg" : null;
+  const frameLogo = logoSrc
+    ? { url: "/", accessibilityLabel: "Belucha", topBarSource: logoSrc, width: 120 }
+    : undefined;
 
   return (
     <AppProvider i18n={en} linkComponent={NextLink}>
       <Frame
-        logo={frameLogo}
+        {...(frameLogo ? { logo: frameLogo } : {})}
         navigation={navMarkup}
         topBar={topBarMarkup}
         showMobileNavigation={showMobileNav}
