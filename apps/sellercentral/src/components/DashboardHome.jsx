@@ -14,8 +14,14 @@ import {
   SkeletonBodyText,
   SkeletonDisplayText,
   Banner,
+  Box,
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+
+const MEDUSA_BACKEND_DISPLAY_URL =
+  typeof window !== "undefined"
+    ? (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "https://belucha-medusa-backend.onrender.com")
+    : "https://belucha-medusa-backend.onrender.com";
 
 export default function DashboardHome() {
   const router = useRouter();
@@ -33,13 +39,27 @@ export default function DashboardHome() {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const productsData = await medusaClient.getProducts();
-        const totalProducts = productsData.products?.length || 0;
+        setError(null);
+        const [productsData, ordersData] = await Promise.all([
+          medusaClient.getProducts(),
+          medusaClient.getOrders().catch(() => ({ orders: [] })),
+        ]);
+        const products = productsData.products || [];
+        const orders = ordersData.orders || [];
+        const totalOrders = orders.length;
+        const pendingOrders = orders.filter(
+          (o) => o.status === "pending" || o.status === "open"
+        ).length;
+        let totalRevenue = 0;
+        for (const order of orders) {
+          const total = order.total ?? order.total_amount ?? 0;
+          totalRevenue += typeof total === "number" ? total / 100 : Number(total) / 100 || 0;
+        }
         setStats({
-          totalProducts,
-          totalOrders: 0,
-          totalRevenue: 0,
-          pendingOrders: 0,
+          totalProducts: products.length,
+          totalOrders,
+          totalRevenue,
+          pendingOrders,
         });
       } catch (err) {
         console.error("Error fetching dashboard stats:", err);
@@ -128,6 +148,43 @@ export default function DashboardHome() {
               ))}
             </InlineStack>
           </BlockStack>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">
+                Medusa API
+              </Text>
+              <Divider />
+              <InlineStack gap="300" blockAlign="center" wrap>
+                <Box
+                  padding="200"
+                  background="bg-fill-success-secondary"
+                  borderRadius="200"
+                >
+                  <Text as="span" variant="bodySm" fontWeight="semibold" tone="success">
+                    Connected
+                  </Text>
+                </Box>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Backend verileri bu panelde kullanılıyor (ürünler, siparişler).
+                </Text>
+              </InlineStack>
+              <Text as="p" variant="bodySm" tone="subdued">
+                API adresi:{" "}
+                <a
+                  href={MEDUSA_BACKEND_DISPLAY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: "underline" }}
+                >
+                  {MEDUSA_BACKEND_DISPLAY_URL}
+                </a>
+                {" "}(yeni sekmede açılır; backend durum sayfasını gösterir)
+              </Text>
+            </BlockStack>
+          </Card>
         </Layout.Section>
 
         <Layout.Section>

@@ -10,6 +10,7 @@
     "db:setup": "node scripts/write-env-from-process.js && medusa db:setup --no-interactive",
     "db:migrate": "node scripts/write-env-from-process.js && medusa db:migrate --skip-links",
     "run-migrations": "node scripts/run-migrations.js",
+    "db:test": "node scripts/test-db-connection.js",
     "postinstall": "node scripts/patch-link-modules.js",
     "patch": "node scripts/patch-link-modules.js"
   },
@@ -32,6 +33,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
+    "pg": "^8.13.1",
     "medusa": "^0.0.3",
     "ts-node": "^10.9.2",
     "typeorm": "^0.3.20"
