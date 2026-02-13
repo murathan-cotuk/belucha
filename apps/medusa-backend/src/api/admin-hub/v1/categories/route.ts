@@ -69,9 +69,25 @@ export async function GET(
   } catch (error) {
     console.error("Admin Hub Categories GET error:", error)
     res.status(500).json({
-      message: error.message || "Internal server error",
+      message: (error as Error)?.message || "Internal server error",
     })
   }
+}
+
+type CategoryCreateBody = {
+  name?: string
+  slug?: string
+  description?: string
+  parent_id?: string | null
+  active?: boolean
+  is_visible?: boolean
+  has_collection?: boolean
+  sort_order?: number
+  seo_title?: string | null
+  seo_description?: string | null
+  long_content?: string | null
+  banner_image_url?: string | null
+  metadata?: Record<string, unknown>
 }
 
 export async function POST(
@@ -80,6 +96,7 @@ export async function POST(
 ): Promise<void> {
   try {
     const adminHubService: AdminHubService = req.scope.resolve("adminHubService")
+    const body = (req.body || {}) as CategoryCreateBody
     const {
       name,
       slug,
@@ -94,7 +111,7 @@ export async function POST(
       long_content,
       banner_image_url,
       metadata,
-    } = req.body
+    } = body
 
     if (!name || !slug) {
       res.status(400).json({
@@ -123,7 +140,7 @@ export async function POST(
   } catch (error) {
     console.error("Admin Hub Categories POST error:", error)
     res.status(500).json({
-      message: error.message || "Internal server error",
+      message: (error as Error)?.message || "Internal server error",
     })
   }
 }
