@@ -116,7 +116,7 @@ a {
   }
 }
 
-/* Shopify admin: içerik alanı – sağ üst köşe yuvarlak, ekranın sağına yapışık */
+/* İçerik alanı: sidebar’a ve top bar’a az boşluk, sayfayı kaplasın */
 .belucha-page-content {
   min-height: 100%;
   width: 100%;
@@ -126,16 +126,30 @@ a {
   overflow: hidden;
   box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.08);
   animation: belucha-slide-up 0.3s ease-out;
-  padding-top: 52px;
-  padding-left: var(--p-space-400, 16px);
-  padding-right: var(--p-space-400, 16px);
-  padding-bottom: var(--p-space-400, 16px);
+  padding-top: 2px;
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-bottom: 12px;
 }
 @media (min-width: 48em) {
   .belucha-page-content {
-    padding-left: var(--p-space-500, 20px);
-    padding-right: var(--p-space-500, 20px);
-    padding-bottom: var(--p-space-500, 20px);
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 16px;
+  }
+}
+/* Sayfa içeriği ortalanmasın, sola hizalı ve tam genişlik */
+.belucha-page-content .Polaris-Page {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.belucha-page-content .Polaris-Page__Content {
+  padding: 8px 0 0;
+}
+@media (min-width: 48em) {
+  .belucha-page-content .Polaris-Page__Content {
+    padding-top: 8px;
   }
 }
 
