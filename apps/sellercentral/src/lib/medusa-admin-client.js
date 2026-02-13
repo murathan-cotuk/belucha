@@ -4,41 +4,59 @@
  * Sellercentral'dan Medusa backend'e product eklemek için REST API client
  */
 
-const MEDUSA_BACKEND_URL = 
-  typeof window !== 'undefined' 
-    ? (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'http://localhost:9000')
-    : (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || 'https://belucha-medusa-backend.onrender.com')
+const getDefaultBaseUrl = () => {
+  const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || '';
+  const url = (typeof env === 'string' ? env : '').trim();
+  if (url) return url;
+  return typeof window !== 'undefined'
+    ? 'http://localhost:9000'
+    : 'https://belucha-medusa-backend.onrender.com';
+};
+
+const MEDUSA_BACKEND_URL = getDefaultBaseUrl();
 
 class MedusaAdminClient {
   constructor(baseURL = MEDUSA_BACKEND_URL) {
-    this.baseURL = baseURL
+    this.baseURL = (baseURL || MEDUSA_BACKEND_URL).replace(/\/$/, '');
   }
- 
+
   /**
    * Generic API request helper
    */
   async request(endpoint, options = {}) {
-    const url = `${this.baseURL}${endpoint}`
+    const base = this.baseURL || getDefaultBaseUrl();
+    const url = `${base}${endpoint}`;
+
+    if (!url || url.startsWith('undefined')) {
+      const err = new Error('Backend URL is not set. Set NEXT_PUBLIC_MEDUSA_BACKEND_URL (e.g. https://belucha-medusa-backend.onrender.com).');
+      console.error('Medusa Admin API Error:', err.message);
+      throw err;
+    }
+
     const config = {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
       ...options,
-    }
+    };
 
     try {
-      const response = await fetch(url, config)
-      
+      const response = await fetch(url, config);
+
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: response.statusText }))
-        throw new Error(error.message || `HTTP error! status: ${response.status}`)
+        const error = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(error.message || `HTTP error! status: ${response.status}`);
       }
 
-      return await response.json()
+      return await response.json();
     } catch (error) {
-      console.error(`Medusa Admin API Error (${endpoint}):`, error)
-      throw error
+      const isNetworkError = error?.message === 'Failed to fetch' || error?.name === 'TypeError';
+      const friendlyMessage = isNetworkError
+        ? `Backend unreachable at ${base}. Check NEXT_PUBLIC_MEDUSA_BACKEND_URL and that the backend is running (e.g. Render).`
+        : error?.message;
+      console.error(`Medusa Admin API Error (${endpoint}):`, error);
+      throw new Error(friendlyMessage);
     }
   }
 
@@ -75,24 +93,32 @@ class MedusaAdminClient {
   }
 
   /**
-   * Admin Hub Categories (Platform owner managed - SINGLE SOURCE OF TRUTH)
-   * Backend: GET /admin-hub/v1/categories veya GET /admin-hub/categories
+   * Admin Hub Categories (Platform owner managed)
+   * Backend: GET /admin-hub/categories veya GET /admin-hub/v1/categories
+   * Vercel'da NEXT_PUBLIC_MEDUSA_BACKEND_URL = https://belucha-medusa-backend.onrender.com olmalı.
    */
   async getAdminHubCategories(filters = {}) {
     const queryParams = new URLSearchParams({
       active: 'true',
       ...filters,
     }).toString()
-    const pathV1 = `/admin-hub/v1/categories?${queryParams}`
-    const pathLegacy = `/admin-hub/categories?${queryParams}`
-    try {
-      return await this.request(pathV1)
-    } catch (err) {
-      if (err.message && err.message.includes('404') && pathV1 !== pathLegacy) {
-        return await this.request(pathLegacy)
+    const paths = [
+      `/admin-hub/categories?${queryParams}`,
+      `/admin-hub/v1/categories?${queryParams}`,
+    ]
+    let lastErr = null
+    for (const path of paths) {
+      try {
+        const data = await this.request(path)
+        if (data.categories != null) return data
+        if (Array.isArray(data.tree)) return { categories: data.tree, count: data.tree.length }
+        return { categories: [], count: 0 }
+      } catch (err) {
+        lastErr = err
+        if (!err.message || !err.message.includes('404')) throw err
       }
-      throw err
     }
+    throw lastErr
   }
 
   /**

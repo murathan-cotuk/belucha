@@ -144,6 +144,7 @@ const HOST = process.env.HOST || '0.0.0.0'
 
 // CORS: Vercel/Render'da frontend origin'leri env ile verin (virgülle ayrılmış).
 // Örnek: CORS_ORIGINS=https://belucha-sellercentral.vercel.app,https://belucha-shop.vercel.app
+// Render'da bu değişkeni ayarlamazsanız production'da tüm origin'lere izin verilir (güvenlik için ayarlamanız önerilir).
 function getAllowedOrigins() {
   const env = process.env.CORS_ORIGINS || process.env.ALLOWED_ORIGINS
   if (env) {
@@ -153,6 +154,7 @@ function getAllowedOrigins() {
   const admin = (process.env.ADMIN_CORS || '').split(',').map((o) => o.trim()).filter(Boolean)
   const combined = [...new Set([...store, ...admin])]
   if (combined.length) return combined
+  if (process.env.NODE_ENV === 'production') return null // null = allow all origins (Render'da CORS_ORIGINS yoksa)
   return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002']
 }
 
@@ -167,10 +169,16 @@ async function start() {
 
     const app = express()
     const allowedOrigins = getAllowedOrigins()
-    console.log('CORS allowed origins:', allowedOrigins.join(', ') || '(none)')
+    const allowAllOrigins = allowedOrigins === null
+    if (allowAllOrigins) {
+      console.log('CORS: allowing all origins (production, CORS_ORIGINS not set). Set CORS_ORIGINS on Render for stricter security.')
+    } else {
+      console.log('CORS allowed origins:', allowedOrigins.join(', ') || '(none)')
+    }
     app.use(cors({
       origin: (origin, cb) => {
         if (!origin) return cb(null, true) // same-origin / Postman
+        if (allowAllOrigins) return cb(null, true)
         if (allowedOrigins.includes(origin)) return cb(null, true)
         return cb(null, false)
       },
@@ -178,6 +186,13 @@ async function start() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
     }))
+    // Root ve health: "Cannot GET /" yerine JSON döner
+    app.get('/', (req, res) => {
+      res.json({ ok: true, service: 'medusa-backend', timestamp: new Date().toISOString() })
+    })
+    app.get('/health', (req, res) => {
+      res.json({ status: 'ok', timestamp: new Date().toISOString() })
+    })
     const appLoader = new MedusaAppLoader({ cwd: path.resolve(__dirname) })
 
     let medusaApp
