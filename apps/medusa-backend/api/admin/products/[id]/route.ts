@@ -9,11 +9,33 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 function getProductService(scope: { resolve: (key: string) => unknown }) {
+  const keysToTry: string[] = []
   try {
-    return scope.resolve("productModuleService")
-  } catch {
-    return scope.resolve("productService")
+    const { Modules } = require("@medusajs/framework/utils")
+    if (Modules?.PRODUCT) keysToTry.push(Modules.PRODUCT)
+  } catch (_) {}
+  keysToTry.push("productModuleService", "product_service", "productService")
+
+  let lastErr: Error | null = null
+  for (const key of keysToTry) {
+    try {
+      const svc = scope.resolve(key) as any
+      if (!svc) continue
+      if (typeof svc.listAndCount === "function") return svc
+      if (typeof svc.listAndCountProducts === "function") {
+        return {
+          listAndCount: (f: object, o?: object) => svc.listAndCountProducts(f, o),
+          update: svc.update?.bind(svc),
+          updateProducts: svc.updateProducts?.bind(svc),
+          delete: svc.delete?.bind(svc),
+          deleteProducts: svc.deleteProducts?.bind(svc),
+        }
+      }
+    } catch (e) {
+      lastErr = e as Error
+    }
   }
+  throw lastErr || new Error("Could not resolve product service")
 }
 
 export async function GET(

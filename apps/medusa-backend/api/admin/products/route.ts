@@ -4,17 +4,43 @@
  * GET /admin/products - List products
  * POST /admin/products - Create product
  *
- * Medusa v2: productModuleService veya productService ile çözülür.
+ * Medusa v2: Modules.PRODUCT, productModuleService veya productService ile çözülür.
  */
 
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 function getProductService(scope: { resolve: (key: string) => unknown }) {
+  const keysToTry: string[] = []
   try {
-    return scope.resolve("productModuleService") as { listAndCount: (f: object, o?: object) => Promise<[unknown[], number]>; create?: (d: unknown) => Promise<unknown[]>; createProducts?: (d: unknown[]) => Promise<unknown[]> }
-  } catch {
-    return scope.resolve("productService") as { listAndCount: (f: object, o?: object) => Promise<[unknown[], number]>; create?: (d: unknown) => Promise<unknown[]>; createProducts?: (d: unknown[]) => Promise<unknown[]> }
+    const { Modules } = require("@medusajs/framework/utils")
+    if (Modules?.PRODUCT) keysToTry.push(Modules.PRODUCT)
+  } catch (_) {}
+  keysToTry.push("productModuleService", "product_service", "productService")
+
+  let lastErr: Error | null = null
+  for (const key of keysToTry) {
+    try {
+      const svc = scope.resolve(key)
+      if (!svc) continue
+      const s = svc as any
+      if (typeof s.listAndCount === "function") return svc
+      if (typeof s.listAndCountProducts === "function") {
+        return {
+          listAndCount: (f: object, o?: object) => s.listAndCountProducts(f, o),
+          create: (d: unknown) => (s.createProducts?.([d])?.then((r: unknown[]) => r?.[0]) ?? s.create?.(d)),
+          createProducts: (d: unknown[]) => s.createProducts?.(d),
+          update: s.update?.bind(s),
+          updateProducts: s.updateProducts?.bind(s),
+          delete: s.delete?.bind(s),
+          deleteProducts: s.deleteProducts?.bind(s),
+        }
+      }
+      return svc
+    } catch (e) {
+      lastErr = e as Error
+    }
   }
+  throw lastErr || new Error("Could not resolve product service. Tried: " + keysToTry.join(", "))
 }
 
 export async function GET(

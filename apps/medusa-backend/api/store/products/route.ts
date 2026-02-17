@@ -15,11 +15,25 @@ import RegionService from "../../../services/region-service"
 import AdminHubService from "../../../services/admin-hub-service"
 
 function getProductService(scope: { resolve: (key: string) => unknown }) {
+  const keysToTry: string[] = []
   try {
-    return scope.resolve("productModuleService") as { listAndCount: (f: object, o?: object) => Promise<[unknown[], number]> }
-  } catch {
-    return scope.resolve("productService") as { listAndCount: (f: object, o?: object) => Promise<[unknown[], number]> }
+    const { Modules } = require("@medusajs/framework/utils")
+    if (Modules?.PRODUCT) keysToTry.push(Modules.PRODUCT)
+  } catch (_) {}
+  keysToTry.push("productModuleService", "product_service", "productService")
+  let lastErr: Error | null = null
+  for (const key of keysToTry) {
+    try {
+      const svc = scope.resolve(key) as any
+      if (svc && typeof svc.listAndCount === "function") return svc
+      if (svc && typeof svc.listAndCountProducts === "function") {
+        return { listAndCount: (f: object, o?: object) => svc.listAndCountProducts(f, o) }
+      }
+    } catch (e) {
+      lastErr = e as Error
+    }
   }
+  throw lastErr || new Error("Could not resolve product service")
 }
 
 export async function GET(

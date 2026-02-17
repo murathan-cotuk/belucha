@@ -215,12 +215,14 @@ async function start() {
     const { expressLoader } = require('@medusajs/framework/http')
     const { app: httpApp } = await expressLoader({ app, container })
 
-    // Proje loader'ları: adminHubService ve regionService container'a register edilir
+    // Proje loader'ları: adminHubService ve regionService container'a register edilir (.js = Render'da güvenilir)
     try {
-      const adminHubServiceLoader = require(path.join(__dirname, 'loaders', 'admin-hub-service-loader.ts')).default
-      await adminHubServiceLoader(container)
+      const adminHubServiceLoader = require(path.join(__dirname, 'loaders', 'admin-hub-service-loader.js'))
+      const load = adminHubServiceLoader.default || adminHubServiceLoader
+      await load(container)
     } catch (e) {
-      console.warn('adminHubServiceLoader failed:', e.message)
+      console.error('adminHubServiceLoader failed:', e && e.message)
+      if (e && e.stack) console.error(e.stack)
     }
     try {
       const regionServiceLoader = require(path.join(__dirname, 'loaders', 'region-service-loader.ts')).default
@@ -371,7 +373,43 @@ async function start() {
     } catch (e) {
       console.error('Load store/products route:', e.message)
     }
-    // /admin/orders route yok; Dashboard sipariş sayısı 0 görünür.
+
+    // GET /admin/orders – Medusa order servisi varsa listele; yoksa boş liste (404 yerine 200)
+    const adminOrdersGET = async (req, res) => {
+      try {
+        const scope = req.scope || container
+        const keys = []
+        try {
+          const { Modules } = require('@medusajs/framework/utils')
+          if (Modules && Modules.ORDER) keys.push(Modules.ORDER)
+        } catch (_) {}
+        keys.push('orderModuleService', 'order_service', 'orderService')
+        for (const key of keys) {
+          try {
+            const orderService = scope.resolve(key)
+            if (!orderService) continue
+            const listAndCount = orderService.listAndCountOrders || orderService.listAndCount
+            if (typeof listAndCount === 'function') {
+              const [orders, count] = await listAndCount.call(orderService, {}, { take: 100, skip: 0 })
+              const list = Array.isArray(orders) ? orders : (orders && orders.data ? orders.data : [])
+              return res.json({ orders: list, count: typeof count === 'number' ? count : list.length })
+            }
+            const list = orderService.listOrders || orderService.list
+            if (typeof list === 'function') {
+              const orders = await list.call(orderService, {}, { take: 100, skip: 0 })
+              const arr = Array.isArray(orders) ? orders : (orders && orders.data ? orders.data : [])
+              return res.json({ orders: arr, count: arr.length })
+            }
+          } catch (_) {}
+        }
+        res.json({ orders: [], count: 0 })
+      } catch (err) {
+        console.error('Admin orders GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin/orders', (req, res) => adminOrdersGET(req, res))
+    console.log('Admin route: GET /admin/orders')
 
     httpApp.listen(PORT, HOST, () => {
       console.log(`\n✅ Medusa v2 backend başarıyla başlatıldı!`)
