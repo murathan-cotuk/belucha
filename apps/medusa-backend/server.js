@@ -235,69 +235,114 @@ async function start() {
       next()
     })
 
-    // --- Kategoriler: .ts yüklemeden doğrudan JS ile (Render'da güvenilir çalışır) ---
-    const adminHubCategoriesHandlers = () => {
-      const adminHubService = container.resolve('adminHubService')
-      return {
-        GET: async (req, res) => {
-          try {
-            const { active, parent_id, tree, is_visible, slug } = req.query
-            if (slug && typeof slug === 'string') {
-              const category = await adminHubService.getCategoryBySlug(slug)
-              if (!category) return res.status(404).json({ message: 'Category not found' })
-              return res.json({ category, categories: [category], count: 1 })
-            }
-            if (tree === 'true') {
-              const filters = {}
-              if (is_visible !== undefined) filters.is_visible = is_visible === 'true'
-              const categoryTree = await adminHubService.getCategoryTree(filters)
-              return res.json({ tree: categoryTree, categories: categoryTree, count: categoryTree.length })
-            }
-            const filters = {}
-            if (active !== undefined) filters.active = active === 'true'
-            if (parent_id !== undefined) filters.parent_id = parent_id === 'null' ? null : parent_id
-            const categories = await adminHubService.listCategories(filters)
-            res.json({ categories, count: categories.length })
-          } catch (err) {
-            console.error('Admin Hub Categories GET error:', err)
-            res.status(500).json({ message: (err && err.message) || 'Internal server error' })
-          }
-        },
-        POST: async (req, res) => {
-          try {
-            const b = req.body || {}
-            const name = b.name
-            const slug = b.slug
-            if (!name || !slug) return res.status(400).json({ message: 'name ve slug zorunludur' })
-            const category = await adminHubService.createCategory({
-              name,
-              slug,
-              description: b.description || undefined,
-              parent_id: b.parent_id || null,
-              active: b.active !== undefined ? b.active : true,
-              is_visible: b.is_visible !== undefined ? b.is_visible : true,
-              has_collection: b.has_collection !== undefined ? b.has_collection : false,
-              sort_order: b.sort_order || 0,
-              metadata: b.metadata,
-            })
-            res.status(201).json({ category })
-          } catch (err) {
-            console.error('Admin Hub Categories POST error:', err)
-            res.status(500).json({ message: (err && err.message) || 'Internal server error' })
-          }
-        },
+    // --- Kategoriler: Route'lar her zaman kayıtlı; handler içinde adminHubService resolve edilir (404 yerine 503 döner) ---
+    const resolveAdminHub = () => {
+      try {
+        return container.resolve('adminHubService')
+      } catch (e) {
+        return null
       }
     }
-    try {
-      const cat = adminHubCategoriesHandlers()
-      httpApp.get('/admin-hub/categories', (req, res) => cat.GET(req, res))
-      httpApp.post('/admin-hub/categories', (req, res) => cat.POST(req, res))
-      httpApp.get('/admin-hub/v1/categories', (req, res) => cat.GET(req, res))
-      httpApp.post('/admin-hub/v1/categories', (req, res) => cat.POST(req, res))
-      console.log('Admin Hub categories routes: GET/POST /admin-hub/categories ve /admin-hub/v1/categories')
-    } catch (e) {
-      console.error('Admin Hub categories routes failed:', e.message)
+    const adminHubCategoriesGET = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) {
+        return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      }
+      try {
+        const { active, parent_id, tree, is_visible, slug } = req.query
+        if (slug && typeof slug === 'string') {
+          const category = await adminHubService.getCategoryBySlug(slug)
+          if (!category) return res.status(404).json({ message: 'Category not found' })
+          return res.json({ category, categories: [category], count: 1 })
+        }
+        if (tree === 'true') {
+          const filters = {}
+          if (is_visible !== undefined) filters.is_visible = is_visible === 'true'
+          const categoryTree = await adminHubService.getCategoryTree(filters)
+          return res.json({ tree: categoryTree, categories: categoryTree, count: categoryTree.length })
+        }
+        const filters = {}
+        if (active !== undefined) filters.active = active === 'true'
+        if (parent_id !== undefined) filters.parent_id = parent_id === 'null' ? null : parent_id
+        const categories = await adminHubService.listCategories(filters)
+        res.json({ categories, count: categories.length })
+      } catch (err) {
+        console.error('Admin Hub Categories GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
     }
+    const adminHubCategoriesPOST = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) {
+        return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      }
+      try {
+        const b = req.body || {}
+        const name = b.name
+        const slug = b.slug
+        if (!name || !slug) return res.status(400).json({ message: 'name ve slug zorunludur' })
+        const category = await adminHubService.createCategory({
+          name,
+          slug,
+          description: b.description || undefined,
+          parent_id: b.parent_id || null,
+          active: b.active !== undefined ? b.active : true,
+          is_visible: b.is_visible !== undefined ? b.is_visible : true,
+          has_collection: b.has_collection !== undefined ? b.has_collection : false,
+          sort_order: b.sort_order || 0,
+          metadata: b.metadata,
+        })
+        res.status(201).json({ category })
+      } catch (err) {
+        console.error('Admin Hub Categories POST error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const adminHubCategoryByIdGET = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      try {
+        const category = await adminHubService.getCategoryById(req.params.id)
+        if (!category) return res.status(404).json({ message: 'Category not found' })
+        res.json({ category })
+      } catch (err) {
+        console.error('Admin Hub Category GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const adminHubCategoryByIdPUT = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      try {
+        const category = await adminHubService.updateCategory(req.params.id, req.body || {})
+        res.json({ category })
+      } catch (err) {
+        console.error('Admin Hub Category PUT error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const adminHubCategoryByIdDELETE = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      try {
+        await adminHubService.deleteCategory(req.params.id)
+        res.status(200).json({ deleted: true })
+      } catch (err) {
+        console.error('Admin Hub Category DELETE error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin-hub/categories', (req, res) => adminHubCategoriesGET(req, res))
+    httpApp.post('/admin-hub/categories', (req, res) => adminHubCategoriesPOST(req, res))
+    httpApp.get('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdGET(req, res))
+    httpApp.put('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdPUT(req, res))
+    httpApp.delete('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdDELETE(req, res))
+    httpApp.get('/admin-hub/v1/categories', (req, res) => adminHubCategoriesGET(req, res))
+    httpApp.post('/admin-hub/v1/categories', (req, res) => adminHubCategoriesPOST(req, res))
+    httpApp.get('/admin-hub/v1/categories/:id', (req, res) => adminHubCategoryByIdGET(req, res))
+    httpApp.put('/admin-hub/v1/categories/:id', (req, res) => adminHubCategoryByIdPUT(req, res))
+    httpApp.delete('/admin-hub/v1/categories/:id', (req, res) => adminHubCategoryByIdDELETE(req, res))
+    console.log('Admin Hub categories routes: GET/POST /admin-hub/categories ve /admin-hub/v1/categories (+ :id GET/PUT/DELETE)')
 
     // --- Ürünler: .ts route yükle (productService/productModuleService aşağıda düzeltildi) ---
     const runHandler = (handler, req, res) => {

@@ -4,19 +4,11 @@
 
 Repo'da `workspaces` kullanıldığı için Node modülleri **repo root** (`/opt/render/project/src/node_modules`) üzerinden yüklenir. Root Directory = `apps/medusa-backend` olsa bile bu böyledir. Bu yüzden patch'in **repo root**'taki `node_modules` üzerinde, **build sırasında** uygulanması gerekir.
 
-**Render ayarları (bunları kullan):**
+**Render ayarları (mevcut deploy’un çalışıyorsa değiştirme):** Root Directory boş, Build Command: `npm install && node apps/medusa-backend/scripts/patch-link-modules.js`, Start Command: `node apps/medusa-backend/server.js`. Environment: `DATABASE_URL`, `CORS_ORIGINS`. Render’dan yana sorun yoksa bu ayarları değiştirmene gerek yok.
 
-- **Root Directory:** *boş bırak* (repo kökü; alanı sil veya boş bırak).
-- **Build Command:** `npm install && node apps/medusa-backend/scripts/patch-link-modules.js`
-- **Start Command:** **Mutlaka** `node apps/medusa-backend/server.js` yaz. Alanı boş bırakma; boş bırakırsan Render `npm run start` çalıştırır ve "Missing script: start" hatası alabilirsin.
-- **CORS (Environment Variables):** Seller Central ve Shop Vercel’da ise, backend’in bu origin’lere izin vermesi için Render’da `CORS_ORIGINS` ekle: `https://belucha-sellercentral.vercel.app,https://belucha-shop.vercel.app` (kendi domain’lerinle değiştir). Alternatif: `STORE_CORS` ve `ADMIN_CORS` env’lerini aynı URL’lerle ayarlayabilirsin.
+**Kategori 404’ü:** Kod tarafında düzeltildi (Admin Hub loader kendi TypeORM DataSource kullanıyor; route’lar her zaman kayıtlı). Güncel kodu deploy etmen yeterli.
 
-Bu ayarla:
-- Build repo root'ta çalışır, tek `node_modules` root'ta oluşur.
-- Patch script root (ve varsa backend) içindeki her `@medusajs/medusa` kopyasına uygulanır.
-- Start doğrudan `node apps/medusa-backend/server.js` ile yapılır; root package.json'da "start" script'i aranmaz.
-
-**Eski ayar (Root = apps/medusa-backend)** bu monorepo'da MODULE_NOT_FOUND verebilir; çünkü yükleme root'taki node_modules üzerinden olur ve orası build sırasında patch'lenmiyor.
+**Eski ayar (Root = apps/medusa-backend)** bu monorepo’da MODULE_NOT_FOUND verebilir; çünkü yükleme root’taki node_modules üzerinden olur ve orası build sırasında patch’lenmiyor.
 
 ## Mimari karar – Kategori sayfaları ve CMS
 
