@@ -173,6 +173,7 @@ async function start() {
     }
 
     const app = express()
+    app.use(express.json())
     const allowedOrigins = getAllowedOrigins()
     const allowAllOrigins = allowedOrigins === null
     if (allowAllOrigins) {
@@ -213,6 +214,49 @@ async function start() {
 
     const { expressLoader } = require('@medusajs/framework/http')
     const { app: httpApp } = await expressLoader({ app, container })
+
+    // Custom route'lar için scope gerekli; yoksa container kullan (expressLoader bazı path'lerde scope set etmeyebilir)
+    httpApp.use(['/admin-hub', '/admin'], (req, res, next) => {
+      if (!req.scope && typeof container.createScope === 'function') req.scope = container.createScope()
+      if (!req.scope) req.scope = container
+      next()
+    })
+
+    // Custom API routes: Medusa custom server bunları otomatik yüklemiyor, elle mount ediyoruz (root api/ klasörü)
+    const runHandler = (handler, req, res) => {
+      Promise.resolve(handler(req, res)).catch((err) => {
+        console.error('Route handler error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      })
+    }
+    try {
+      const adminHubCategories = require(path.join(__dirname, 'api', 'admin-hub', 'categories', 'route.ts'))
+      httpApp.get('/admin-hub/categories', (req, res) => runHandler(adminHubCategories.GET, req, res))
+      httpApp.post('/admin-hub/categories', (req, res) => runHandler(adminHubCategories.POST, req, res))
+    } catch (e) {
+      console.error('Load admin-hub/categories route:', e.message)
+    }
+    try {
+      const adminHubV1Categories = require(path.join(__dirname, 'api', 'admin-hub', 'v1', 'categories', 'route.ts'))
+      httpApp.get('/admin-hub/v1/categories', (req, res) => runHandler(adminHubV1Categories.GET, req, res))
+      httpApp.post('/admin-hub/v1/categories', (req, res) => runHandler(adminHubV1Categories.POST, req, res))
+    } catch (e) {
+      console.error('Load admin-hub/v1/categories route:', e.message)
+    }
+    try {
+      const adminProducts = require(path.join(__dirname, 'api', 'admin', 'products', 'route.ts'))
+      httpApp.get('/admin/products', (req, res) => runHandler(adminProducts.GET, req, res))
+      httpApp.post('/admin/products', (req, res) => runHandler(adminProducts.POST, req, res))
+    } catch (e) {
+      console.error('Load admin/products route:', e.message)
+    }
+    try {
+      const adminProductsId = require(path.join(__dirname, 'api', 'admin', 'products', '[id]', 'route.ts'))
+      httpApp.get('/admin/products/:id', (req, res) => runHandler(adminProductsId.GET, req, res))
+    } catch (e) {
+      console.error('Load admin/products/[id] route:', e.message)
+    }
+    // Not: /admin/orders için route yoksa Dashboard sipariş sayısı 0 görünür; ileride eklenebilir.
 
     httpApp.listen(PORT, HOST, () => {
       console.log(`\n✅ Medusa v2 backend başarıyla başlatıldı!`)
