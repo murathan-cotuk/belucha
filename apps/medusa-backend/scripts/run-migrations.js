@@ -19,6 +19,11 @@ try {
   // .env.local yoksa sorun değil
 }
 
+// .ts migration dosyalarının yüklenebilmesi için (Render ve lokal)
+try {
+  require('ts-node/register')
+} catch (_) {}
+
 const { DataSource } = require('typeorm')
 const path = require('path')
 const fs = require('fs')

@@ -6,7 +6,7 @@ Repo'da `workspaces` kullanıldığı için Node modülleri **repo root** (`/opt
 
 **Render ayarları (mevcut deploy’un çalışıyorsa değiştirme):** Root Directory boş, Build Command: `npm install && node apps/medusa-backend/scripts/patch-link-modules.js`, Start Command: `node apps/medusa-backend/server.js`. Environment: `DATABASE_URL`, `CORS_ORIGINS`. Render’dan yana sorun yoksa bu ayarları değiştirmene gerek yok.
 
-**Kategori 404’ü:** Kod tarafında düzeltildi (Admin Hub loader kendi TypeORM DataSource kullanıyor; route’lar her zaman kayıtlı). Güncel kodu deploy etmen yeterli.
+**Kategori / Admin Hub:** Loader JS’e taşındı (Render’da .ts require sorunu önlenir); route’lar her zaman kayıtlı. Hâlâ 503 alıyorsan `admin_hub_categories` tablosu yoktur: `node apps/medusa-backend/scripts/run-migrations.js` (DATABASE_URL Render’daki PostgreSQL ile) bir kez çalıştır.
 
 **Eski ayar (Root = apps/medusa-backend)** bu monorepo’da MODULE_NOT_FOUND verebilir; çünkü yükleme root’taki node_modules üzerinden olur ve orası build sırasında patch’lenmiyor.
 
