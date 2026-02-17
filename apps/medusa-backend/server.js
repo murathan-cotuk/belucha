@@ -184,6 +184,8 @@ async function start() {
       origin: (origin, cb) => {
         if (!origin) return cb(null, true) // same-origin / Postman
         if (allowAllOrigins) return cb(null, true)
+        // Yerel geliştirme: localhost her zaman kabul (Render'da CORS_ORIGINS sadece Vercel olsa bile)
+        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true)
         if (allowedOrigins.includes(origin)) return cb(null, true)
         return cb(null, false)
       },
