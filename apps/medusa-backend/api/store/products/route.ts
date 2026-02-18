@@ -47,7 +47,8 @@ export async function GET(
     try {
       productService = getProductService(req.scope)
     } catch {
-      return res.json({ products: [], count: 0 })
+      res.json({ products: [], count: 0 })
+      return
     }
 
     // Önce Medusa'dan TÜM ürünleri al
@@ -58,19 +59,25 @@ export async function GET(
     // Collection filtresi (Medusa collection handle = category slug)
     if (collection_id && typeof collection_id === "string") {
       try {
-        const productCollectionService = req.scope.resolve("productCollectionService")
-        const collections = await productCollectionService.list({ handle: collection_id })
-        
-        if (collections && collections.length > 0) {
-          const collection = collections[0]
-          // Get products in collection
-          const collectionProducts = await productCollectionService.retrieve(collection.id, {
-            relations: ["products"],
-          })
+        const productCollectionService = req.scope.resolve("productCollectionService") as {
+          list?: (filter: object) => Promise<unknown[]>
+          retrieve?: (id: string, opts?: object) => Promise<{ products?: { id: string }[] }>
+        }
+        const listFn = productCollectionService?.list
+        const collections = listFn ? await listFn({ handle: collection_id }) : []
+        const collectionsArr = Array.isArray(collections) ? collections : []
+
+        if (collectionsArr.length > 0) {
+          const collection = collectionsArr[0] as { id: string }
+          const retrieveFn = productCollectionService?.retrieve
+          const collectionProducts = retrieveFn
+            ? await retrieveFn(collection.id, { relations: ["products"] })
+            : null
           
-          if (collectionProducts?.products) {
-            const collectionProductIds = collectionProducts.products.map((p: any) => p.id)
-            filteredProducts = filteredProducts.filter((product: any) =>
+          const products = collectionProducts && (collectionProducts as { products?: { id: string }[] }).products
+          if (products && Array.isArray(products)) {
+            const collectionProductIds = products.map((p) => p.id)
+            filteredProducts = filteredProducts.filter((product: { id: string }) =>
               collectionProductIds.includes(product.id)
             )
           }
@@ -78,7 +85,7 @@ export async function GET(
           filteredProducts = []
         }
       } catch (e) {
-        console.warn("Collection filter failed, falling back to category filter:", e.message)
+        console.warn("Collection filter failed, falling back to category filter:", (e as Error)?.message)
         // Fallback to category filter
       }
     }
@@ -117,14 +124,14 @@ export async function GET(
     res.json({
       products: filteredProducts,
       count: filteredProducts.length,
-      ...(region && { region: region.toUpperCase() }),
+      ...(region && typeof region === "string" && { region: region.toUpperCase() }),
       ...(category && { category }),
       ...(collection_id && { collection_id }),
     })
   } catch (error) {
     console.error("Store products error:", error)
     res.status(500).json({
-      message: error.message || "Internal server error",
+      message: (error as Error)?.message || "Internal server error",
     })
   }
 }
