@@ -225,10 +225,12 @@ async function start() {
       if (e && e.stack) console.error(e.stack)
     }
     try {
-      const regionServiceLoader = require(path.join(__dirname, 'loaders', 'region-service-loader.ts')).default
-      await regionServiceLoader(container)
+      const regionServiceLoader = require(path.join(__dirname, 'loaders', 'region-service-loader.js'))
+      const loadRegion = regionServiceLoader.default || regionServiceLoader
+      await loadRegion(container)
     } catch (e) {
-      console.warn('regionServiceLoader failed:', e.message)
+      console.error('regionServiceLoader failed:', e && e.message)
+      if (e && e.stack) console.error(e.stack)
     }
 
     // Custom route'lar için scope (container kullan; adminHubService, regionService, productService)
