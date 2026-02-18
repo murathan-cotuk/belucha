@@ -79,11 +79,11 @@ async function runMigrations() {
     await dataSource.initialize()
     console.log('✅ Database bağlantısı başarılı\n')
 
-    console.log('🔄 Migration'lar çalıştırılıyor...')
+    console.log('🔄 Migration\'lar çalıştırılıyor...')
     const migrations = await dataSource.runMigrations()
     
     if (migrations.length === 0) {
-      console.log('ℹ️  Çalıştırılacak yeni migration yok (tüm migration'lar zaten uygulanmış)\n')
+      console.log('ℹ️  Çalıştırılacak yeni migration yok (tüm migration\'lar zaten uygulanmış)\n')
     } else {
       console.log(`\n✅ ${migrations.length} migration başarıyla çalıştırıldı:\n`)
       migrations.forEach(migration => {

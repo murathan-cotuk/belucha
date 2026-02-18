@@ -21,6 +21,7 @@
     "medusa": "^0.0.3",
     "next": "16.0.10",
     "patch-package": "^8.0.1",
+    "pg": "^8.18.0",
     "scheduler": "^0.27.0"
   },
   "devDependencies": {
