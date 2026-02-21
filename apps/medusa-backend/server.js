@@ -280,8 +280,18 @@ async function start() {
           );
         `)
         await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_pages_slug ON admin_hub_pages(slug);')
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS admin_hub_collections (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            title varchar(255) NOT NULL,
+            handle varchar(255) NOT NULL UNIQUE,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+        await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_collections_handle ON admin_hub_collections(handle);')
         await client.end()
-        console.log('Admin Hub: admin_hub_menus, admin_hub_media, admin_hub_pages tabloları hazır')
+        console.log('Admin Hub: admin_hub_menus, admin_hub_media, admin_hub_pages, admin_hub_collections tabloları hazır')
       } catch (migErr) {
         console.warn('Admin Hub migration (menus) skipped or failed:', migErr && migErr.message)
       }
@@ -420,25 +430,62 @@ async function start() {
     httpApp.delete('/admin-hub/v1/categories/:id', (req, res) => adminHubCategoryByIdDELETE(req, res))
     console.log('Admin Hub categories routes: GET/POST /admin-hub/categories ve /admin-hub/v1/categories (+ :id GET/PUT/DELETE)')
 
-    // --- Ürünler: .ts route yükle (productService/productModuleService aşağıda düzeltildi) ---
+    // --- Ürünler: fallback her zaman kayıtlı (404 önlenir); .ts route varsa kullanılır ---
     const runHandler = (handler, req, res) => {
       Promise.resolve(handler(req, res)).catch((err) => {
         console.error('Route handler error:', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       })
     }
+    const adminProductsFallbackGET = async (req, res) => {
+      try {
+        const scope = req.scope || container
+        let list = []
+        const keys = ['productModuleService', 'product_service', 'productService']
+        for (const k of keys) {
+          try {
+            const svc = scope.resolve(k)
+            if (!svc) continue
+            if (typeof svc.listAndCount === 'function') {
+              const [products, count] = await svc.listAndCount({}, { take: 100, skip: 0 })
+              list = Array.isArray(products) ? products : (products?.data || [])
+              return res.json({ products: list, count: list.length })
+            }
+            if (typeof svc.listAndCountProducts === 'function') {
+              const [products, count] = await svc.listAndCountProducts({}, { take: 100, skip: 0 })
+              list = Array.isArray(products) ? products : (products?.data || [])
+              return res.json({ products: list, count: list.length })
+            }
+          } catch (_) {}
+        }
+        return res.json({ products: [], count: 0 })
+      } catch (err) {
+        console.error('Admin products GET fallback error:', err)
+        return res.json({ products: [], count: 0 })
+      }
+    }
+    let adminProducts = null
     try {
-      const adminProducts = require(path.join(__dirname, 'api', 'admin', 'products', 'route.ts'))
-      httpApp.get('/admin/products', (req, res) => runHandler(adminProducts.GET, req, res))
-      httpApp.post('/admin/products', (req, res) => runHandler(adminProducts.POST, req, res))
+      adminProducts = require(path.join(__dirname, 'api', 'admin', 'products', 'route.ts'))
     } catch (e) {
-      console.error('Load admin/products route:', e.message)
+      console.warn('Load admin/products route (ts):', e.message)
+    }
+    if (adminProducts && typeof adminProducts.GET === 'function') {
+      httpApp.get('/admin/products', (req, res) => runHandler(adminProducts.GET, req, res))
+    } else {
+      httpApp.get('/admin/products', adminProductsFallbackGET)
+      console.log('Admin route: GET /admin/products (fallback)')
+    }
+    if (adminProducts && typeof adminProducts.POST === 'function') {
+      httpApp.post('/admin/products', (req, res) => runHandler(adminProducts.POST, req, res))
     }
     try {
       const adminProductsId = require(path.join(__dirname, 'api', 'admin', 'products', '[id]', 'route.ts'))
-      httpApp.get('/admin/products/:id', (req, res) => runHandler(adminProductsId.GET, req, res))
+      if (adminProductsId && typeof adminProductsId.GET === 'function') {
+        httpApp.get('/admin/products/:id', (req, res) => runHandler(adminProductsId.GET, req, res))
+      }
     } catch (e) {
-      console.error('Load admin/products/[id] route:', e.message)
+      console.warn('Load admin/products/[id] route:', e.message)
     }
     try {
       const storeProducts = require(path.join(__dirname, 'api', 'store', 'products', 'route.ts'))
@@ -485,10 +532,61 @@ async function start() {
     httpApp.get('/admin/orders', (req, res) => adminOrdersGET(req, res))
     console.log('Admin route: GET /admin/orders')
 
-    // GET /admin/collections – Medusa koleksiyon listesi (kategori formunda manuel bağlama için)
+    // Standalone collections (admin_hub_collections) – kategoriye bağlı olmadan
+    const listAdminHubCollectionsDb = async () => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return []
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('SELECT id, title, handle FROM admin_hub_collections ORDER BY title')
+        await client.end()
+        return res.rows || []
+      } catch (_) { return [] }
+    }
+    const createAdminHubCollectionDb = async (title, handle) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query(
+          'INSERT INTO admin_hub_collections (title, handle) VALUES ($1, $2) ON CONFLICT (handle) DO UPDATE SET title = $1 RETURNING id, title, handle',
+          [title, handle]
+        )
+        await client.end()
+        return res.rows && res.rows[0] ? res.rows[0] : null
+      } catch (e) {
+        console.warn('createAdminHubCollectionDb:', e && e.message)
+        return null
+      }
+    }
+    const deleteAdminHubCollectionDb = async (id) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return false
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('DELETE FROM admin_hub_collections WHERE id = $1 RETURNING id', [id])
+        await client.end()
+        return res.rowCount > 0
+      } catch (e) {
+        console.warn('deleteAdminHubCollectionDb:', e && e.message)
+        return false
+      }
+    }
+
+    // GET /admin/collections – Medusa + has_collection kategorileri + admin_hub_collections (standalone)
     const adminCollectionsGET = async (req, res) => {
       try {
         const scope = req.scope || container
+        const medusaOnly = req.query.medusa_only === 'true' || req.query.medusa_only === '1'
         let list = []
         try {
           const svc = scope.resolve('productCollectionService')
@@ -497,6 +595,26 @@ async function start() {
             list = Array.isArray(raw) ? raw : (raw?.data || [])
           }
         } catch (_) {}
+        if (!medusaOnly) {
+          const existingIds = new Set(list.map(c => c.id))
+          try {
+            const standalone = await listAdminHubCollectionsDb()
+            standalone.forEach(s => { if (s && s.id && !existingIds.has(s.id)) { existingIds.add(s.id); list.push({ id: s.id, title: s.title, handle: s.handle, _standalone: true }) } })
+          } catch (_) {}
+          try {
+            const adminHub = resolveAdminHub()
+            if (adminHub) {
+              const categories = await adminHub.listCategories({})
+              const withCollection = (categories || []).filter(c => c.has_collection === true)
+              withCollection.forEach(c => {
+                if (c && c.id && !existingIds.has(c.id)) {
+                  existingIds.add(c.id)
+                  list.push({ id: c.id, title: c.name, handle: c.slug, _fromCategory: true })
+                }
+              })
+            }
+          } catch (_) {}
+        }
         res.json({ collections: list, count: list.length })
       } catch (err) {
         console.error('Admin collections GET error:', err)
@@ -512,36 +630,66 @@ async function start() {
         const title = (b.title || '').trim()
         if (!title) return res.status(400).json({ message: 'title is required' })
         const handle = (b.handle || '').trim() || title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+        const standalone = b.standalone === true || b.standalone === 'true'
+        if (standalone) {
+          const row = await createAdminHubCollectionDb(title, handle)
+          if (row) return res.status(201).json({ collection: { id: row.id, title: row.title, handle: row.handle } })
+          return res.status(500).json({ message: 'Failed to create standalone collection' })
+        }
         let svc = null
         try { svc = scope.resolve('productCollectionService') } catch (_) {}
         if (!svc) try { svc = scope.resolve('productModuleService') } catch (_) {}
-        if (!svc) {
+        if (svc) {
+          let collection = null
+          if (typeof svc.create === 'function') {
+            collection = await svc.create({ title, handle })
+          } else if (typeof svc.createProductCollections === 'function') {
+            const created = await svc.createProductCollections([{ title, handle }])
+            collection = Array.isArray(created) ? created[0] : created
+          }
+          if (collection) return res.status(201).json({ collection })
+        }
+        const adminHub = resolveAdminHub()
+        if (!adminHub) {
+          const row = await createAdminHubCollectionDb(title, handle)
+          if (row) return res.status(201).json({ collection: { id: row.id, title: row.title, handle: row.handle } })
           return res.status(503).json({
-            message: 'Collection service not available. Create collections from Content → Categories by enabling "Has collection".',
+            message: 'Collection service not available. Run: node apps/medusa-backend/scripts/run-admin-hub-sql.js',
             code: 'COLLECTION_SERVICE_UNAVAILABLE'
           })
         }
-        let collection = null
-        if (typeof svc.create === 'function') {
-          collection = await svc.create({ title, handle })
-        } else if (typeof svc.createProductCollections === 'function') {
-          const created = await svc.createProductCollections([{ title, handle }])
-          collection = Array.isArray(created) ? created[0] : created
-        }
-        if (!collection) {
-          return res.status(503).json({
-            message: 'Collection service not available. Create collections from Content → Categories by enabling "Has collection".',
-            code: 'COLLECTION_SERVICE_UNAVAILABLE'
-          })
-        }
-        res.status(201).json({ collection })
+        const category = await adminHub.createCategory({
+          name: title,
+          slug: handle,
+          has_collection: true,
+          active: true,
+          is_visible: true
+        })
+        res.status(201).json({
+          collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true }
+        })
       } catch (err) {
         console.error('Admin collections POST error:', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       }
     }
     httpApp.post('/admin/collections', (req, res) => adminCollectionsPOST(req, res))
-    console.log('Admin route: GET/POST /admin/collections')
+    const adminCollectionByIdDELETE = async (req, res) => {
+      try {
+        const id = req.params.id
+        if (!id) return res.status(400).json({ message: 'id is required' })
+        const deleted = await deleteAdminHubCollectionDb(id)
+        if (deleted) return res.status(200).json({ deleted: true })
+        return res.status(404).json({ message: 'Collection not found or cannot be deleted (only standalone collections can be removed here)' })
+      } catch (err) {
+        console.error('Admin collection DELETE error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin-hub/collections', (req, res) => adminCollectionsGET(req, res))
+    httpApp.post('/admin-hub/collections', (req, res) => adminCollectionsPOST(req, res))
+    httpApp.delete('/admin-hub/collections/:id', (req, res) => adminCollectionByIdDELETE(req, res))
+    console.log('Admin route: GET/POST/DELETE /admin-hub/collections')
 
     // --- Admin Hub Menus ---
     const resolveMenuService = () => {
