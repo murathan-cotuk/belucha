@@ -64,9 +64,13 @@ export default class AdminHubService {
 
     const savedCategory = await this.categoryRepository_.save(category)
 
-    // If has_collection is true, sync with Medusa collection
+    // If has_collection is true, sync with Medusa collection (best-effort; never fail the create)
     if (savedCategory.has_collection) {
-      await this.syncCollectionForCategory(savedCategory)
+      try {
+        await this.syncCollectionForCategory(savedCategory)
+      } catch (e) {
+        console.warn("Collection sync skipped for new category:", (e as Error)?.message)
+      }
     }
 
     return savedCategory
@@ -99,14 +103,14 @@ export default class AdminHubService {
   async getCategoryById(id: string): Promise<AdminHubCategory | null> {
     return await this.categoryRepository_.findOne({
       where: { id },
-      relations: ["parent", "children"],
+      relations: ["parent"],
     })
   }
 
   async getCategoryBySlug(slug: string): Promise<AdminHubCategory | null> {
     return await this.categoryRepository_.findOne({
       where: { slug },
-      relations: ["parent", "children"],
+      relations: ["parent"],
     })
   }
 
@@ -137,17 +141,17 @@ export default class AdminHubService {
     Object.assign(category, data)
     const savedCategory = await this.categoryRepository_.save(category)
 
-    // Sync collection if has_collection changed
-    if (savedCategory.has_collection !== oldHasCollection) {
-      if (savedCategory.has_collection) {
+    // Sync collection if has_collection changed or slug/name changed (best-effort; never fail the update)
+    try {
+      if (savedCategory.has_collection !== oldHasCollection) {
+        if (savedCategory.has_collection) {
+          await this.syncCollectionForCategory(savedCategory)
+        }
+      } else if (savedCategory.has_collection && (data.slug || data.name)) {
         await this.syncCollectionForCategory(savedCategory)
-      } else {
-        // Optionally remove collection (or just leave it)
-        // await this.removeCollectionForCategory(savedCategory)
       }
-    } else if (savedCategory.has_collection && (data.slug || data.name)) {
-      // If slug or name changed, update collection
-      await this.syncCollectionForCategory(savedCategory)
+    } catch (e) {
+      console.warn("Collection sync skipped on update:", (e as Error)?.message)
     }
 
     return savedCategory
@@ -273,17 +277,15 @@ export default class AdminHubService {
   }
 
   async deleteCategory(id: string): Promise<void> {
-    const category = await this.categoryRepository_.findOne({
-      where: { id },
-      relations: ["children"],
-    })
+    const category = await this.categoryRepository_.findOne({ where: { id } })
 
     if (!category) {
       throw new Error(`Category with id ${id} not found`)
     }
 
-    // Check if category has children
-    if (category.children && category.children.length > 0) {
+    // Children is not a TypeORM relation on entity; check by parent_id
+    const childCount = await this.categoryRepository_.count({ where: { parent_id: id } })
+    if (childCount > 0) {
       throw new Error("Cannot delete category with children. Delete or move children first.")
     }
 

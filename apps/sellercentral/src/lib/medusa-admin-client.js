@@ -46,7 +46,9 @@ class MedusaAdminClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: response.statusText }));
-        throw new Error(error.message || `HTTP error! status: ${response.status}`);
+        const err = new Error(error.message || `HTTP error! status: ${response.status}`);
+        err.statusCode = response.status;
+        throw err;
       }
 
       return await response.json();
@@ -55,17 +57,33 @@ class MedusaAdminClient {
       const friendlyMessage = isNetworkError
         ? `Backend unreachable at ${base}. Check NEXT_PUBLIC_MEDUSA_BACKEND_URL and that the backend is running (e.g. Render).`
         : error?.message;
-      console.error(`Medusa Admin API Error (${endpoint}):`, error);
-      throw new Error(friendlyMessage);
+      const out = new Error(friendlyMessage);
+      out.statusCode = error?.statusCode;
+      const status = error?.statusCode;
+      if (status === 404 || status === 503) {
+        console.warn(`Medusa Admin API (${endpoint}):`, error?.message || status);
+      } else {
+        console.error(`Medusa Admin API Error (${endpoint}):`, error?.message || error);
+      }
+      throw out;
     }
   }
 
   /**
-   * Products
+   * Products (returns { products, count }; on 404/5xx returns empty list so Dashboard/Inventory don't break)
    */
   async getProducts(params = {}) {
     const queryParams = new URLSearchParams(params).toString()
-    return this.request(`/admin/products${queryParams ? `?${queryParams}` : ''}`)
+    try {
+      return await this.request(`/admin/products${queryParams ? `?${queryParams}` : ''}`)
+    } catch (err) {
+      const code = err?.statusCode
+      const msg = (err?.message || '').toLowerCase()
+      if (code === 404 || code === 500 || code === 503 || msg.includes('404') || msg.includes('not found') || msg.includes('500') || msg.includes('503')) {
+        return { products: [], count: 0 }
+      }
+      throw err
+    }
   }
 
   async getProduct(id) {
@@ -173,19 +191,29 @@ class MedusaAdminClient {
   }
 
   /**
-   * List Medusa collections (for linking category to existing collection)
+   * List collections. For Products > Collections page use adminHub: true (our endpoint, no 503).
+   * For category form "Link to existing" use getMedusaCollections({ medusa_only: true }) with adminHub: false.
    */
-  async getMedusaCollections() {
-    const data = await this.request('/admin/collections')
+  async getMedusaCollections(params = {}) {
+    const q = params.medusa_only ? '?medusa_only=true' : ''
+    const base = params.adminHub === true ? '/admin-hub/collections' : '/admin/collections'
+    const data = await this.request(`${base}${q}`)
     return { collections: data.collections || [], count: data.count || 0 }
   }
 
   async createCollection(data) {
-    const res = await this.request('/admin/collections', {
+    const body = { title: data.title, handle: data.handle }
+    if (data.standalone === true) body.standalone = true
+    const endpoint = '/admin-hub/collections'
+    const res = await this.request(endpoint, {
       method: 'POST',
-      body: JSON.stringify({ title: data.title, handle: data.handle }),
+      body: JSON.stringify(body),
     })
     return res.collection
+  }
+
+  async deleteCollection(id) {
+    return this.request(`/admin-hub/collections/${id}`, { method: 'DELETE' })
   }
 
   /**

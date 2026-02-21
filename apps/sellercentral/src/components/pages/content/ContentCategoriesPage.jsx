@@ -79,6 +79,8 @@ export default function ContentCategoriesPage() {
   const [editId, setEditId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(initialSlugTouched);
   const [medusaCollections, setMedusaCollections] = useState([]);
@@ -103,7 +105,7 @@ export default function ContentCategoriesPage() {
   }, []);
 
   useEffect(() => {
-    client.getMedusaCollections().then((r) => setMedusaCollections(r.collections || [])).catch(() => setMedusaCollections([]));
+    client.getMedusaCollections({ medusa_only: true }).then((r) => setMedusaCollections(r.collections || [])).catch(() => setMedusaCollections([]));
   }, []);
 
   const handleNameChange = (value) => {
@@ -135,6 +137,21 @@ export default function ContentCategoriesPage() {
       collection_id: (cat.metadata && cat.metadata.collection_id) || "",
     });
     setModalOpen(true);
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deleteId) return;
+    try {
+      setDeleting(true);
+      setError(null);
+      await client.deleteAdminHubCategory(deleteId);
+      setDeleteId(null);
+      await fetchCategories();
+    } catch (err) {
+      setError(err?.message || "Failed to delete category. Delete or move child categories first.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -288,9 +305,14 @@ export default function ContentCategoriesPage() {
                         </InlineStack>
                       </IndexTable.Cell>
                       <IndexTable.Cell>
-                        <Button size="slim" onClick={() => openEdit(row)}>
-                          Edit
-                        </Button>
+                        <InlineStack gap="200">
+                          <Button size="slim" onClick={() => openEdit(row)}>
+                            Edit
+                          </Button>
+                          <Button size="slim" tone="critical" onClick={() => setDeleteId(row.id)}>
+                            Delete
+                          </Button>
+                        </InlineStack>
                       </IndexTable.Cell>
                     </IndexTable.Row>
                   ))}
@@ -300,6 +322,26 @@ export default function ContentCategoriesPage() {
           </Card>
         </Layout.Section>
       </Layout>
+
+      <Modal
+        open={!!deleteId}
+        onClose={() => !deleting && setDeleteId(null)}
+        title="Delete category"
+        primaryAction={{
+          content: deleting ? "Deleting…" : "Delete",
+          destructive: true,
+          onAction: handleDeleteCategory,
+          loading: deleting,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setDeleteId(null) }]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            Are you sure you want to delete &quot;{categories.find((c) => c.id === deleteId)?.name || "this category"}&quot;?
+            {categories.some((c) => c.parent_id === deleteId) && " This category has subcategories; delete or move them first."}
+          </Text>
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={modalOpen}
