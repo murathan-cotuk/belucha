@@ -1087,10 +1087,76 @@ async function start() {
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       }
     }
+    const updateAdminHubProductDb = async (id, body) => {
+      const client = getProductsDbClient()
+      if (!client) return null
+      try {
+        const existing = await getAdminHubProductByIdOrHandleDb(id)
+        if (!existing) return null
+        const uuid = existing.id
+        await client.connect()
+        const title = body.title !== undefined ? String(body.title).trim() || existing.title : existing.title
+        const handle = body.handle !== undefined ? String(body.handle).trim() || existing.handle : existing.handle
+        const sku = body.sku !== undefined ? (body.sku === '' ? null : String(body.sku).trim()) : existing.sku
+        const description = body.description !== undefined ? (body.description === '' ? null : String(body.description)) : existing.description
+        const status = body.status !== undefined ? String(body.status).trim() || 'draft' : existing.status
+        const price = body.price !== undefined ? Math.round(Number(body.price) * 100) : (existing.price != null ? Math.round(Number(existing.price) * 100) : 0)
+        const inventory = body.inventory !== undefined ? parseInt(body.inventory, 10) || 0 : (existing.inventory ?? 0)
+        let metadataObj = existing.metadata && typeof existing.metadata === 'object' ? { ...existing.metadata } : {}
+        if (body.metadata !== undefined && body.metadata && typeof body.metadata === 'object') {
+          metadataObj = { ...metadataObj, ...body.metadata }
+        }
+        const metadata = Object.keys(metadataObj).length ? JSON.stringify(metadataObj) : null
+        const variants = body.variants !== undefined ? (Array.isArray(body.variants) ? JSON.stringify(body.variants) : null) : (existing.variants ? JSON.stringify(existing.variants) : null)
+        const collection_id = body.collection_id !== undefined ? body.collection_id || null : existing.collection_id
+        await client.query(
+          `UPDATE admin_hub_products SET title = $1, handle = $2, sku = $3, description = $4, status = $5, price_cents = $6, inventory = $7, metadata = $8, variants = $9, collection_id = $10, updated_at = now() WHERE id = $11`,
+          [title, handle, sku, description, status, price, inventory, metadata, variants, collection_id, uuid]
+        )
+        await client.end()
+        const updated = await getAdminHubProductByIdOrHandleDb(uuid)
+        return updated
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.warn('updateAdminHubProductDb:', e && e.message)
+        return null
+      }
+    }
+    const adminHubProductByIdPUT = async (req, res) => {
+      try {
+        const product = await updateAdminHubProductDb(req.params.id, req.body || {})
+        if (!product) {
+          res.status(404).json({ message: 'Product not found' })
+          return
+        }
+        res.json({ product })
+      } catch (err) {
+        console.error('Admin Hub product PUT error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const adminHubProductByIdDELETE = async (req, res) => {
+      const client = getProductsDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        const existing = await getAdminHubProductByIdOrHandleDb(req.params.id)
+        if (!existing) return res.status(404).json({ message: 'Product not found' })
+        await client.connect()
+        await client.query('DELETE FROM admin_hub_products WHERE id = $1', [existing.id])
+        await client.end()
+        res.status(200).json({ deleted: true })
+      } catch (err) {
+        try { await client.end() } catch (_) {}
+        console.error('Admin Hub product DELETE error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
     httpApp.get('/admin-hub/products', adminHubProductsGET)
     httpApp.post('/admin-hub/products', adminHubProductsPOST)
     httpApp.get('/admin-hub/products/:id', adminHubProductByIdGET)
-    console.log('Admin Hub routes: GET/POST /admin-hub/products, GET /admin-hub/products/:id')
+    httpApp.put('/admin-hub/products/:id', adminHubProductByIdPUT)
+    httpApp.delete('/admin-hub/products/:id', adminHubProductByIdDELETE)
+    console.log('Admin Hub routes: GET/POST /admin-hub/products, GET/PUT/DELETE /admin-hub/products/:id')
 
     // GET /store/menus – Public menüler (Shop Navbar). location=main vb. query ile filtrelenebilir.
     const storeMenusGET = async (req, res) => {

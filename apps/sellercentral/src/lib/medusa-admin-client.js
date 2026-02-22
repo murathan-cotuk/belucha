@@ -132,6 +132,20 @@ class MedusaAdminClient {
     return res?.product ?? res;
   }
 
+  /** PUT /admin-hub/products/:id – ürün güncelle (id veya handle) */
+  async updateAdminHubProduct(idOrHandle, data) {
+    const res = await this.request(`/admin-hub/products/${encodeURIComponent(idOrHandle)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res?.product ?? res;
+  }
+
+  /** DELETE /admin-hub/products/:id */
+  async deleteAdminHubProduct(idOrHandle) {
+    return this.request(`/admin-hub/products/${encodeURIComponent(idOrHandle)}`, { method: 'DELETE' });
+  }
+
   async updateProduct(id, data) {
     return this.request(`/admin/products/${id}`, {
       method: 'PUT',

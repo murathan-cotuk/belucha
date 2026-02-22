@@ -88,9 +88,21 @@ const ComparePrice = styled.span`
   text-decoration: line-through;
 `;
 
+function sanitizeHtml(html) {
+  if (!html || typeof html !== "string") return "";
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\s*on\w+=["'][^"']*["']/gi, "");
+}
+
 const Description = styled.div`
   color: #4b5563;
   line-height: 1.6;
+  & p { margin-bottom: 1em; }
+  & ul, & ol { margin-left: 1.5em; }
+  & strong { font-weight: 600; }
+  & a { color: #0ea5e9; text-decoration: underline; }
 `;
 
 const Actions = styled.div`
@@ -163,9 +175,11 @@ export default function ProductTemplate() {
           <PriceContainer>
             <Price>${product.variants?.[0]?.prices?.[0]?.amount ? (product.variants[0].prices[0].amount / 100).toFixed(2) : '0.00'}</Price>
           </PriceContainer>
-          <Description>
-            {product.description || product.subtitle || "No description available"}
-          </Description>
+          <Description
+            dangerouslySetInnerHTML={{
+              __html: sanitizeHtml(product.description || product.subtitle || "") || "No description available",
+            }}
+          />
           <Actions>
             <Button 
               size="lg" 
