@@ -41,7 +41,7 @@ export default function DashboardHome() {
         setLoading(true);
         setError(null);
         const [productsData, ordersData] = await Promise.all([
-          medusaClient.getProducts(),
+          medusaClient.getAdminHubProducts(),
           medusaClient.getOrders().catch(() => ({ orders: [] })),
         ]);
         const products = productsData.products || [];

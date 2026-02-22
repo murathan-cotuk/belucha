@@ -103,6 +103,30 @@ const SQL_STEPS = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_collections_handle ON admin_hub_collections(handle);
     `,
   },
+  {
+    name: 'admin_hub_products',
+    sql: `
+      CREATE TABLE IF NOT EXISTS admin_hub_products (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        title varchar(255) NOT NULL,
+        handle varchar(255) NOT NULL,
+        sku varchar(100),
+        description text,
+        status varchar(50) DEFAULT 'draft',
+        seller_id varchar(255),
+        collection_id uuid,
+        price_cents integer DEFAULT 0,
+        inventory integer DEFAULT 0,
+        metadata jsonb,
+        variants jsonb,
+        created_at timestamp DEFAULT now(),
+        updated_at timestamp DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admin_hub_products_handle ON admin_hub_products(handle);
+      CREATE INDEX IF NOT EXISTS idx_admin_hub_products_seller ON admin_hub_products(seller_id);
+      CREATE INDEX IF NOT EXISTS idx_admin_hub_products_status ON admin_hub_products(status);
+    `,
+  },
 ]
 
 async function main() {
@@ -122,7 +146,7 @@ async function main() {
       await client.query(step.sql)
       console.log('OK:', step.name)
     }
-    console.log('\nBitti. admin_hub_categories, admin_hub_banners, admin_hub_menus, admin_hub_menu_items, admin_hub_collections hazir.\n')
+    console.log('\nBitti. admin_hub_categories, admin_hub_banners, admin_hub_menus, admin_hub_menu_items, admin_hub_collections, admin_hub_products hazir.\n')
   } catch (err) {
     console.error('\nHata:', err.message)
     process.exit(1)

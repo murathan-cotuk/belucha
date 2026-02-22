@@ -335,7 +335,7 @@ export default function ProductsPage() {
     const fetchProducts = async () => {
       try {
         setProductsLoading(true);
-        const data = await medusaClient.getProducts();
+        const data = await medusaClient.getAdminHubProducts();
         setProducts(data.products || []);
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -539,10 +539,10 @@ export default function ProductsPage() {
       };
 
       setCreating(true);
-      const result = await medusaClient.createProduct(productData);
+      const result = await medusaClient.createAdminHubProduct(productData);
       
       // Refresh products list
-      const data = await medusaClient.getProducts();
+      const data = await medusaClient.getAdminHubProducts();
       setProducts(data.products || []);
 
       setMessage({ type: "success", text: "Product created successfully!" });

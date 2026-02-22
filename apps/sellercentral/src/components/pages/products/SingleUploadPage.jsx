@@ -112,7 +112,7 @@ export default function SingleUploadPage() {
 
   const getCategoryName = (id) => categories.find((c) => c.id === id)?.name ?? "";
 
-  const groupedCategories = categories.reduce((acc, cat) => {
+  const groupedCategories = (Array.isArray(categories) ? categories : []).reduce((acc, cat) => {
     const parentName = cat.parent_id
       ? (categories.find((p) => p.id === cat.parent_id)?.name || "Subcategories")
       : "Main Categories";
@@ -202,10 +202,11 @@ export default function SingleUploadPage() {
 
     const productData = {
       title: formData.title,
+      handle: slug,
       slug,
       sku: SKU,
       description: formData.description || "",
-      price: parseFloat(formData.price),
+      price: parseFloat(formData.price) || 0,
       inventory: parseInt(formData.inventory, 10) || 0,
       status: formData.status,
       seller: sellerId,
@@ -216,7 +217,7 @@ export default function SingleUploadPage() {
 
     try {
       setCreating(true);
-      await medusaClient.createProduct(productData);
+      await medusaClient.createAdminHubProduct(productData);
       setMessage({ type: "success", text: "Product created successfully!" });
       setFormData({
         title: "",
@@ -232,7 +233,11 @@ export default function SingleUploadPage() {
       });
     } catch (error) {
       console.error("Error creating product:", error);
-      setMessage({ type: "error", text: error?.message || "An error occurred while creating the product." });
+      const msg = error?.message || "An error occurred while creating the product.";
+      const hint = msg.includes("Backend unreachable") || msg.includes("NEXT_PUBLIC_MEDUSA_BACKEND_URL")
+        ? " Set NEXT_PUBLIC_MEDUSA_BACKEND_URL in .env.local (e.g. https://belucha-medusa-backend.onrender.com) and restart the dev server."
+        : "";
+      setMessage({ type: "error", text: msg + hint });
     } finally {
       setCreating(false);
     }
@@ -331,17 +336,22 @@ export default function SingleUploadPage() {
                                 : "Select categories"}
                             </Button>
                             {categoryDropdownOpen && (
-                              <Box
-                                position="absolute"
-                                zIndex="var(--p-z-index-1)"
-                                padding="200"
-                                background="bg-surface"
-                                borderRadius="200"
-                                boxShadow="shadow"
-                                minWidth="100%"
-                                maxHeight="320px"
-                                overflowY="auto"
-                                paddingBlockStart="200"
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  zIndex: "var(--p-z-index-1)",
+                                  top: "100%",
+                                  left: 0,
+                                  right: 0,
+                                  marginTop: 4,
+                                  padding: "var(--p-space-200)",
+                                  background: "var(--p-color-bg-surface)",
+                                  borderRadius: "var(--p-border-radius-200)",
+                                  boxShadow: "var(--p-shadow-200)",
+                                  minWidth: "100%",
+                                  maxHeight: 320,
+                                  overflowY: "auto",
+                                }}
                               >
                                 <BlockStack gap="100">
                                   {Object.keys(groupedCategories).length === 0 ? (
@@ -366,7 +376,7 @@ export default function SingleUploadPage() {
                                     ))
                                   )}
                                 </BlockStack>
-                              </Box>
+                              </div>
                             )}
                           </div>
                           {formData.categories.length > 0 && (
