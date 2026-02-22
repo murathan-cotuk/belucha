@@ -19,6 +19,7 @@ import {
   Checkbox,
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import ProductDescriptionEditor from "@/components/inputs/ProductDescriptionEditor";
 
 const DEFAULT_CATEGORIES = [{ id: "uncategorized", name: "Uncategorized" }];
 
@@ -305,13 +306,16 @@ export default function SingleUploadPage() {
                       placeholder="PRODUCT-SKU-001"
                       autoComplete="off"
                     />
-                    <TextField
-                      label="Description"
-                      value={formData.description}
-                      onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
-                      multiline={3}
-                      autoComplete="off"
-                    />
+                    <div>
+                      <Text as="label" variant="bodyMd" fontWeight="medium">Description</Text>
+                      <Box paddingBlockStart="100">
+                        <ProductDescriptionEditor
+                          value={formData.description}
+                          onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
+                          placeholder="Product description…"
+                        />
+                      </Box>
+                    </div>
 
                     <Box paddingBlockStart="200">
                       <Text as="span" variant="bodyMd" fontWeight="semibold">

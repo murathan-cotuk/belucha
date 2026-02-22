@@ -63,7 +63,7 @@ export default function InventoryPage() {
       title="Inventory"
       primaryAction={{
         content: "Add product",
-        onAction: () => router.push("/products/single-upload"),
+        onAction: () => router.push("/products/new"),
       }}
       secondaryActions={[
         { content: "Bulk upload", url: "/products/bulk-upload" },
@@ -98,7 +98,7 @@ export default function InventoryPage() {
                       No products yet. Add your first product to get started.
                     </Text>
                     <InlineStack gap="200">
-                      <Button variant="primary" url="/products/single-upload">
+                      <Button variant="primary" url="/products/new">
                         Add product
                       </Button>
                       <Button url="/products/bulk-upload">Bulk upload</Button>
