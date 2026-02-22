@@ -32,6 +32,45 @@ function slugFromName(name) {
     .replace(/[^a-z0-9-]/g, "");
 }
 
+/** Parse semicolon-separated hierarchical CSV into a flat create list (key, label, parentKey, sortOrder). */
+function parseCategoriesCsvToCreateList(csvText) {
+  const lines = (csvText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = lines[0];
+  const rows = lines.slice(1);
+  const separator = header.includes(";") ? ";" : ",";
+  const labelMap = {};
+  const childrenMap = {};
+  const seenKeys = new Set();
+  for (const line of rows) {
+    const segments = line.split(separator).map((s) => s.trim()).filter(Boolean);
+    for (let i = 0; i < segments.length; i++) {
+      const label = segments[i];
+      const parentKey = i === 0 ? "" : segments.slice(0, i).join("|");
+      const key = segments.slice(0, i + 1).join("|");
+      if (!label) continue;
+      labelMap[key] = label;
+      if (!childrenMap[parentKey]) childrenMap[parentKey] = [];
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        childrenMap[parentKey].push(key);
+      }
+    }
+  }
+  const createList = [];
+  const queue = [""];
+  while (queue.length) {
+    const parentKey = queue.shift();
+    const childKeys = childrenMap[parentKey] || [];
+    for (let i = 0; i < childKeys.length; i++) {
+      const key = childKeys[i];
+      createList.push({ key, label: labelMap[key] || key, parentKey, sortOrder: i });
+      queue.push(key);
+    }
+  }
+  return createList;
+}
+
 function buildTree(flatList) {
   const byId = new Map(flatList.map((c) => [c.id, { ...c, children: [] }]));
   const roots = [];
@@ -85,6 +124,9 @@ export default function ContentCategoriesPage() {
   const [form, setForm] = useState(emptyForm);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(initialSlugTouched);
   const [medusaCollections, setMedusaCollections] = useState([]);
+  const [importCsvOpen, setImportCsvOpen] = useState(false);
+  const [importCsvFile, setImportCsvFile] = useState(null);
+  const [importProgress, setImportProgress] = useState(null); // { total, done, error } | null
   const client = getMedusaAdminClient();
 
   const fetchCategories = async () => {
@@ -196,6 +238,37 @@ export default function ContentCategoriesPage() {
     }
   };
 
+  const runImportCsv = async () => {
+    if (!importCsvFile) return;
+    const file = importCsvFile;
+    let text;
+    try {
+      text = await file.text();
+    } catch (err) {
+      setImportProgress({ total: 0, done: 0, error: err?.message || "Could not read file" });
+      return;
+    }
+    const list = parseCategoriesCsvToCreateList(text);
+    if (list.length === 0) {
+      setImportProgress({ total: 0, done: 0, error: "No categories found. Use semicolon-separated columns (e.g. Main Category;Subcategory 1;...)." });
+      return;
+    }
+    setImportProgress({ total: list.length, done: 0, error: null });
+    try {
+      const result = await client.importAdminHubCategories(list);
+      setImportProgress((prev) => ({ ...prev, done: result?.imported ?? list.length, error: null }));
+      await fetchCategories();
+      setImportCsvOpen(false);
+      setImportCsvFile(null);
+      setImportProgress(null);
+    } catch (err) {
+      setImportProgress((prev) => ({
+        ...(prev || { total: list.length, done: 0 }),
+        error: err?.message || "Import failed",
+      }));
+    }
+  };
+
   const tree = buildTree(categories);
   const flatRows = flattenTree(tree);
   const parentOptions = [{ label: "— None (top level) —", value: "" }, ...categories.filter((c) => !editId || c.id !== editId).map((c) => ({ label: c.name, value: c.id }))];
@@ -210,6 +283,12 @@ export default function ContentCategoriesPage() {
         content: "Add category",
         onAction: openCreate,
       }}
+      secondaryActions={[
+        {
+          content: "Import from CSV",
+          onAction: () => setImportCsvOpen(true),
+        },
+      ]}
     >
       <Layout>
         {error && (
@@ -319,6 +398,66 @@ export default function ContentCategoriesPage() {
           </Card>
         </Layout.Section>
       </Layout>
+
+      <Modal
+        open={importCsvOpen}
+        onClose={() => {
+          if (!importProgress || importProgress.error || importProgress.done >= importProgress.total) {
+            setImportCsvOpen(false);
+            setImportCsvFile(null);
+            setImportProgress(null);
+          }
+        }}
+        title="Import categories from CSV"
+        primaryAction={{
+          content: importProgress != null && importProgress.done < importProgress.total && !importProgress.error ? "Importing…" : "Import",
+          onAction: runImportCsv,
+          loading: importProgress != null && !importProgress?.error && importProgress.done < importProgress.total,
+        }}
+        secondaryActions={[
+          {
+            content: "Cancel",
+            onAction: () => {
+              if (!(importProgress != null && importProgress.done < importProgress.total)) {
+                setImportCsvOpen(false);
+                setImportCsvFile(null);
+                setImportProgress(null);
+              }
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Text as="p" tone="subdued">
+              Upload a semicolon-separated CSV with columns like: Main Category;Subcategory 1;Subcategory 2;… Categories are saved to the same list as panel categories and will appear here.
+            </Text>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <Text as="span" variant="bodyMd" fontWeight="medium">CSV file</Text>
+              <input
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  setImportCsvFile(f || null);
+                  if (!f) setImportProgress(null);
+                }}
+              />
+            </label>
+            {importProgress != null && (
+              <BlockStack gap="200">
+                {importProgress.error ? (
+                  <Banner tone="critical" onDismiss={() => setImportProgress(null)}>{importProgress.error}</Banner>
+                ) : (
+                  <Text as="p" variant="bodyMd">
+                    {importProgress.done >= importProgress.total ? `Imported ${importProgress.done} categories.` : `Importing… ${importProgress.done} / ${importProgress.total}`}
+                  </Text>
+                )}
+              </BlockStack>
+            )}
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
 
       <Modal
         open={!!deleteId}

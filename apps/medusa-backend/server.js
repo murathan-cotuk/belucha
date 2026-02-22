@@ -384,6 +384,23 @@ async function start() {
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       }
     }
+    const adminHubCategoriesImportPOST = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) {
+        return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
+      }
+      try {
+        const { items } = req.body || {}
+        if (!Array.isArray(items) || items.length === 0) {
+          return res.status(400).json({ message: 'items array is required and must not be empty' })
+        }
+        const { imported, categories } = await adminHubService.importCategories(items)
+        res.status(201).json({ imported, categories })
+      } catch (err) {
+        console.error('Admin Hub Categories import error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Import failed' })
+      }
+    }
     const adminHubCategoryByIdGET = async (req, res) => {
       const adminHubService = resolveAdminHub()
       if (!adminHubService) return res.status(503).json({ message: 'Admin Hub service not available', code: 'ADMIN_HUB_NOT_LOADED' })
@@ -420,6 +437,7 @@ async function start() {
     }
     httpApp.get('/admin-hub/categories', (req, res) => adminHubCategoriesGET(req, res))
     httpApp.post('/admin-hub/categories', (req, res) => adminHubCategoriesPOST(req, res))
+    httpApp.post('/admin-hub/categories/import', (req, res) => adminHubCategoriesImportPOST(req, res))
     httpApp.get('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdGET(req, res))
     httpApp.put('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdPUT(req, res))
     httpApp.delete('/admin-hub/categories/:id', (req, res) => adminHubCategoryByIdDELETE(req, res))
@@ -879,6 +897,140 @@ async function start() {
     httpApp.put('/admin-hub/menus/:menuId/items/:itemId', menuItemByIdPUT)
     httpApp.delete('/admin-hub/menus/:menuId/items/:itemId', menuItemByIdDELETE)
     console.log('Admin Hub routes: /admin-hub/menus (+ :id, :menuId/items, :itemId)')
+
+    // --- Admin Hub Products (DB: admin_hub_products, collections/menus gibi) ---
+    const getProductsDbClient = () => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      const { Client } = require('pg')
+      const isRender = dbUrl.includes('render.com')
+      return new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+    }
+    const listAdminHubProductsDb = async (query = {}) => {
+      const client = getProductsDbClient()
+      if (!client) return []
+      try {
+        await client.connect()
+        const limit = Math.min(parseInt(query.limit, 10) || 100, 200)
+        const offset = parseInt(query.offset, 10) || 0
+        const sellerId = (query.seller_id || query.seller || '').trim()
+        const status = (query.status || '').trim()
+        let sql = 'SELECT id, title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants, created_at, updated_at FROM admin_hub_products'
+        const params = []
+        const where = []
+        if (sellerId) { where.push('seller_id = $' + (params.length + 1)); params.push(sellerId) }
+        if (status) { where.push('status = $' + (params.length + 1)); params.push(status) }
+        if (where.length) sql += ' WHERE ' + where.join(' AND ')
+        sql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2)
+        params.push(limit, offset)
+        const res = await client.query(sql, params)
+        await client.end()
+        return (res.rows || []).map((r) => ({
+          id: r.id,
+          title: r.title,
+          handle: r.handle,
+          slug: r.handle,
+          sku: r.sku,
+          description: r.description,
+          status: r.status,
+          seller_id: r.seller_id,
+          seller: r.seller_id,
+          collection_id: r.collection_id,
+          price: r.price_cents != null ? r.price_cents / 100 : 0,
+          price_cents: r.price_cents,
+          inventory: r.inventory != null ? r.inventory : 0,
+          metadata: r.metadata,
+          variants: r.variants,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        }))
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.warn('listAdminHubProductsDb:', e && e.message)
+        return []
+      }
+    }
+    const createAdminHubProductDb = async (body) => {
+      const client = getProductsDbClient()
+      if (!client) return null
+      try {
+        await client.connect()
+        const title = (body.title || '').trim() || 'Untitled'
+        const handle = (body.handle || body.slug || title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'product-' + Date.now()).trim()
+        const price = typeof body.price === 'number' ? Math.round(body.price * 100) : parseInt(body.price, 10) || 0
+        const inventory = parseInt(body.inventory, 10) || 0
+        const metadata = body.metadata && typeof body.metadata === 'object' ? JSON.stringify(body.metadata) : null
+        const variants = body.variants && Array.isArray(body.variants) ? JSON.stringify(body.variants) : null
+        const res = await client.query(
+          `INSERT INTO admin_hub_products (title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING id, title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants, created_at, updated_at`,
+          [
+            title,
+            handle,
+            (body.sku || '').trim() || null,
+            (body.description || '').trim() || null,
+            (body.status || 'draft').trim() || 'draft',
+            (body.seller || body.seller_id || '').trim() || null,
+            body.collection_id || null,
+            price,
+            inventory,
+            metadata,
+            variants,
+          ]
+        )
+        await client.end()
+        const r = res.rows && res.rows[0]
+        if (!r) return null
+        return {
+          id: r.id,
+          title: r.title,
+          handle: r.handle,
+          slug: r.handle,
+          sku: r.sku,
+          description: r.description,
+          status: r.status,
+          seller_id: r.seller_id,
+          seller: r.seller_id,
+          collection_id: r.collection_id,
+          price: r.price_cents != null ? r.price_cents / 100 : 0,
+          inventory: r.inventory != null ? r.inventory : 0,
+          metadata: r.metadata,
+          variants: r.variants,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        }
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.warn('createAdminHubProductDb:', e && e.message)
+        return null
+      }
+    }
+    const adminHubProductsGET = async (req, res) => {
+      try {
+        const products = await listAdminHubProductsDb(req.query || {})
+        res.json({ products, count: products.length })
+      } catch (err) {
+        console.error('Admin Hub products GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const adminHubProductsPOST = async (req, res) => {
+      try {
+        const row = await createAdminHubProductDb(req.body || {})
+        if (!row) {
+          res.status(503).json({ message: 'Database not configured or insert failed' })
+          return
+        }
+        res.status(201).json({ product: row })
+      } catch (err) {
+        console.error('Admin Hub products POST error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin-hub/products', adminHubProductsGET)
+    httpApp.post('/admin-hub/products', adminHubProductsPOST)
+    console.log('Admin Hub routes: GET/POST /admin-hub/products')
 
     // GET /store/menus – Public menüler (Shop Navbar). location=main vb. query ile filtrelenebilir.
     const storeMenusGET = async (req, res) => {

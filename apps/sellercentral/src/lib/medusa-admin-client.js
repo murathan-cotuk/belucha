@@ -24,7 +24,7 @@ class MedusaAdminClient {
    * Generic API request helper
    */
   async request(endpoint, options = {}) {
-    const base = this.baseURL || getDefaultBaseUrl();
+    const base = (typeof getDefaultBaseUrl === 'function' ? getDefaultBaseUrl() : null) || this.baseURL;
     const url = `${base}${endpoint}`;
 
     if (!url || url.startsWith('undefined')) {
@@ -45,23 +45,25 @@ class MedusaAdminClient {
       const response = await fetch(url, config);
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: response.statusText }));
-        const err = new Error(error.message || `HTTP error! status: ${response.status}`);
+        const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+        const msg = errorBody?.message || errorBody?.error || response.statusText;
+        const err = new Error(typeof msg === 'string' ? msg : `HTTP ${response.status}`);
         err.statusCode = response.status;
         throw err;
       }
 
       return await response.json();
     } catch (error) {
-      const isNetworkError = error?.message === 'Failed to fetch' || error?.name === 'TypeError';
+      const isNetworkError = error?.message === 'Failed to fetch' || error?.name === 'TypeError' || error?.code === 'ECONNREFUSED';
+      const method = (options?.method || 'GET').toUpperCase();
       const friendlyMessage = isNetworkError
-        ? `Backend unreachable at ${base}. Check NEXT_PUBLIC_MEDUSA_BACKEND_URL and that the backend is running (e.g. Render).`
-        : error?.message;
+        ? `Backend unreachable (${method} ${endpoint}). Set NEXT_PUBLIC_MEDUSA_BACKEND_URL to your backend URL (e.g. https://belucha-medusa-backend.onrender.com) and ensure the backend is running.`
+        : (error?.message || 'Request failed');
       const out = new Error(friendlyMessage);
       out.statusCode = error?.statusCode;
-      const status = error?.statusCode;
-      if (status === 404 || status === 503) {
-        console.warn(`Medusa Admin API (${endpoint}):`, error?.message || status);
+      out.cause = error;
+      if (error?.statusCode === 404 || error?.statusCode === 503) {
+        console.warn(`Medusa Admin API (${endpoint}):`, error?.message || error?.statusCode);
       } else {
         console.error(`Medusa Admin API Error (${endpoint}):`, error?.message || error);
       }
@@ -95,6 +97,33 @@ class MedusaAdminClient {
       method: 'POST',
       body: JSON.stringify(data),
     })
+  }
+
+  /**
+   * Admin Hub Products (DB: admin_hub_products – collections/menus gibi veritabanına bağlı)
+   * Backend erişilemezse boş liste döner, sayfa çökmez.
+   */
+  async getAdminHubProducts(params = {}) {
+    const queryParams = new URLSearchParams(params).toString();
+    try {
+      const data = await this.request(`/admin-hub/products${queryParams ? `?${queryParams}` : ''}`);
+      return { products: data?.products ?? [], count: data?.count ?? data?.products?.length ?? 0 };
+    } catch (err) {
+      const code = err?.statusCode;
+      const msg = (err?.message || '').toLowerCase();
+      if (code === 404 || code === 500 || code === 503 || msg.includes('unreachable') || msg.includes('fetch')) {
+        return { products: [], count: 0 };
+      }
+      throw err;
+    }
+  }
+
+  async createAdminHubProduct(data) {
+    const res = await this.request('/admin-hub/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res?.product ?? res;
   }
 
   async updateProduct(id, data) {
@@ -145,6 +174,17 @@ class MedusaAdminClient {
   async getCategories() {
     console.warn('⚠️  getCategories() is deprecated. Use getAdminHubCategories() instead.')
     return this.request('/admin/product-categories')
+  }
+
+  /**
+   * Bulk import Admin Hub categories (POST /admin-hub/categories/import)
+   * Body: { items: [ { key, label, parentKey, sortOrder } ] }
+   */
+  async importAdminHubCategories(items) {
+    return this.request('/admin-hub/categories/import', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
   }
 
   /**

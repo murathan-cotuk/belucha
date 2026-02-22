@@ -74,6 +74,51 @@ function flattenMenuTree(nodes, level = 0) {
   return out;
 }
 
+/** Parse semicolon-separated hierarchical CSV (e.g. Main Category;Subcategory 1;...) into a flat create list preserving hierarchy and order. */
+function parseCategoriesCsvToCreateList(csvText) {
+  const lines = (csvText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return []; // need header + at least one row
+  const header = lines[0];
+  const rows = lines.slice(1);
+  const separator = header.includes(";") ? ";" : ",";
+  const labelMap = {}; // key -> label
+  const childrenMap = {}; // parentKey -> ordered child keys (first appearance order)
+  const seenKeys = new Set();
+  for (const line of rows) {
+    const segments = line.split(separator).map((s) => s.trim()).filter(Boolean);
+    for (let i = 0; i < segments.length; i++) {
+      const label = segments[i];
+      const parentKey = i === 0 ? "" : segments.slice(0, i).join("|");
+      const key = segments.slice(0, i + 1).join("|");
+      if (!label) continue;
+      labelMap[key] = label;
+      if (!childrenMap[parentKey]) childrenMap[parentKey] = [];
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        childrenMap[parentKey].push(key);
+      }
+    }
+  }
+  // BFS so parents are always before children
+  const createList = [];
+  const queue = [""];
+  while (queue.length) {
+    const parentKey = queue.shift();
+    const childKeys = childrenMap[parentKey] || [];
+    for (let i = 0; i < childKeys.length; i++) {
+      const key = childKeys[i];
+      createList.push({
+        key,
+        label: labelMap[key] || key,
+        parentKey,
+        sortOrder: i,
+      });
+      queue.push(key);
+    }
+  }
+  return createList;
+}
+
 function MenuEditorPanel(props) {
   const {
     panelMode,
@@ -135,6 +180,7 @@ function MenuEditorPanel(props) {
     expandedIds,
     setExpandedIds,
     router,
+    onOpenImportCsv,
   } = props;
   const tree = buildMenuTree(items);
   const openInlineAdd = (parentId) => {
@@ -252,7 +298,14 @@ function MenuEditorPanel(props) {
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
         <BlockStack gap="400">
-          <Text as="h3" variant="headingMd" fontWeight="semibold">Menu items</Text>
+          <InlineStack gap="400" blockAlign="center" wrap>
+            <Text as="h3" variant="headingMd" fontWeight="semibold">Menu items</Text>
+            {typeof onOpenImportCsv === "function" && (
+              <Button variant="secondary" size="slim" onClick={onOpenImportCsv}>
+                Import from CSV
+              </Button>
+            )}
+          </InlineStack>
           <div
             className="menu-items-card"
             style={{
@@ -527,6 +580,10 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const [inlineEditingId, setInlineEditingId] = useState(null);
   const [inlineNewOpen, setInlineNewOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [importCsvOpen, setImportCsvOpen] = useState(false);
+  const [importCsvFile, setImportCsvFile] = useState(null);
+  const [importUnderParentId, setImportUnderParentId] = useState("");
+  const [importProgress, setImportProgress] = useState(null); // { total, done, error } | null
   const dragJustEndedRef = useRef(false);
   const lastDropTimeRef = useRef(0);
   const hasInitializedExpandedRef = useRef(false);
@@ -586,7 +643,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
 
   useEffect(() => {
     client.getMedusaCollections({ adminHub: true }).then((r) => setCollections(r.collections || [])).catch(() => setCollections([]));
-    client.getProducts().then((r) => setProducts(r.products || [])).catch(() => setProducts([]));
+    client.getAdminHubProducts().then((r) => setProducts(r.products || [])).catch(() => setProducts([]));
   }, []);
 
   const selectedMenu = menus.find((m) => m.id === selectedMenuId);
@@ -873,6 +930,52 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     setDropTarget({ type: null, id: null });
   };
 
+  const runImportCsv = async () => {
+    if (!selectedMenuId || !importCsvFile) return;
+    const file = importCsvFile;
+    let text;
+    try {
+      text = await file.text();
+    } catch (err) {
+      setImportProgress({ total: 0, done: 0, error: err?.message || "Could not read file" });
+      return;
+    }
+    const list = parseCategoriesCsvToCreateList(text);
+    if (list.length === 0) {
+      setImportProgress({ total: 0, done: 0, error: "No categories found in CSV. Use semicolon-separated columns (e.g. Main Category;Subcategory 1;...)." });
+      return;
+    }
+    setImportProgress({ total: list.length, done: 0, error: null });
+    const createdIds = new Map(); // key -> menu item id
+    const rootParentId = importUnderParentId && String(importUnderParentId).trim() ? String(importUnderParentId) : null;
+    try {
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        const parentId = item.parentKey === "" ? rootParentId : (createdIds.get(item.parentKey) ?? null);
+        const created = await client.createMenuItem(selectedMenuId, {
+          label: item.label,
+          link_type: "url",
+          link_value: null,
+          parent_id: parentId,
+          sort_order: item.sortOrder,
+        });
+        if (created?.id) createdIds.set(item.key, created.id);
+        setImportProgress((prev) => prev ? { ...prev, done: i + 1 } : { total: list.length, done: i + 1, error: null });
+      }
+      await fetchItems();
+      setImportCsvOpen(false);
+      setImportCsvFile(null);
+      setImportUnderParentId("");
+      setImportProgress(null);
+    } catch (err) {
+      setImportProgress((prev) => ({
+        ...(prev || { total: list.length, done: 0 }),
+        done: prev?.done ?? 0,
+        error: err?.message || "Import failed",
+      }));
+    }
+  };
+
   const onDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -990,13 +1093,72 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
               openEditItem={openEditItem}
               handleSaveItem={handleSaveItem}
               parentOptionsForForm={parentOptionsForForm}
-              expandedIds={expandedIds}
-              setExpandedIds={setExpandedIds}
-              router={router}
-            />
+    expandedIds={expandedIds}
+    setExpandedIds={setExpandedIds}
+    router={router}
+    onOpenImportCsv={() => setImportCsvOpen(true)}
+  />
               </Card>
             </Layout.Section>
           </Layout>
+          <Modal
+            open={importCsvOpen}
+            onClose={() => {
+              if (!importProgress || importProgress.error || importProgress.done >= importProgress.total) {
+                setImportCsvOpen(false);
+                setImportCsvFile(null);
+                setImportUnderParentId("");
+                setImportProgress(null);
+              }
+            }}
+            title="Import categories from CSV"
+            primaryAction={{
+              content: "Import",
+              onAction: runImportCsv,
+              loading: importProgress != null && !importProgress.error && importProgress.done < importProgress.total,
+            }}
+          >
+            <Modal.Section>
+              <BlockStack gap="400">
+                <Text as="p" tone="subdued">
+                  Upload a semicolon-separated CSV with columns like: Main Category;Subcategory 1;Subcategory 2;… Hierarchy is built from the columns; duplicate branches are merged.
+                </Text>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <Text as="span" variant="bodyMd" fontWeight="medium">CSV file</Text>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv,text/plain"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      setImportCsvFile(f || null);
+                      if (!f) setImportProgress(null);
+                    }}
+                  />
+                </label>
+                <Select
+                  label="Add under"
+                  options={[
+                    { label: "Top level", value: "" },
+                    ...flatItems.map(({ id, label, _level }) => ({
+                      label: "  ".repeat(_level) + (_level ? "↳ " : "") + (label || id),
+                      value: id,
+                    })),
+                  ]}
+                  value={importUnderParentId}
+                  onChange={setImportUnderParentId}
+                />
+                {importProgress != null && (
+                  <BlockStack gap="200">
+                    {importProgress.error ? (
+                      <Banner tone="critical" onDismiss={() => setImportProgress(null)}>{importProgress.error}</Banner>
+                    ) : (
+                      <Text as="p" variant="bodyMd">Imported {importProgress.done} / {importProgress.total} items.</Text>
+                    )}
+                  </BlockStack>
+                )}
+              </BlockStack>
+            </Modal.Section>
+          </Modal>
         </Page>
       );
   }

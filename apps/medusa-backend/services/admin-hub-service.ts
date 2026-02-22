@@ -76,6 +76,57 @@ export default class AdminHubService {
     return savedCategory
   }
 
+  /** Generate URL-safe slug from hierarchical key (e.g. "Appliances|Dishwashers" -> "appliances-dishwashers"). Max 255 chars. */
+  private slugFromKey_(key: string): string {
+    const slug = key
+      .toLowerCase()
+      .trim()
+      .replace(/\|/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "category"
+    return slug.slice(0, 255)
+  }
+
+  /**
+   * Bulk import categories from a flat list with parent_key.
+   * Each item: { key, label, parentKey, sortOrder }. Creates in order so parent exists before child.
+   */
+  async importCategories(
+    items: Array<{ key: string; label: string; parentKey: string; sortOrder: number }>
+  ): Promise<{ imported: number; categories: AdminHubCategory[] }> {
+    const idByKey = new Map<string, string>()
+    const categories: AdminHubCategory[] = []
+    const slugCount = new Map<string, number>()
+
+    const ensureUniqueSlug = (baseSlug: string): string => {
+      const count = slugCount.get(baseSlug) ?? 0
+      slugCount.set(baseSlug, count + 1)
+      return count === 0 ? baseSlug : `${baseSlug}-${count}`
+    }
+
+    for (const item of items) {
+      const baseSlug = this.slugFromKey_(item.key)
+      const slug = ensureUniqueSlug(baseSlug)
+      const parent_id = item.parentKey === "" ? null : idByKey.get(item.parentKey) ?? null
+
+      const category = await this.createCategory({
+        name: item.label,
+        slug,
+        parent_id,
+        sort_order: item.sortOrder,
+        active: true,
+        is_visible: true,
+        has_collection: false,
+      })
+      idByKey.set(item.key, category.id)
+      categories.push(category)
+    }
+
+    return { imported: categories.length, categories }
+  }
+
   async listCategories(filters?: {
     active?: boolean
     parent_id?: string | null

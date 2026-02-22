@@ -30,7 +30,7 @@ export default function InventoryPage() {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const data = await medusaClient.getProducts();
+        const data = await medusaClient.getAdminHubProducts();
         setProducts(data.products || []);
       } catch (err) {
         setError(err?.message || "Failed to load products");
@@ -131,7 +131,7 @@ export default function InventoryPage() {
                                 {product.title}
                               </Text>
                               <Text as="p" variant="bodySm" tone="subdued">
-                                €{product.variants?.[0]?.prices?.[0]?.amount ? (Number(product.variants[0].prices[0].amount) / 100).toFixed(2) : "0.00"} · {product.status || "draft"}
+                                €{(product.price != null ? Number(product.price) : (product.variants?.[0]?.prices?.[0]?.amount ? Number(product.variants[0].prices[0].amount) / 100 : 0)).toFixed(2)} · {product.status || "draft"}
                               </Text>
                             </BlockStack>
                           </InlineStack>
