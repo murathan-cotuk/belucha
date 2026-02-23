@@ -223,8 +223,8 @@ export default function PolarisLayout({ children }) {
         showMobileNavigation={showMobileNav}
         onNavigationDismiss={() => setShowMobileNav(false)}
       >
-        <div className="belucha-page-content belucha-page-content-transition">
-          <div className="belucha-page-content-inner">
+        <div className="belucha-scroll-wrapper">
+          <div className="belucha-page-content belucha-page-content-transition">
             {children}
           </div>
         </div>

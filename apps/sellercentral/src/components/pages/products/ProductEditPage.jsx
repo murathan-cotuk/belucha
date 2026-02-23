@@ -16,14 +16,12 @@ import {
   Banner,
   Divider,
   Select,
-  ChoiceList,
   DropZone,
   SkeletonBodyText,
   SkeletonDisplayText,
 } from "@shopify/polaris";
 import { ProductIcon, SearchIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
-import ProductDescriptionEditor from "@/components/inputs/ProductDescriptionEditor";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -72,6 +70,13 @@ function setMeta(product, key, value) {
   return { ...product, metadata: m };
 }
 
+function descriptionVisualToHtml(html) {
+  const s = (html || "").trim();
+  if (!s) return "";
+  if (/<(p|div|h[1-6]|ul|ol|li)\b/i.test(s)) return s;
+  return "<p>" + s + "</p>";
+}
+
 export default function ProductEditPage({ product: initialProduct, idOrHandle, isNew, onReload }) {
   const router = useRouter();
   const client = getMedusaAdminClient();
@@ -83,7 +88,19 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [categories, setCategories] = useState([]);
   const [collections, setCollections] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [collectionSearch, setCollectionSearch] = useState("");
+  const [collectionPopoverOpen, setCollectionPopoverOpen] = useState(false);
+  const [descriptionMode, setDescriptionMode] = useState("visual");
+  const descEditorRef = useRef(null);
   const initialSnapshotRef = useRef(null);
+  const [expandedVariantIndex, setExpandedVariantIndex] = useState(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (collectionPopoverOpen) document.body.classList.add("belucha-collections-dropdown-open");
+    else document.body.classList.remove("belucha-collections-dropdown-open");
+    return () => document.body.classList.remove("belucha-collections-dropdown-open");
+  }, [collectionPopoverOpen]);
 
   useEffect(() => {
     const next = initialProduct ?? (isNew ? getEmptyProduct() : null);
@@ -98,6 +115,10 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   useEffect(() => {
     client.getMedusaCollections({ adminHub: true }).then((r) => setCollections(r.collections || [])).catch(() => setCollections([]));
   }, [client]);
+
+  useEffect(() => {
+    if (descriptionMode === "visual" && descEditorRef.current) descEditorRef.current.innerHTML = product?.description || "";
+  }, [descriptionMode]);
 
   function normalizeForCompare(p) {
     if (!p) return null;
@@ -143,6 +164,9 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
   const save = async () => {
     if (!product) return;
+    const descriptionToSave = descriptionMode === "visual" && descEditorRef.current
+      ? (descEditorRef.current.innerHTML || "")
+      : (product.description || "");
     const handle = (product.handle || "").trim() || (product.title || "product").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/gi, "");
     try {
       setSaving(true);
@@ -151,7 +175,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         title: product.title || "Untitled",
         handle,
         sku: product.sku || "",
-        description: product.description || "",
+        description: descriptionToSave,
         status: product.status || "draft",
         price: product.price ?? 0,
         inventory: product.inventory ?? 0,
@@ -230,6 +254,44 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   })();
   const collectionIds = Array.isArray(meta.collection_ids) ? meta.collection_ids : (meta.collection_id != null ? [meta.collection_id] : []);
 
+  const variantsList = (() => {
+    const v = product?.variants;
+    if (!Array.isArray(v) || v.length === 0) return [{ title: "", value: "", sku: "", inventory: "" }];
+    return v.map((item) => {
+      if (item && typeof item === "object") {
+        const title = item.title ?? item.name ?? "";
+        const value = item.value ?? (Array.isArray(item.options) ? item.options.map((o) => (o && o.value) || o).filter(Boolean).join(", ") : "");
+        return {
+          title: String(title),
+          value: String(value),
+          sku: String(item.sku ?? item.sku_number ?? ""),
+          inventory: item.inventory != null ? String(item.inventory) : "",
+        };
+      }
+      return { title: "", value: String(item), sku: "", inventory: "" };
+    });
+  })();
+
+  const setVariantsList = (next) => {
+    const normalized = next.map(({ title, value, sku, inventory }) => ({
+      title: title || "Variant",
+      value: value || "",
+      sku: (sku ?? "").toString().trim(),
+      inventory: inventory !== "" && inventory != null ? parseInt(String(inventory), 10) : 0,
+    }));
+    update({ variants: normalized });
+  };
+
+  const updateVariantRow = (i, field, val, maybeAppendEmpty) => {
+    const n = [...variantsList];
+    if (!n[i]) return;
+    n[i] = { ...n[i], [field]: val };
+    const isLast = i === variantsList.length - 1;
+    const hasContent = (n[i].title || "").trim() || (n[i].value || "").trim();
+    if (maybeAppendEmpty && isLast && hasContent) n.push({ title: "", value: "", sku: "", inventory: "" });
+    setVariantsList(n);
+  };
+
   const handleMediaDrop = useCallback(
     (files) => {
       setMediaUploading(true);
@@ -242,7 +304,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       )
         .then((urls) => {
           const newUrls = urls.filter(Boolean);
-          if (newUrls.length) updateMeta("media", [...mediaUrls, ...newUrls]);
+          if (newUrls.length) updateMeta("media", [...mediaUrls, ...newUrls].slice(0, 6));
         })
         .catch((err) => setMessage({ type: "error", text: err?.message || "Upload failed" }))
         .finally(() => setMediaUploading(false));
@@ -263,10 +325,47 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         .product-edit-header .product-edit-name { margin: 0; font-size: 0.875rem; font-weight: 700; }
         .product-edit-label { font-size: 0.8125rem; font-weight: 400; color: var(--p-color-text-subdued); margin-bottom: 4px; }
         .product-price-strike { text-decoration: line-through; color: var(--p-color-text-subdued); }
-        .product-media-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 8px; align-items: start; }
-        .product-media-main { grid-column: span 2; grid-row: span 2; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--p-color-bg-fill-secondary); position: relative; min-height: 120px; }
-        .product-media-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--p-color-bg-fill-secondary); position: relative; min-height: 80px; }
-        .product-media-add { grid-column: span 2; min-height: 100px; border-radius: 8px; }
+        .product-media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; max-width: 400px; }
+        .product-media-item { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--p-color-bg-fill-secondary); position: relative; }
+        .product-media-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .product-media-remove { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: none; border-radius: 50%; background: rgba(0,0,0,0.5); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; padding: 0; }
+        .product-media-item:hover .product-media-remove { opacity: 1; }
+        .product-media-remove:hover { background: rgba(0,0,0,0.75); }
+        .product-media-add { aspect-ratio: 1; border-radius: 8px; border: 2px dashed var(--p-color-border); background: var(--p-color-bg-fill-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--p-color-icon); transition: border-color 0.2s, background 0.2s; }
+        .product-media-add:hover { border-color: var(--p-color-border-hover); background: var(--p-color-bg-fill-secondary-hover, rgba(0,0,0,0.03)); }
+        .product-media-add svg { width: 24px; height: 24px; }
+        @media (max-width: 480px) { .product-media-grid { grid-template-columns: repeat(3, 1fr); max-width: none; } }
+        .collection-dropdown-wrap { position: relative; }
+        .collection-dropdown-panel { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--p-color-bg-surface); border: 1px solid var(--p-color-border); border-radius: 8px; box-shadow: var(--p-shadow-400); max-height: 280px; overflow-y: auto; z-index: 10002; opacity: 0; transform: translateY(-8px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; }
+        .collection-dropdown-panel.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .collection-dropdown-card-wrap { position: relative; overflow: visible !important; }
+        .collection-dropdown-card-wrap.collections-open { z-index: 10000; }
+        .collection-dropdown-card-wrap .Polaris-Card { overflow: visible !important; }
+        .collection-dropdown-card-wrap .Polaris-LegacyCard { overflow: visible !important; }
+        .collection-dropdown-card-wrap .Polaris-BlockStack { overflow: visible !important; }
+        .collection-dropdown-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-size: 14px; color: var(--p-color-text); }
+        .collection-dropdown-item:hover { background: var(--p-color-bg-surface-hover); }
+        .product-description-box { border: 1px solid var(--p-color-border); border-radius: 12px; overflow: hidden; background: var(--p-color-bg-surface); }
+        .product-description-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: var(--p-color-bg-surface-secondary); border-bottom: 1px solid var(--p-color-border); }
+        .product-description-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+        .product-description-toolbar .product-desc-btn { width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; cursor: pointer; background: transparent; color: var(--p-color-text-subdued); transition: background 0.15s, color 0.15s; display: inline-flex; align-items: center; justify-content: center; }
+        .product-description-toolbar .product-desc-btn:hover { background: var(--p-color-bg-surface-hover); color: var(--p-color-text); }
+        .product-description-toolbar .product-desc-btn svg { width: 16px; height: 16px; }
+        .product-description-toolbar .product-desc-divider { width: 1px; height: 20px; background: var(--p-color-border); margin: 0 4px; flex-shrink: 0; }
+        .product-description-toolbar .product-desc-html-btn { width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; cursor: pointer; background: transparent; color: var(--p-color-text-subdued); transition: background 0.15s, color 0.15s; display: inline-flex; align-items: center; justify-content: center; }
+        .product-description-toolbar .product-desc-html-btn:hover { background: var(--p-color-bg-surface-hover); color: var(--p-color-text); }
+        .product-description-toolbar .product-desc-html-btn.active { background: var(--p-color-bg-surface-selected); color: var(--p-color-text); }
+        .product-description-toolbar .product-desc-html-btn svg { width: 16px; height: 16px; }
+        .product-description-editor { min-height: 200px; padding: 16px; outline: none; font-size: 14px; line-height: 1.6; color: var(--p-color-text); }
+        .product-description-html { min-height: 200px; width: 100%; padding: 16px; font-family: ui-monospace, "SF Mono", Monaco, monospace; font-size: 13px; line-height: 1.5; color: var(--p-color-text); background: var(--p-color-bg-surface-secondary); border: none; border-radius: 0; resize: vertical; box-sizing: border-box; }
+        .product-description-html:focus { outline: none; }
+        .product-description-html::placeholder { color: var(--p-color-text-subdued); }
+        .product-description-hint { margin-top: 8px; font-size: 12px; color: var(--p-color-text-subdued); }
+        .checkbox-container { cursor: pointer; flex-shrink: 0; }
+        .checkbox-container input { display: none; }
+        .checkbox-container svg { overflow: visible; display: block; }
+        .checkbox-path { fill: none; stroke: var(--p-color-border); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; transition: stroke-dasharray 0.35s ease, stroke-dashoffset 0.35s ease, stroke 0.2s; stroke-dasharray: 241 9999999; stroke-dashoffset: 0; }
+        .checkbox-container input:checked ~ svg .checkbox-path { stroke: var(--p-color-bg-fill-brand); stroke-dasharray: 70.5 9999999; stroke-dashoffset: -262.27; }
       `}</style>
 
       {message.text && (
@@ -338,33 +437,87 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               </InlineStack>
 
               <Divider />
-              <Text as="h2" variant="bodyMd" fontWeight="regular">Description</Text>
-              <ProductDescriptionEditor
-                value={product.description || ""}
-                onChange={(html) => update({ description: html })}
-                placeholder="Product description…"
-              />
+              <BlockStack gap="200">
+                <Text as="h2" variant="bodyMd" fontWeight="regular">Description</Text>
+                <div className="product-description-box">
+                  <div className="product-description-toolbar">
+                    <div className="product-description-toolbar-left">
+                      {descriptionMode === "visual" && (
+                        <>
+                          <button type="button" className="product-desc-btn" onMouseDown={(e) => { e.preventDefault(); document.execCommand("bold"); }} title="Bold" aria-label="Bold">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fillRule="evenodd" d="M5 1a1.5 1.5 0 0 0-1.5 1.5v10.461c0 .85.689 1.539 1.538 1.539h4.462a3.999 3.999 0 0 0 2.316-7.262 3.999 3.999 0 0 0-3.316-6.238zm3.5 5.5a1.5 1.5 0 0 0 0-3h-2.5v3zm-2.5 2.5v3h3.5a1.5 1.5 0 0 0 0-3z" /></svg>
+                          </button>
+                          <button type="button" className="product-desc-btn" onMouseDown={(e) => { e.preventDefault(); document.execCommand("italic"); }} title="Italic" aria-label="Italic">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M5.5 2.25a.75.75 0 0 1 .75-.75h6a.75.75 0 0 1 0 1.5h-2.344l-2.273 10h2.117a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5h2.345l2.272-10h-2.117a.75.75 0 0 1-.75-.75" /></svg>
+                          </button>
+                          <button type="button" className="product-desc-btn" onMouseDown={(e) => { e.preventDefault(); document.execCommand("underline"); }} title="Underline" aria-label="Underline">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M5.25 1.75a.75.75 0 0 0-1.5 0v6a4.25 4.25 0 0 0 8.5 0v-6a.75.75 0 0 0-1.5 0v6a2.75 2.75 0 1 1-5.5 0z" /><path d="M2.75 13.5a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5z" /></svg>
+                          </button>
+                          <span className="product-desc-divider" aria-hidden />
+                          <button type="button" className="product-desc-btn" onMouseDown={(e) => { e.preventDefault(); document.execCommand("insertUnorderedList"); }} title="Bulleted list" aria-label="Bulleted list">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M2 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2" /><path d="M2 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2" /><path d="M3 13a1 1 0 1 1-2 0 1 1 0 0 1 2 0" /><path d="M5.25 2.25a.75.75 0 0 0 0 1.5h9a.75.75 0 0 0 0-1.5z" /><path d="M4.5 8a.75.75 0 0 1 .75-.75h9a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1-.75-.75" /><path d="M5.25 12.25a.75.75 0 0 0 0 1.5h9a.75.75 0 0 0 0-1.5z" /></svg>
+                          </button>
+                          <button type="button" className="product-desc-btn" onMouseDown={(e) => { e.preventDefault(); document.execCommand("insertOrderedList"); }} title="Numbered list" aria-label="Numbered list">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M5.75 2.25a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5z" /><path d="M5.75 7.25a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5z" /><path d="M5 13a.75.75 0 0 1 .75-.75h8.5a.75.75 0 0 1 0 1.5h-8.5A.75.75 0 0 1 5 13" /><path d="M2.25 5.75a1.5 1.5 0 0 0-1.5 1.5.5.5 0 0 0 1 0 .5.5 0 0 1 1 0v.05a.5.5 0 0 1-.168.375l-1.423 1.264c-.515.459-.191 1.311.499 1.311h1.592a.5.5 0 0 0 0-1h-.935l.932-.828c.32-.285.503-.693.503-1.121v-.051a1.5 1.5 0 0 0-1.5-1.5" /></svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className={`product-desc-html-btn ${descriptionMode === "html" ? "active" : ""}`}
+                      onClick={() => {
+                        if (descriptionMode === "visual" && descEditorRef.current) {
+                          const html = descriptionVisualToHtml(descEditorRef.current.innerHTML || "");
+                          update({ description: html });
+                        } else if (descriptionMode !== "visual" && descEditorRef.current) {
+                          descEditorRef.current.innerHTML = product.description || "";
+                        }
+                        setDescriptionMode(descriptionMode === "html" ? "visual" : "html");
+                      }}
+                      title={descriptionMode === "html" ? "Show visual" : "Show HTML"}
+                      aria-label={descriptionMode === "html" ? "Show visual" : "Show HTML"}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M10.221 2.956a.75.75 0 0 0-1.442-.412l-3 10.5a.75.75 0 0 0 1.442.412z" /><path d="M5.03 4.22a.75.75 0 0 1 0 1.06l-2.72 2.72 2.72 2.72a.749.749 0 1 1-1.06 1.06l-3.25-3.25a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0" /><path d="M10.97 11.78a.75.75 0 0 1 0-1.06l2.72-2.72-2.72-2.72a.749.749 0 1 1 1.06-1.06l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0" /></svg>
+                    </button>
+                  </div>
+                  {descriptionMode === "html" ? (
+                    <textarea
+                      className="product-description-html"
+                      value={product.description || ""}
+                      onChange={(e) => update({ description: e.target.value })}
+                      rows={10}
+                      spellCheck={false}
+                    />
+                  ) : (
+                    <div
+                      ref={descEditorRef}
+                      className="product-description-editor"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={() => { if (descEditorRef.current) update({ description: descriptionVisualToHtml(descEditorRef.current.innerHTML || "") }); }}
+                    />
+                  )}
+                </div>
+                <p className="product-description-hint">Shown on the product page. Changes are saved when you blur the field or switch mode.</p>
+              </BlockStack>
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Media</Text>
               <div className="product-media-grid">
-                {mediaUrls[0] && (
-                  <div className="product-media-main">
-                    <img src={mediaUrls[0].startsWith("http") || mediaUrls[0].startsWith("data:") ? mediaUrls[0] : `${baseUrl}${mediaUrls[0]}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <Button size="slim" variant="plain" tone="critical" onClick={() => removeMedia(0)} style={{ position: "absolute", top: 4, right: 4 }}>×</Button>
+                {mediaUrls.map((url, i) => (
+                  <div key={i} className="product-media-item">
+                    <img src={url.startsWith("http") || url.startsWith("data:") ? url : `${baseUrl}${url}`} alt="" />
+                    <button type="button" className="product-media-remove" onClick={() => removeMedia(i)} aria-label="Remove image">×</button>
                   </div>
-                )}
-                {[1, 2, 3, 4].map((i) =>
-                  mediaUrls[i] ? (
-                    <div key={i} className="product-media-thumb">
-                      <img src={mediaUrls[i].startsWith("http") || mediaUrls[i].startsWith("data:") ? mediaUrls[i] : `${baseUrl}${mediaUrls[i]}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      <Button size="slim" variant="plain" tone="critical" onClick={() => removeMedia(i)} style={{ position: "absolute", top: 2, right: 2 }}>×</Button>
+                ))}
+                {mediaUrls.length < 6 && (
+                  <DropZone accept="image/*" type="image" onDropAccepted={handleMediaDrop} allowMultiple>
+                    <div className="product-media-add" role="button" tabIndex={0}>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5z" /></svg>
                     </div>
-                  ) : null
+                  </DropZone>
                 )}
-                <DropZone accept="image/*" type="image" onDropAccepted={handleMediaDrop} allowMultiple>
-                  <DropZone.FileUpload actionHint="Add images" />
-                </DropZone>
               </div>
               {mediaUploading && <Text as="p" variant="bodySm" tone="subdued">Uploading…</Text>}
 
@@ -399,15 +552,42 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Variants</Text>
-              {Array.isArray(product.variants) && product.variants.length > 0 ? (
-                product.variants.map((v, i) => (
-                  <Box key={i} padding="300" background="bg-surface-secondary" borderRadius="200">
-                    <Text as="p" variant="bodyMd">{v.title || v.name || `Variant ${i + 1}`} · {Array.isArray(v.options) ? v.options.map((o) => o.value).filter(Boolean).join(", ") : "—"}</Text>
-                  </Box>
-                ))
-              ) : (
-                <Text as="p" variant="bodySm" tone="subdued">No variants. Variants can be set when creating or via metadata.</Text>
-              )}
+              <Text as="p" variant="bodySm" tone="subdued">Option name (e.g. Color) and value (e.g. Red). New row appears as you fill the last one. Save to store as variations.</Text>
+              {variantsList.map((v, i) => (
+                <Box
+                  key={i}
+                  padding="200"
+                  background={expandedVariantIndex === i ? "bg-surface-selected" : "bg-surface-secondary"}
+                  borderRadius="200"
+                  style={expandedVariantIndex === i ? { border: "1px solid var(--p-color-border-info)" } : undefined}
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { if (e.target.closest("input, button")) return; setExpandedVariantIndex(expandedVariantIndex === i ? null : i); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!e.target.closest("input")) setExpandedVariantIndex(expandedVariantIndex === i ? null : i); } }}
+                    style={{ cursor: "pointer", marginBottom: expandedVariantIndex === i ? 8 : 0 }}
+                    aria-expanded={expandedVariantIndex === i}
+                  >
+                    <InlineStack gap="200" wrap blockAlign="center">
+                      <Box minWidth="120px" flex="1">
+                        <TextField label="Option name" labelHidden value={v.title} onChange={(val) => updateVariantRow(i, "title", val, true)} placeholder="Variant" autoComplete="off" />
+                      </Box>
+                      <Box minWidth="140px" flex="1">
+                        <TextField label="Option value" labelHidden value={v.value} onChange={(val) => updateVariantRow(i, "value", val, true)} placeholder="e.g. Red, Blue" autoComplete="off" />
+                      </Box>
+                      <Box minWidth="100px">
+                        <TextField label="SKU" labelHidden value={v.sku} onChange={(val) => updateVariantRow(i, "sku", val, false)} placeholder="SKU" autoComplete="off" />
+                      </Box>
+                      <Box minWidth="80px">
+                        <TextField label="Qty" labelHidden type="number" min={0} value={v.inventory} onChange={(val) => updateVariantRow(i, "inventory", val, false)} placeholder="0" />
+                      </Box>
+                      <Button size="slim" variant="plain" tone="critical" onClick={(e) => { e.stopPropagation(); setVariantsList(variantsList.filter((_, j) => j !== i)); }} aria-label="Remove variant">×</Button>
+                    </InlineStack>
+                  </div>
+                </Box>
+              ))}
+              <Button variant="secondary" size="slim" onClick={() => setVariantsList([...variantsList, { title: "", value: "", sku: "", inventory: "" }])}>Add variant</Button>
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Metafields (catalog)</Text>
@@ -434,37 +614,94 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         <Layout.Section variant="oneThird">
           <BlockStack gap="300">
             <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Status</Text>
-                <Select label="Status" labelHidden options={STATUS_OPTIONS} value={product.status || "draft"} onChange={(v) => update({ status: v })} />
-              </BlockStack>
-            </Card>
+              <BlockStack gap="400">
+                <BlockStack gap="200">
+                  <Text as="h2" variant="bodyMd" fontWeight="regular">Status</Text>
+                  <Select label="Status" labelHidden options={STATUS_OPTIONS} value={product.status || "draft"} onChange={(v) => update({ status: v })} />
+                </BlockStack>
 
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Collections</Text>
-                <ChoiceList
-                  title=""
-                  titleHidden
-                  allowMultiple
-                  choices={(collections || []).map((c) => ({ label: c.title || c.handle || c.id, value: c.id }))}
-                  selected={collectionIds}
-                  onChange={(v) => updateMeta("collection_ids", v)}
-                />
-              </BlockStack>
-            </Card>
+                <Divider />
 
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Sales</Text>
-                <Text as="p" variant="bodyMd">{meta.sales_count != null ? meta.sales_count : 0} sales</Text>
-              </BlockStack>
-            </Card>
+                <div className={`collection-dropdown-card-wrap ${collectionPopoverOpen ? "collections-open" : ""}`} style={{ position: "relative", zIndex: collectionPopoverOpen ? 10000 : undefined, overflow: "visible" }}>
+                  <BlockStack gap="200">
+                    <Text as="h2" variant="bodyMd" fontWeight="regular">Collections</Text>
+                    <div className="collection-dropdown-wrap">
+                      <TextField
+                        label=""
+                        labelHidden
+                        value={collectionSearch}
+                        onChange={setCollectionSearch}
+                        onFocus={() => setCollectionPopoverOpen(true)}
+                        placeholder="Search collections…"
+                        autoComplete="off"
+                      />
+                      <div className={`collection-dropdown-panel ${collectionPopoverOpen ? "open" : ""}`}>
+                        {(collections || [])
+                          .filter((c) => !collectionSearch.trim() || (c.title || c.handle || "").toLowerCase().includes(collectionSearch.toLowerCase()))
+                          .map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              className="collection-dropdown-item"
+                              onClick={() => {
+                                const next = collectionIds.includes(c.id) ? collectionIds.filter((id) => id !== c.id) : [...collectionIds, c.id];
+                                updateMeta("collection_ids", next);
+                              }}
+                            >
+                              <span className="checkbox-container" style={{ pointerEvents: "none" }}>
+                                <input type="checkbox" checked={collectionIds.includes(c.id)} readOnly tabIndex={-1} />
+                                <svg viewBox="0 0 64 64" height="1.25em" width="1.25em">
+                                  <path d="M 0 16 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 16 L 32 48 L 64 16 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 16" pathLength="575.0541381835938" className="checkbox-path" />
+                                </svg>
+                              </span>
+                              <span>{c.title || c.handle || c.id}</span>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                    {collectionPopoverOpen && <div style={{ position: "fixed", inset: 0, zIndex: 10001 }} onClick={() => setCollectionPopoverOpen(false)} aria-hidden />}
+                    {collectionIds.length > 0 && (
+                      <InlineStack gap="100" wrap>
+                        {collectionIds.map((id) => {
+                          const c = (collections || []).find((x) => x.id === id);
+                          const label = c ? (c.title || c.handle || id) : id;
+                          return (
+                            <span
+                              key={id}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "4px 8px",
+                                background: "var(--p-color-bg-fill-secondary)",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                color: "var(--p-color-text-subdued)",
+                              }}
+                            >
+                              {label}
+                              <button type="button" onClick={() => updateMeta("collection_ids", collectionIds.filter((x) => x !== id))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "inherit" }} aria-label="Remove">×</button>
+                            </span>
+                          );
+                        })}
+                      </InlineStack>
+                    )}
+                  </BlockStack>
+                </div>
 
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Type</Text>
-                <TextField label="Product type" labelHidden value={meta.type ?? ""} onChange={(v) => updateMeta("type", v)} placeholder="e.g. T-Shirt" autoComplete="off" />
+                <Divider />
+
+                <BlockStack gap="200">
+                  <Text as="h2" variant="bodyMd" fontWeight="regular">Sales</Text>
+                  <Text as="p" variant="bodyMd">{meta.sales_count != null ? meta.sales_count : 0} sales</Text>
+                </BlockStack>
+
+                <Divider />
+
+                <BlockStack gap="200">
+                  <Text as="h2" variant="bodyMd" fontWeight="regular">Type</Text>
+                  <TextField label="Product type" labelHidden value={meta.type ?? ""} onChange={(v) => updateMeta("type", v)} placeholder="e.g. T-Shirt" autoComplete="off" />
+                </BlockStack>
               </BlockStack>
             </Card>
 
@@ -482,11 +719,11 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
             <Card>
               <BlockStack gap="200">
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Content / unit</Text>
-                <Text as="p" variant="bodySm" tone="subdued">e.g. 200 g, 1 piece → Display: Content: 200 g (€5.00* / 1 kg)</Text>
-                <TextField label="Value (e.g. 200)" labelHidden type="number" value={meta.unit_value != null ? String(meta.unit_value) : ""} onChange={(v) => updateMeta("unit_value", v)} placeholder="200" />
-                <Select label="Unit" labelHidden options={UNIT_TYPE_OPTIONS} value={meta.unit_type ?? ""} onChange={(v) => updateMeta("unit_type", v)} />
-                <TextField label="Reference (e.g. 1 for 1 kg)" labelHidden type="number" value={meta.unit_reference != null ? String(meta.unit_reference) : "1"} onChange={(v) => updateMeta("unit_reference", v)} placeholder="1" />
+                <Text as="h2" variant="bodyMd" fontWeight="regular">Content per unit</Text>
+                <Text as="p" variant="bodySm" tone="subdued">Shown on product e.g. &quot;Content: 200 g (€5.00* / 1 kg)&quot;. Enter the amount, unit, and reference quantity for the price per unit.</Text>
+                <TextField label="Amount" labelHidden type="number" value={meta.unit_value != null ? String(meta.unit_value) : ""} onChange={(v) => updateMeta("unit_value", v)} placeholder="e.g. 200" helpText="Numeric amount (e.g. 200 for 200 g)" />
+                <Select label="Unit" options={UNIT_TYPE_OPTIONS} value={meta.unit_type ?? ""} onChange={(v) => updateMeta("unit_type", v)} />
+                <TextField label="Reference quantity" labelHidden type="number" value={meta.unit_reference != null ? String(meta.unit_reference) : "1"} onChange={(v) => updateMeta("unit_reference", v)} placeholder="1" helpText="Reference for price per unit (e.g. 1 = per 1 kg when unit is kg)" />
               </BlockStack>
             </Card>
           </BlockStack>

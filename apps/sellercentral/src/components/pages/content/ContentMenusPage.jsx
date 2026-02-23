@@ -191,6 +191,7 @@ function MenuEditorPanel(props) {
   };
   const [localMenuName, setLocalMenuName] = useState(panelMenu?.name ?? menuForm.name ?? "");
   const [localMenuSlug, setLocalMenuSlug] = useState(panelMenu?.slug ?? menuForm.slug ?? "");
+  const [localMenuLocation, setLocalMenuLocation] = useState(panelMenu?.location ?? menuForm.location ?? "main");
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const isNew = panelMode === "new";
   const hasMenuId = !!effectiveMenuId && !isNew;
@@ -199,11 +200,13 @@ function MenuEditorPanel(props) {
     if (panelMenu) {
       setLocalMenuName(panelMenu.name ?? "");
       setLocalMenuSlug(panelMenu.slug ?? "");
+      setLocalMenuLocation(panelMenu.location ?? "main");
     } else if (isNew) {
       setLocalMenuName(menuForm.name);
       setLocalMenuSlug(menuForm.slug);
+      setLocalMenuLocation(menuForm.location ?? "main");
     }
-  }, [panelMenu, isNew, menuForm.name, menuForm.slug]);
+  }, [panelMenu, isNew, menuForm.name, menuForm.slug, menuForm.location]);
 
   const handleSaveMenuFromPanel = async () => {
     const name = (localMenuName || "").trim();
@@ -215,12 +218,13 @@ function MenuEditorPanel(props) {
     try {
       setSaving(true);
       setError(null);
+      const location = localMenuLocation || "main";
       if (isNew) {
-        const created = await client.createMenu({ name, slug, location: slug });
+        const created = await client.createMenu({ name, slug, location });
         await fetchMenus();
         if (router) router.push(`/content/menus/${created.id}`);
       } else if (panelMenuId) {
-        await client.updateMenu(panelMenuId, { name, slug, location: slug });
+        await client.updateMenu(panelMenuId, { name, slug, location });
         await fetchMenus();
       }
       await fetchItems();
@@ -245,21 +249,39 @@ function MenuEditorPanel(props) {
         .menu-items-card .menu-add-row:hover { background: var(--p-color-bg-surface-secondary) !important; }
       `}</style>
       <div style={{ padding: "28px 32px", borderBottom: "1px solid var(--p-color-border-subdued)", flexShrink: 0, background: "var(--p-color-bg-surface)" }}>
-        <BlockStack gap="400">
-          <InlineStack align="space-between" blockAlign="center" gap="400">
+<BlockStack gap="400">
+            <InlineStack align="space-between" blockAlign="center" gap="400">
             <div style={{ flex: 1, minWidth: 0 }}>
               <TextField
                 label="Menu name"
                 value={localMenuName}
                 onChange={setLocalMenuName}
                 onBlur={() => {
-                  if (hasMenuId && (localMenuName !== (panelMenu?.name ?? "") || localMenuSlug !== (panelMenu?.slug ?? ""))) {
+                  if (hasMenuId && (localMenuName !== (panelMenu?.name ?? "") || localMenuSlug !== (panelMenu?.slug ?? "") || localMenuLocation !== (panelMenu?.location ?? "main"))) {
                     handleSaveMenuFromPanel();
                   }
                 }}
                 placeholder="e.g. Main menu"
                 autoComplete="off"
                 labelHidden
+              />
+            </div>
+            <div style={{ minWidth: 180 }}>
+              <Select
+                label="Location"
+                labelHidden
+                options={[
+                  { label: "Main navigation (navbar)", value: "main" },
+                  { label: "Footer", value: "footer" },
+                ]}
+                value={localMenuLocation || "main"}
+                onChange={(value) => {
+                  setLocalMenuLocation(value);
+                  if (hasMenuId && panelMenuId && value !== (panelMenu?.location ?? "main")) {
+                    setSaving(true);
+                    client.updateMenu(panelMenuId, { name: (localMenuName || "").trim(), slug: (localMenuSlug || "").trim(), location: value }).then(() => fetchMenus()).catch((err) => setError(err?.message || "Failed to update")).finally(() => setSaving(false));
+                  }
+                }}
               />
             </div>
             <InlineStack gap="200">
@@ -296,7 +318,7 @@ function MenuEditorPanel(props) {
           )}
         </BlockStack>
       </div>
-      <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+      <div style={{ padding: "24px 32px" }}>
         <BlockStack gap="400">
           <InlineStack gap="400" blockAlign="center" wrap>
             <Text as="h3" variant="headingMd" fontWeight="semibold">Menu items</Text>
@@ -563,7 +585,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const [addUnderParentId, setAddUnderParentId] = useState(null);
   const [collections, setCollections] = useState([]);
   const [products, setProducts] = useState([]);
-  const [menuForm, setMenuForm] = useState({ name: "", slug: "" });
+  const [menuForm, setMenuForm] = useState({ name: "", slug: "", location: "main" });
   const [menuSlugManuallyEdited, setMenuSlugManuallyEdited] = useState(false);
   const [itemForm, setItemForm] = useState({
     label: "",
@@ -676,10 +698,11 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     try {
       setSaving(true);
       setError(null);
+      const location = menuForm.location || "main";
       if (editingMenuId) {
-        await client.updateMenu(editingMenuId, { name, slug, location: slug });
+        await client.updateMenu(editingMenuId, { name, slug, location });
       } else {
-        await client.createMenu({ name, slug, location: slug });
+        await client.createMenu({ name, slug, location });
       }
       setMenuModalOpen(false);
       setEditingMenuId(null);
@@ -1270,6 +1293,16 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
               placeholder="e.g. main-menu"
               autoComplete="off"
               helpText="Used in the store (e.g. main-menu). Auto-filled from name."
+            />
+            <Select
+              label="Location"
+              options={[
+                { label: "Main navigation (navbar)", value: "main" },
+                { label: "Footer", value: "footer" },
+              ]}
+              value={menuForm.location || "main"}
+              onChange={(value) => setMenuForm((prev) => ({ ...prev, location: value }))}
+              helpText="Main navigation appears in the store header. Footer appears in the store footer."
             />
           </BlockStack>
         </Modal.Section>

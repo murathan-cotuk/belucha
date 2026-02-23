@@ -275,13 +275,13 @@ export default function Navbar() {
   const [openCategoryId, setOpenCategoryId] = useState(null);
   const { isAuthenticated, user, logout } = useAuth();
 
-  // Fetch store menus (main location) then fallback to categories
+  // Fetch store menus: prefer location "main" (navbar), else first menu; fallback to categories
   useEffect(() => {
     const fetchMenusAndCategories = async () => {
       try {
         setLoading(true);
         const client = getMedusaClient();
-        const menuData = await client.getMenus({ location: "main" });
+        const menuData = await client.getMenus();
         const menus = menuData.menus || [];
         const mainMenu = menus.find((m) => (m.location || "main") === "main") || menus[0];
         if (mainMenu && mainMenu.items && mainMenu.items.length > 0) {
