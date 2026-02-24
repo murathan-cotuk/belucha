@@ -1,7 +1,6 @@
 "use client";
 
-import Navbar from "@/components/Navbar";
-import SlimBar from "@/components/SlimBar";
+import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -48,8 +47,7 @@ export default function CmsPageBySlug() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <SlimBar />
+        <ShopHeader />
         <main className="flex-1 container mx-auto px-4 py-12">
           <p className="text-gray-500">Loading…</p>
         </main>
@@ -61,8 +59,7 @@ export default function CmsPageBySlug() {
   if (notFound || !page) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <SlimBar />
+        <ShopHeader />
         <main className="flex-1 container mx-auto px-4 py-12">
           <h1 className="text-2xl font-semibold text-gray-800">Page not found</h1>
           <p className="text-gray-500 mt-2">The page you are looking for does not exist or is not published.</p>

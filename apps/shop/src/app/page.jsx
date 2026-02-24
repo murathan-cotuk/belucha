@@ -1,7 +1,6 @@
 'use client'
 
-import Navbar from '@/components/Navbar'
-import SlimBar from '@/components/SlimBar'
+import ShopHeader from '@/components/ShopHeader'
 import Footer from '@/components/Footer'
 import Hero from '@/components/Hero'
 import { ProductGrid } from '@/components/ProductGrid'
@@ -12,8 +11,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <SlimBar />
+      <ShopHeader />
       <main className="flex-grow">
         <Hero />
         <div className="container mx-auto px-4 py-8">
