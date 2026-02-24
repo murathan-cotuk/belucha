@@ -1,7 +1,6 @@
 "use client";
 
-import Navbar from "@/components/Navbar";
-import SlimBar from "@/components/SlimBar";
+import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
 import { ProductGrid } from "@/components/ProductGrid";
 import { useState, useEffect } from "react";
@@ -46,8 +45,7 @@ export default function CollectionPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <SlimBar />
+        <ShopHeader />
         <main className="flex-grow container mx-auto px-4 py-8">
           <p>Loading collection...</p>
         </main>
@@ -59,8 +57,7 @@ export default function CollectionPage() {
   if (error || !category) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
-        <SlimBar />
+        <ShopHeader />
         <main className="flex-grow container mx-auto px-4 py-8">
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
             <p>{error || "Collection not found"}</p>

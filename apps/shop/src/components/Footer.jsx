@@ -1,8 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import styled from "styled-components";
+import { getMedusaClient } from "@/lib/medusa-client";
+
+function menuItemHref(item) {
+  if (!item) return "#";
+  if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
+  if (item.link_type === "category" && item.link_value) return `/collections/${item.link_value}`;
+  return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
+}
 
 const FooterContainer = styled.footer`
   background-color: #1f2937;
@@ -19,7 +27,7 @@ const Container = styled.div`
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 32px;
   margin-bottom: 32px;
 `;
@@ -27,21 +35,39 @@ const Grid = styled.div`
 const Column = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 `;
 
 const Title = styled.h3`
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+  color: #f1f5f9;
 `;
 
 const FooterLink = styled(Link)`
   color: #9ca3af;
+  font-size: 14px;
   transition: color 0.2s ease;
 
   &:hover {
     color: white;
+  }
+`;
+
+const Placeholder = styled.div`
+  color: #64748b;
+  font-size: 14px;
+`;
+
+const LogoPlaceholder = styled(Link)`
+  color: #0ea5e9;
+  font-weight: 700;
+  font-size: 18px;
+  text-decoration: none;
+
+  &:hover {
+    color: #38bdf8;
   }
 `;
 
@@ -60,48 +86,54 @@ const Copyright = styled.p`
   font-size: 14px;
 `;
 
-const SellerLink = styled(Link)`
-  color: #0ea5e9;
-  font-weight: 600;
-  transition: color 0.2s ease;
-
-  &:hover {
-    color: #38bdf8;
-  }
-`;
+const FOOTER_LOCATIONS = ["footer-menu1", "footer-menu2", "footer-menu3", "footer-menu4"];
 
 export default function Footer() {
+  const [menusByLocation, setMenusByLocation] = useState({});
+
+  useEffect(() => {
+    const client = getMedusaClient();
+    client.getMenus().then((data) => {
+      const menus = data.menus || [];
+      const byLoc = {};
+      FOOTER_LOCATIONS.forEach((loc) => {
+        const menu = menus.find((m) => (m.location || "").toLowerCase() === loc.toLowerCase());
+        byLoc[loc] = menu?.items?.filter((i) => !i.parent_id) || [];
+      });
+      setMenusByLocation(byLoc);
+    }).catch(() => setMenusByLocation({}));
+  }, []);
+
   return (
     <FooterContainer>
       <Container>
         <Grid>
-          <Column>
-            <Title>Shop</Title>
-            <FooterLink href="/">All Products</FooterLink>
-            <FooterLink href="/?filter=bestsellers">Bestsellers</FooterLink>
-            <FooterLink href="/?filter=sale">On Sale</FooterLink>
-          </Column>
-          <Column>
-            <Title>About</Title>
-            <FooterLink href="/about">About Us</FooterLink>
-            <FooterLink href="/contact">Contact</FooterLink>
-            <FooterLink href="/faq">FAQ</FooterLink>
-          </Column>
-          <Column>
-            <Title>Legal</Title>
-            <FooterLink href="/privacy">Privacy Policy</FooterLink>
-            <FooterLink href="/terms">Terms of Service</FooterLink>
-            <FooterLink href="/returns">Returns</FooterLink>
-          </Column>
-          <Column>
-            <Title>Sell on Belucha</Title>
-            <SellerLink href={process.env.NEXT_PUBLIC_SELLERCENTRAL_URL || "https://belucha-sellercentral.vercel.app"}>
-              Sellercentral
-            </SellerLink>
-          </Column>
+          {FOOTER_LOCATIONS.map((loc) => {
+            const items = menusByLocation[loc] || [];
+            return (
+              <Column key={loc}>
+                {items.length > 0 ? (
+                  <>
+                    {items.map((item) => (
+                      <FooterLink key={item.id} href={menuItemHref(item)}>{item.label}</FooterLink>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <Title>Belucha</Title>
+                    <Placeholder>Menü konfigurieren</Placeholder>
+                    <LogoPlaceholder href="/">Belucha</LogoPlaceholder>
+                  </>
+                )}
+              </Column>
+            );
+          })}
         </Grid>
         <Bottom>
           <Copyright>© {new Date().getFullYear()} Belucha. All rights reserved.</Copyright>
+          <FooterLink href={process.env.NEXT_PUBLIC_SELLERCENTRAL_URL || "https://belucha-sellercentral.vercel.app"}>
+            Für Händler
+          </FooterLink>
         </Bottom>
       </Container>
     </FooterContainer>

@@ -196,17 +196,37 @@ function MenuEditorPanel(props) {
   const isNew = panelMode === "new";
   const hasMenuId = !!effectiveMenuId && !isNew;
 
+  const menuFormDirty = isNew
+    ? !!(localMenuName?.trim() || localMenuSlug?.trim())
+    : (localMenuName !== (panelMenu?.name ?? "")) || (localMenuSlug !== (panelMenu?.slug ?? "")) || (localMenuLocation !== (panelMenu?.location ?? "main"));
+
   useEffect(() => {
     if (panelMenu) {
       setLocalMenuName(panelMenu.name ?? "");
       setLocalMenuSlug(panelMenu.slug ?? "");
       setLocalMenuLocation(panelMenu.location ?? "main");
+      setLocalSlugManuallyEdited(false);
     } else if (isNew) {
       setLocalMenuName(menuForm.name);
       setLocalMenuSlug(menuForm.slug);
       setLocalMenuLocation(menuForm.location ?? "main");
+      setLocalSlugManuallyEdited(false);
     }
   }, [panelMenu, isNew, menuForm.name, menuForm.slug, menuForm.location]);
+
+  const handleDiscardMenuForm = () => {
+    if (panelMenu) {
+      setLocalMenuName(panelMenu.name ?? "");
+      setLocalMenuSlug(panelMenu.slug ?? "");
+      setLocalMenuLocation(panelMenu.location ?? "main");
+      setLocalSlugManuallyEdited(false);
+    } else {
+      setLocalMenuName(menuForm.name);
+      setLocalMenuSlug(menuForm.slug);
+      setLocalMenuLocation(menuForm.location ?? "main");
+      setLocalSlugManuallyEdited(false);
+    }
+  };
 
   const handleSaveMenuFromPanel = async () => {
     const name = (localMenuName || "").trim();
@@ -248,40 +268,57 @@ function MenuEditorPanel(props) {
         @keyframes slideUp { from { transform: translateX(-50%) translateY(100%); } to { transform: translateX(-50%) translateY(0); } }
         .menu-items-card .menu-add-row:hover { background: var(--p-color-bg-surface-secondary) !important; }
       `}</style>
+      {menuFormDirty && (
+        <div style={{ marginBottom: 12, padding: "10px 16px", background: "var(--p-color-bg-surface-secondary)", borderRadius: 8, border: "1px solid var(--p-color-border)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 14, color: "var(--p-color-text)", fontWeight: 500 }}>Unsaved changes</span>
+          {hasMenuId && (
+            <Button size="slim" variant="secondary" onClick={handleDiscardMenuForm}>Discard</Button>
+          )}
+          <Button size="slim" variant="primary" onClick={handleSaveMenuFromPanel} loading={saving}>{saving ? "Saving…" : "Save"}</Button>
+        </div>
+      )}
       <div style={{ padding: "28px 32px", borderBottom: "1px solid var(--p-color-border-subdued)", flexShrink: 0, background: "var(--p-color-bg-surface)" }}>
 <BlockStack gap="400">
             <InlineStack align="space-between" blockAlign="center" gap="400">
             <div style={{ flex: 1, minWidth: 0 }}>
-              <TextField
-                label="Menu name"
-                value={localMenuName}
-                onChange={setLocalMenuName}
-                onBlur={() => {
-                  if (hasMenuId && (localMenuName !== (panelMenu?.name ?? "") || localMenuSlug !== (panelMenu?.slug ?? "") || localMenuLocation !== (panelMenu?.location ?? "main"))) {
-                    handleSaveMenuFromPanel();
-                  }
-                }}
-                placeholder="e.g. Main menu"
-                autoComplete="off"
-                labelHidden
-              />
+              <BlockStack gap="200">
+                <TextField
+                  label="Menu name"
+                  value={localMenuName}
+                  onChange={(value) => {
+                    setLocalMenuName(value);
+                    if (!localSlugManuallyEdited) setLocalMenuSlug(slugFromName(value));
+                  }}
+                  placeholder="e.g. Main menu"
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Key"
+                  value={localMenuSlug}
+                  onChange={(value) => {
+                    setLocalSlugManuallyEdited(true);
+                    setLocalMenuSlug(value);
+                  }}
+                  placeholder="e.g. main-menu"
+                  autoComplete="off"
+                  helpText="Used in URLs. Auto-filled from name unless you edit it."
+                />
+              </BlockStack>
             </div>
             <div style={{ minWidth: 180 }}>
               <Select
                 label="Location"
                 labelHidden
                 options={[
-                  { label: "Main navigation (navbar)", value: "main" },
-                  { label: "Footer", value: "footer" },
+                  { label: "Main menu (dropdown by search)", value: "main" },
+                  { label: "Second menu (navbar bar)", value: "second" },
+                  { label: "Footer column 1", value: "footer-menu1" },
+                  { label: "Footer column 2", value: "footer-menu2" },
+                  { label: "Footer column 3", value: "footer-menu3" },
+                  { label: "Footer column 4", value: "footer-menu4" },
                 ]}
                 value={localMenuLocation || "main"}
-                onChange={(value) => {
-                  setLocalMenuLocation(value);
-                  if (hasMenuId && panelMenuId && value !== (panelMenu?.location ?? "main")) {
-                    setSaving(true);
-                    client.updateMenu(panelMenuId, { name: (localMenuName || "").trim(), slug: (localMenuSlug || "").trim(), location: value }).then(() => fetchMenus()).catch((err) => setError(err?.message || "Failed to update")).finally(() => setSaving(false));
-                  }
-                }}
+                onChange={setLocalMenuLocation}
               />
             </div>
             <InlineStack gap="200">
@@ -311,11 +348,6 @@ function MenuEditorPanel(props) {
               )}
             </InlineStack>
           </InlineStack>
-          {isNew && (
-            <Button variant="primary" onClick={handleSaveMenuFromPanel} loading={saving}>
-              Save menu
-            </Button>
-          )}
         </BlockStack>
       </div>
       <div style={{ padding: "24px 32px" }}>
@@ -1297,12 +1329,16 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
             <Select
               label="Location"
               options={[
-                { label: "Main navigation (navbar)", value: "main" },
-                { label: "Footer", value: "footer" },
+                { label: "Main menu (dropdown by search)", value: "main" },
+                { label: "Second menu (navbar bar)", value: "second" },
+                { label: "Footer column 1", value: "footer-menu1" },
+                { label: "Footer column 2", value: "footer-menu2" },
+                { label: "Footer column 3", value: "footer-menu3" },
+                { label: "Footer column 4", value: "footer-menu4" },
               ]}
               value={menuForm.location || "main"}
               onChange={(value) => setMenuForm((prev) => ({ ...prev, location: value }))}
-              helpText="Main navigation appears in the store header. Footer appears in the store footer."
+              helpText="Where this menu appears: main = dropdown by search, second = navbar bar, footer 1–4 = footer columns."
             />
           </BlockStack>
         </Modal.Section>
