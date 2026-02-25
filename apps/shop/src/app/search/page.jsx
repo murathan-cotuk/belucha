@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
@@ -7,7 +8,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { useMedusaProducts } from "@/hooks/useMedusa";
 import Breadcrumbs from "@/components/Breadcrumbs";
 
-export default function SearchPage() {
+function SearchPageContent() {
   const searchParams = useSearchParams();
   const q = (searchParams?.get("q") || "").trim();
   const { products, loading, error } = useMedusaProducts();
@@ -46,5 +47,29 @@ export default function SearchPage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+function SearchFallback() {
+  return (
+    <div className="min-h-screen flex flex-col bg-white">
+      <ShopHeader />
+      <main className="flex-grow bg-white">
+        <div className="container mx-auto px-4 py-8">
+          <Breadcrumbs />
+          <h1 className="text-2xl font-bold mb-4">Suche</h1>
+          <p className="text-gray-500">Laden…</p>
+        </div>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<SearchFallback />}>
+      <SearchPageContent />
+    </Suspense>
   );
 }
