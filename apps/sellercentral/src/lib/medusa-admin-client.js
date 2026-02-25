@@ -147,6 +147,21 @@ class MedusaAdminClient {
     return this.request(`/admin-hub/products/${encodeURIComponent(idOrHandle)}`, { method: 'DELETE' });
   }
 
+  /** GET /admin-hub/seller-settings – store name (for Verkäufer on shop) */
+  async getSellerSettings() {
+    const res = await this.request('/admin-hub/seller-settings').catch(() => ({ store_name: '' }));
+    return { store_name: res?.store_name ?? '' };
+  }
+
+  /** PATCH /admin-hub/seller-settings – save store name to DB */
+  async updateSellerSettings(data) {
+    const res = await this.request('/admin-hub/seller-settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    });
+    return res;
+  }
+
   async updateProduct(id, data) {
     return this.request(`/admin/products/${id}`, {
       method: 'PUT',
@@ -262,6 +277,25 @@ class MedusaAdminClient {
     return { collections: data.collections || [], count: data.count || 0 }
   }
 
+  async getBrands() {
+    const data = await this.request('/admin-hub/brands').catch(() => ({ brands: [] }))
+    return { brands: data.brands || [] }
+  }
+
+  async createBrand(body) {
+    const res = await this.request('/admin-hub/brands', { method: 'POST', body: JSON.stringify(body || {}) })
+    return res.brand ?? res
+  }
+
+  async updateBrand(id, body) {
+    const res = await this.request(`/admin-hub/brands/${id}`, { method: 'PATCH', body: JSON.stringify(body || {}) })
+    return res.brand ?? res
+  }
+
+  async deleteBrand(id) {
+    return this.request(`/admin-hub/brands/${id}`, { method: 'DELETE' })
+  }
+
   /** Get single collection by id (standalone admin_hub_collections only) */
   async getCollection(id) {
     if (!id) return null
@@ -290,6 +324,13 @@ class MedusaAdminClient {
     if (data.title !== undefined) body.title = data.title
     if (data.handle !== undefined) body.handle = data.handle
     if (data.category_id !== undefined) body.category_id = data.category_id
+    if (data.display_title !== undefined) body.display_title = data.display_title
+    if (data.meta_title !== undefined) body.meta_title = data.meta_title
+    if (data.meta_description !== undefined) body.meta_description = data.meta_description
+    if (data.keywords !== undefined) body.keywords = data.keywords
+    if (data.richtext !== undefined) body.richtext = data.richtext
+    if (data.image_url !== undefined) body.image_url = data.image_url
+    if (data.banner_image_url !== undefined) body.banner_image_url = data.banner_image_url
     const res = await this.request(`/admin-hub/collections/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(body),

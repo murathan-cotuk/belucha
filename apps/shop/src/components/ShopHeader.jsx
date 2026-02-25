@@ -1,65 +1,87 @@
 "use client";
 
+/**
+ * Navbar — Premium marketplace: sticky only on scroll UP.
+ * Scroll down → header hides. Scroll up → header shows (compact 60px).
+ * Backdrop blur, Framer Motion, hover underline, shadow when compact.
+ */
+
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import styled from "styled-components";
+import { motion } from "framer-motion";
 import { useCustomerAuth as useAuth } from "@belucha/lib";
 import { getMedusaClient } from "@/lib/medusa-client";
-import TopBar from "@/components/TopBar";
+import { useCart } from "@/context/CartContext";
 import DropdownSearch from "@/components/DropdownSearch";
+import TopBar from "@/components/TopBar";
+import { tokens } from "@/design-system/tokens";
 
-const SCROLL_THRESHOLD = 60;
+const SCROLL_THRESHOLD = 80;
 
 function menuItemHref(item) {
   if (!item) return "#";
-  if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/collections/${item.link_value}`;
-  if (item.link_type === "page" && item.link_value) return `/pages/${item.link_value}`;
-  if (item.link_type === "product" && item.link_value) return `/product/${item.link_value}`;
-  return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
+  const raw = item.link_value;
+  let value = raw;
+  if (typeof raw === "string" && raw.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.handle) value = parsed.handle;
+      else if (parsed.slug) value = parsed.slug;
+      else if (parsed.id) value = parsed.id;
+    } catch (_) {}
+  }
+  if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && value) return `/kollektion/${value}`;
+  if (item.link_type === "page" && value) return `/pages/${value}`;
+  if (item.link_type === "product" && value) return `/produkt/${value}`;
+  return value ? `/${String(value).replace(/^\//, "")}` : "#";
 }
 
-const HeaderWrap = styled.header`
-  position: sticky;
+const HeaderWrap = styled(motion.header)`
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 200;
-  background: white;
-  box-shadow: ${(p) => (p.$compact ? "0 1px 3px rgba(0,0,0,0.08)" : "none")};
-  transition: transform 0.25s ease, box-shadow 0.2s ease;
-  transform: ${(p) => (p.$hidden ? "translateY(-100%)" : "translateY(0)")};
-`;
-
-const TopBarWrap = styled.div`
-  transition: transform 0.25s ease, opacity 0.25s ease, max-height 0.25s ease;
-  overflow: hidden;
-  max-height: ${(p) => (p.$hide ? "0" : "50px")};
-  opacity: ${(p) => (p.$hide ? 0 : 1)};
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: ${tokens.navbar.borderBottom};
+  box-shadow: ${(p) => (p.$compact ? tokens.shadow.hover : "0 1px 0 " + tokens.border.light)};
+  transition: box-shadow ${tokens.transition.base};
 `;
 
 const NavRow = styled.div`
+  height: ${(p) => (p.$compact ? tokens.navbar.heightCompact : tokens.navbar.height)};
   max-width: 1280px;
   margin: 0 auto;
-  padding: ${(p) => (p.$compact ? "12px 24px" : "20px 24px")};
+  padding: 0 ${tokens.containerPadding};
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 24px;
-  border-bottom: 1px solid #e5e7eb;
+  gap: ${tokens.spacing.lg};
+  transition: height ${tokens.transition.base};
 `;
 
 const Logo = styled(Link)`
-  font-size: ${(p) => (p.$compact ? "20px" : "24px")};
+  font-size: ${(p) => (p.$compact ? "18px" : tokens.fontSize.h4)};
   font-weight: 700;
-  color: #0ea5e9;
-  font-family: "Manrope", sans-serif;
-  letter-spacing: 0.05em;
+  color: ${tokens.dark[900]};
+  font-family: ${tokens.fontFamily.sans};
   text-decoration: none;
+  transition: color ${tokens.transition.base}, font-size ${tokens.transition.base};
+
+  &:hover {
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
+  }
 `;
 
 const Center = styled.div`
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: ${tokens.spacing.md};
   max-width: 700px;
   width: 100%;
   margin: 0 auto;
@@ -79,98 +101,94 @@ const CategoriesButton = styled.button`
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 14px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: ${tokens.spacing.sm} ${tokens.spacing.md};
+  background: ${tokens.background.main};
+  border: 1px solid ${tokens.border.light};
+  border-radius: ${tokens.radius.input};
+  font-size: ${tokens.fontSize.small};
   font-weight: 500;
-  color: #334155;
+  color: ${tokens.dark[700]};
   cursor: pointer;
   white-space: nowrap;
+  font-family: ${tokens.fontFamily.sans};
+  transition: border-color ${tokens.transition.base}, background ${tokens.transition.base};
 
   &:hover {
-    background: #e2e8f0;
+    background: ${tokens.background.soft};
+    border-color: ${tokens.dark[500]};
+    text-decoration: underline;
   }
 `;
 
-const CategoriesPanel = styled.div`
+const CategoriesPanel = styled(motion.div)`
   position: absolute;
   top: 100%;
   left: 0;
-  margin-top: 4px;
+  margin-top: ${tokens.spacing.xs};
+  max-width: 260px;
   min-width: 220px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-  padding: 8px 0;
+  background: ${tokens.background.card};
+  border: 1px solid ${tokens.border.light};
+  border-radius: ${tokens.radius.button};
+  box-shadow: ${tokens.shadow.card};
+  padding: ${tokens.spacing.sm} 0;
   z-index: 1000;
   display: ${(p) => (p.$open ? "block" : "none")};
 `;
 
 const CategoryItem = styled(Link)`
   display: block;
-  padding: 10px 16px;
-  color: #374151;
-  font-size: 14px;
+  padding: ${tokens.spacing.sm} ${tokens.spacing.md};
+  color: ${tokens.dark[700]};
+  font-size: ${tokens.fontSize.small};
+  font-family: ${tokens.fontFamily.sans};
   text-decoration: none;
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
 
   &:hover {
-    background: #f3f4f6;
-    color: #0ea5e9;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
 const Right = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: ${tokens.spacing.sm};
 `;
 
-const IconLink = styled(Link)`
+const IconBtn = styled(Link)`
   display: flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 8px;
-  color: #374151;
-  transition: background 0.2s;
+  border-radius: ${tokens.radius.button};
+  color: ${tokens.dark[700]};
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
 
   &:hover {
-    background: #f3f4f6;
-    color: #0ea5e9;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
-const CartBtn = styled(Link)`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  color: #374151;
+const CartBtn = styled(IconBtn)`
   position: relative;
-  transition: background 0.2s;
-
-  &:hover {
-    background: #f3f4f6;
-    color: #0ea5e9;
-  }
 `;
 
 const CartBadge = styled.span`
   position: absolute;
   top: 4px;
   right: 4px;
-  background: #ef4444;
+  background: ${tokens.state.error};
   color: white;
   border-radius: 50%;
   min-width: 18px;
   height: 18px;
-  font-size: 10px;
+  font-size: ${tokens.fontSize.micro};
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -189,40 +207,46 @@ const UserBtn = styled.button`
   height: 40px;
   border: none;
   background: transparent;
-  border-radius: 8px;
-  color: #374151;
+  border-radius: ${tokens.radius.button};
+  color: ${tokens.dark[700]};
   cursor: pointer;
-  transition: background 0.2s;
+  font-family: ${tokens.fontFamily.sans};
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
 
   &:hover {
-    background: #f3f4f6;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
-const UserDropdown = styled.div`
+const UserDropdown = styled(motion.div)`
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + ${tokens.spacing.sm});
   right: 0;
   min-width: 200px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-  padding: 8px 0;
+  background: ${tokens.background.card};
+  border: 1px solid ${tokens.border.light};
+  border-radius: ${tokens.radius.button};
+  box-shadow: ${tokens.shadow.card};
+  padding: ${tokens.spacing.sm} 0;
   z-index: 1000;
   display: ${(p) => (p.$open ? "block" : "none")};
 `;
 
 const UserDropdownItem = styled(Link)`
   display: block;
-  padding: 10px 16px;
-  font-size: 14px;
-  color: #374151;
+  padding: ${tokens.spacing.sm} ${tokens.spacing.md};
+  font-size: ${tokens.fontSize.small};
+  color: ${tokens.dark[700]};
+  font-family: ${tokens.fontFamily.sans};
   text-decoration: none;
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
 
   &:hover {
-    background: #f3f4f6;
-    color: #0ea5e9;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
@@ -230,66 +254,77 @@ const UserDropdownBtn = styled.button`
   display: block;
   width: 100%;
   text-align: left;
-  padding: 10px 16px;
-  font-size: 14px;
-  color: #374151;
+  padding: ${tokens.spacing.sm} ${tokens.spacing.md};
+  font-size: ${tokens.fontSize.small};
+  color: ${tokens.dark[700]};
   border: none;
   background: transparent;
   cursor: pointer;
+  font-family: ${tokens.fontFamily.sans};
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
 
   &:hover {
-    background: #f3f4f6;
-    color: #0ea5e9;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
-const SecondMenuRow = styled.div`
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 10px 24px;
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  font-size: 14px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  transition: max-height 0.25s ease, opacity 0.25s ease, padding 0.25s ease;
+const SubNavWrap = styled.div`
+  width: 100%;
+  background: ${tokens.background.soft};
+  border-bottom: 1px solid ${tokens.border.light};
   overflow: hidden;
   max-height: ${(p) => (p.$hide ? "0" : "48px")};
   opacity: ${(p) => (p.$hide ? 0 : 1)};
-  padding: ${(p) => (p.$hide ? "0 24px" : "10px 24px")};
+  transition: max-height ${tokens.transition.base}, opacity ${tokens.transition.base};
+  box-shadow: none;
+`;
+
+const SecondMenuRowInner = styled.div`
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: ${tokens.spacing.sm} ${tokens.containerPadding};
+  display: flex;
+  gap: ${tokens.spacing.lg};
+  align-items: center;
+  font-size: ${tokens.fontSize.small};
 `;
 
 const SecondLink = styled(Link)`
-  color: #6b7280;
+  color: ${tokens.dark[600]};
   font-weight: 500;
+  font-family: ${tokens.fontFamily.sans};
   text-decoration: none;
+  transition: color ${tokens.transition.base};
 
   &:hover {
-    color: #0ea5e9;
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
   }
 `;
 
-const CompactOnly = styled.div`
-  display: ${(p) => (p.$show ? "flex" : "none")};
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0 24px;
+const HeaderSpacer = styled.div`
+  height: ${(p) => {
+    if (!p.$visible) return "0px";
+    if (p.$showFull) return "160px";
+    return p.$compact ? "60px" : "72px";
+  }};
+  transition: height 0.3s ease-out;
+  flex-shrink: 0;
 `;
 
 export default function ShopHeader() {
   const [scrollY, setScrollY] = useState(0);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const [headerVisible, setHeaderVisible] = useState(true);
+  const [visible, setVisible] = useState(true);
   const [compact, setCompact] = useState(false);
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mainMenuItems, setMainMenuItems] = useState([]);
   const [secondMenuItems, setSecondMenuItems] = useState([]);
   const { isAuthenticated, user, logout } = useAuth();
+  const { openCartSidebar, itemCount } = useCart();
 
   useEffect(() => {
     const client = getMedusaClient();
@@ -299,28 +334,34 @@ export default function ShopHeader() {
       const second = menus.find((m) => (m.location || "").toLowerCase() === "second");
       setMainMenuItems(main?.items?.filter((i) => !i.parent_id) || []);
       setSecondMenuItems(second?.items?.filter((i) => !i.parent_id) || []);
-    }).catch((err) => {
-      if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-        console.warn("ShopHeader getMenus:", err?.message || err);
-      }
-    });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
+    let ticking = false;
     const handleScroll = () => {
-      const y = window.scrollY || window.pageYOffset;
-      setScrollY(y);
-      setLastScrollY((prev) => {
-        if (y > prev) {
-          if (y > SCROLL_THRESHOLD) setHeaderVisible(false);
-        } else {
-          setHeaderVisible(true);
-          setCompact(y > SCROLL_THRESHOLD);
-        }
-        return y;
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY ?? window.pageYOffset ?? 0;
+        setScrollY(y);
+        setLastScrollY((prev) => {
+          if (y <= SCROLL_THRESHOLD) {
+            setVisible(true);
+            setCompact(false);
+          } else if (y > prev) {
+            setVisible(false);
+          } else {
+            setVisible(true);
+            setCompact(true);
+          }
+          return y;
+        });
+        ticking = false;
       });
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -335,44 +376,39 @@ export default function ShopHeader() {
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const showFull = scrollY <= SCROLL_THRESHOLD;
-  const showTopBar = headerVisible && showFull;
-  const showSecondMenu = headerVisible && showFull;
-  const showCompact = headerVisible && compact;
-  const headerHidden = !headerVisible;
+  const atTop = scrollY <= SCROLL_THRESHOLD;
+  const showFullHeader = visible && atTop;
+  const showSubNav = showFullHeader && secondMenuItems.length > 0;
+
+  const algoliaAttributes = {
+    primaryText: "title",
+    secondaryText: "description",
+    tertiaryText: "brand",
+    url: "handle",
+    image: "thumbnail",
+  };
 
   return (
-    <HeaderWrap $compact={showCompact} $hidden={headerHidden}>
-      <TopBarWrap $hide={!showTopBar && !showCompact}>
-        {showFull ? <TopBar /> : showCompact ? <div style={{ height: 0 }} /> : null}
-      </TopBarWrap>
-
-      {showCompact && (
-        <NavRow $compact>
-          <CompactOnly $show>
-            <Logo href="/" $compact>Belucha</Logo>
-            <SearchWrap>
-              <DropdownSearch
-                placeholder="Suchen..."
-                hitsPerPage={5}
-                attributes={{ primaryText: "title", secondaryText: "description", url: "handle", image: "thumbnail" }}
-              />
-            </SearchWrap>
-          </CompactOnly>
-        </NavRow>
-      )}
-
-      {!showCompact && (
-        <>
-          <NavRow $compact={false}>
-            <Logo href="/">Belucha</Logo>
+    <>
+      <HeaderWrap
+        $compact={compact && !showFullHeader}
+        initial={false}
+        animate={{ y: visible ? 0 : "-100%" }}
+        transition={{ type: "spring", stiffness: 320, damping: 34 }}
+      >
+        {showFullHeader && <TopBar />}
+        <nav>
+          <NavRow $compact={compact}>
+            <Logo href="/" $compact={compact}>Belucha</Logo>
             <Center>
               <CategoriesDropdown data-categories-dropdown>
                 <CategoriesButton type="button" onClick={() => setMainMenuOpen((v) => !v)}>
                   Kategorien <i className="fas fa-chevron-down" style={{ fontSize: 10 }} />
                 </CategoriesButton>
                 <CategoriesPanel $open={mainMenuOpen}>
-                  {mainMenuItems.length === 0 && <div style={{ padding: 12, color: "#6b7280" }}>Keine Kategorien</div>}
+                  {mainMenuItems.length === 0 && (
+                    <div style={{ padding: tokens.spacing.sm, color: tokens.dark[500] }}>Keine Kategorien</div>
+                  )}
                   {mainMenuItems.map((item) => (
                     <CategoryItem key={item.id} href={menuItemHref(item)} onClick={() => setMainMenuOpen(false)}>
                       {item.label}
@@ -384,7 +420,8 @@ export default function ShopHeader() {
                 <DropdownSearch
                   placeholder="Produkte suchen..."
                   hitsPerPage={5}
-                  attributes={{ primaryText: "title", secondaryText: "description", url: "handle", image: "thumbnail" }}
+                  attributes={algoliaAttributes}
+                  maxHeight={tokens.search.dropdownMaxHeight}
                 />
               </SearchWrap>
             </Center>
@@ -396,7 +433,11 @@ export default function ShopHeader() {
                 <UserDropdown $open={userMenuOpen}>
                   {isAuthenticated ? (
                     <>
-                      {user && <div style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>{user.firstName} {user.lastName}</div>}
+                      {user && (
+                        <div style={{ padding: `${tokens.spacing.sm} ${tokens.spacing.md}`, fontSize: tokens.fontSize.small, fontWeight: 600, color: tokens.dark[800] }}>
+                          {user.firstName} {user.lastName}
+                        </div>
+                      )}
                       <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Hesap bilgilerim</UserDropdownItem>
                       <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Siparişler</UserDropdownItem>
                       <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Yorumlar</UserDropdownItem>
@@ -404,40 +445,32 @@ export default function ShopHeader() {
                       <UserDropdownItem href="/favorites" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
                       <UserDropdownItem href="/addresses" onClick={() => setUserMenuOpen(false)}>Adressen</UserDropdownItem>
                       <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Meine Bonuspunkte</UserDropdownItem>
-                      <UserDropdownItem href="/language" onClick={() => setUserMenuOpen(false)} style={{ borderTop: "1px solid #e5e7eb", marginTop: 4, paddingTop: 8 }}>Dil (DE)</UserDropdownItem>
                       <UserDropdownBtn onClick={() => { logout(); setUserMenuOpen(false); }}>Abmelden</UserDropdownBtn>
                     </>
                   ) : (
                     <>
                       <UserDropdownItem href="/login" onClick={() => setUserMenuOpen(false)}>Anmelden</UserDropdownItem>
                       <UserDropdownItem href="/register" onClick={() => setUserMenuOpen(false)}>Registrieren</UserDropdownItem>
-                      <UserDropdownItem href="/language" onClick={() => setUserMenuOpen(false)} style={{ borderTop: "1px solid #e5e7eb", marginTop: 4, paddingTop: 8 }}>Dil (DE)</UserDropdownItem>
                     </>
                   )}
                 </UserDropdown>
               </UserMenu>
-              <CartBtn href="/cart" title="Sepet">
+              <CartBtn as="button" type="button" onClick={openCartSidebar} title="Warenkorb">
                 <i className="fas fa-shopping-cart" style={{ fontSize: 18 }} />
-                <CartBadge>0</CartBadge>
+                <CartBadge>{itemCount > 0 ? itemCount : 0}</CartBadge>
               </CartBtn>
             </Right>
           </NavRow>
-
-          <SecondMenuRow $hide={!showSecondMenu}>
-            {secondMenuItems.length > 0 ? (
-              secondMenuItems.map((item) => (
-                <SecondLink key={item.id} href={menuItemHref(item)}>{item.label}</SecondLink>
-              ))
-            ) : (
-              <>
-                <SecondLink href="/bestsellers">Bestsellers</SecondLink>
-                <SecondLink href="/sale">Angebote</SecondLink>
-                <SecondLink href="/recommended">Für Sie empfohlen</SecondLink>
-              </>
-            )}
-          </SecondMenuRow>
-        </>
-      )}
-    </HeaderWrap>
+        </nav>
+        <SubNavWrap $hide={!showSubNav}>
+          <SecondMenuRowInner>
+            {secondMenuItems.map((item) => (
+              <SecondLink key={item.id} href={menuItemHref(item)}>{item.label}</SecondLink>
+            ))}
+          </SecondMenuRowInner>
+        </SubNavWrap>
+      </HeaderWrap>
+      <HeaderSpacer $visible={visible} $showFull={showFullHeader} $compact={compact} />
+    </>
   );
 }

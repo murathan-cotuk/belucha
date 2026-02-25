@@ -13,11 +13,12 @@
     "@belucha/ui": "*",
     "algoliasearch": "^5.17.2",
     "autoprefixer": "^10.4.16",
-    "react-instantsearch": "^7.23.0",
+    "framer-motion": "^12.34.3",
     "next": "16.0.10",
     "postcss": "^8.4.32",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-instantsearch": "^7.23.0",
     "styled-components": "^6.1.6",
     "tailwindcss": "^3.4.0"
   },

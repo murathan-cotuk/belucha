@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import styled from "styled-components";
-import { Card } from "@belucha/ui";
 import { getMedusaClient } from "@/lib/medusa-client";
+import { ProductGrid } from "@/components/ProductGrid";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
 const Container = styled.div`
   max-width: 1280px;
@@ -16,15 +16,6 @@ const Container = styled.div`
 const CategoryHeader = styled.div`
   text-align: center;
   margin-bottom: 48px;
-`;
-
-const CategoryImage = styled.img`
-  width: 100%;
-  max-width: 600px;
-  height: 300px;
-  object-fit: cover;
-  border-radius: 12px;
-  margin-bottom: 24px;
 `;
 
 const CategoryTitle = styled.h1`
@@ -39,70 +30,6 @@ const CategoryDescription = styled.p`
   color: #6b7280;
   max-width: 800px;
   margin: 0 auto;
-`;
-
-const Grid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-`;
-
-const ProductCard = styled(Card)`
-  overflow: hidden;
-  padding: 0;
-`;
-
-const ImageWrapper = styled.div`
-  width: 100%;
-  aspect-ratio: 1;
-  overflow: hidden;
-  background-color: #f3f4f6;
-`;
-
-const ProductImage = styled.img`
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-
-  ${ProductCard}:hover & {
-    transform: scale(1.05);
-  }
-`;
-
-const ProductInfo = styled.div`
-  padding: 16px;
-`;
-
-const ProductTitle = styled.h3`
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #1f2937;
-`;
-
-const SellerName = styled.p`
-  font-size: 14px;
-  color: #6b7280;
-  margin-bottom: 12px;
-`;
-
-const PriceContainer = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`;
-
-const Price = styled.span`
-  font-size: 20px;
-  font-weight: 700;
-  color: #0ea5e9;
-`;
-
-const ComparePrice = styled.span`
-  font-size: 16px;
-  color: #9ca3af;
-  text-decoration: line-through;
 `;
 
 const BannerImage = styled.img`
@@ -180,6 +107,7 @@ export default function CategoryTemplate() {
 
   return (
     <Container>
+      <Breadcrumbs title={title} />
       {category?.banner_image_url && (
         <BannerImage src={category.banner_image_url} alt={title} />
       )}
@@ -190,36 +118,7 @@ export default function CategoryTemplate() {
       {safeLongContent && (
         <LongContent dangerouslySetInnerHTML={{ __html: safeLongContent }} />
       )}
-      <Grid>
-        {products.length === 0 ? (
-          <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px", color: "#6b7280" }}>
-            No products found in this category
-          </div>
-        ) : (
-          products.map((product) => (
-            <Link key={product.id} href={`/product/${product.handle || product.id}`}>
-              <ProductCard hover>
-                <ImageWrapper>
-                  <ProductImage
-                    src={
-                      product.images?.[0]?.url ||
-                      product.thumbnail ||
-                      "https://via.placeholder.com/400"
-                    }
-                    alt={product.title}
-                  />
-                </ImageWrapper>
-                <ProductInfo>
-                  <ProductTitle>{product.title}</ProductTitle>
-                  <PriceContainer>
-                    <Price>${product.variants?.[0]?.prices?.[0]?.amount ? (product.variants[0].prices[0].amount / 100).toFixed(2) : '0.00'}</Price>
-                  </PriceContainer>
-                </ProductInfo>
-              </ProductCard>
-            </Link>
-          ))
-        )}
-      </Grid>
+      <ProductGrid products={products} />
     </Container>
   );
 }

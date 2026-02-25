@@ -11,9 +11,12 @@ const Nav = styled.nav`
   background-color: white;
   border-bottom: 1px solid #e5e7eb;
   padding: 16px 0;
+  min-height: 56px;
   position: sticky;
   top: 0;
   z-index: 100;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 `;
 
 const NavContainer = styled.div`
@@ -259,12 +262,24 @@ const UserName = styled.div`
   border-bottom: 1px solid #f3f4f6;
 `;
 
-// link_type: 'url' | 'category' | ... → href
+// link_type: 'url' | 'category' | 'collection' | ... → href; link_value may be JSON string
 function menuItemHref(item) {
   if (!item) return "#";
-  if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if (item.link_type === "category" && item.link_value) return `/collections/${item.link_value}`;
-  return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
+  const raw = item.link_value;
+  let value = raw;
+  if (typeof raw === "string" && raw.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.handle) value = parsed.handle;
+      else if (parsed.slug) value = parsed.slug;
+      else if (parsed.id) value = parsed.id;
+    } catch (_) {}
+  }
+  if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && value) return `/kollektion/${value}`;
+  if (item.link_type === "product" && value) return `/produkt/${value}`;
+  if (item.link_type === "page" && value) return `/pages/${value}`;
+  return value ? `/${String(value).replace(/^\//, "")}` : "#";
 }
 
 export default function Navbar() {
@@ -274,6 +289,7 @@ export default function Navbar() {
   const [loading, setLoading] = useState(true);
   const [openCategoryId, setOpenCategoryId] = useState(null);
   const { isAuthenticated, user, logout } = useAuth();
+  const { openCartSidebar, itemCount } = useCart();
 
   // Fetch store menus: prefer location "main" (navbar), else first menu; fallback to categories
   useEffect(() => {
@@ -358,7 +374,7 @@ export default function Navbar() {
                     <CategoryButton>{category.name}</CategoryButton>
                     <SubcategoryMenu $isOpen={openCategoryId === category.id}>
                       {hasCollection && (
-                        <SubcategoryLink href={`/collections/${category.slug}`}>
+                        <SubcategoryLink href={`/kollektion/${category.slug}`}>
                           {category.name} (All)
                         </SubcategoryLink>
                       )}
@@ -375,7 +391,7 @@ export default function Navbar() {
                 );
               } else if (hasCollection) {
                 return (
-                  <CategoryLink key={category.id} href={`/collections/${category.slug}`}>
+                  <CategoryLink key={category.id} href={`/kollektion/${category.slug}`}>
                     {category.name}
                   </CategoryLink>
                 );
@@ -430,12 +446,10 @@ export default function Navbar() {
               )}
             </DropdownMenu>
           </ProfileMenu>
-          <Link href="/cart">
-            <CartButton>
-              <i className="fas fa-shopping-cart" style={{ fontSize: "20px", color: "#374151" }} />
-              <CartBadge>0</CartBadge>
-            </CartButton>
-          </Link>
+          <CartButton as="button" type="button" onClick={openCartSidebar} title="Warenkorb">
+            <i className="fas fa-shopping-cart" style={{ fontSize: "20px", color: "#374151" }} />
+            <CartBadge>{itemCount > 0 ? itemCount : 0}</CartBadge>
+          </CartButton>
         </RightMenu>
       </NavContainer>
     </Nav>

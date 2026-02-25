@@ -1,200 +1,183 @@
 "use client";
 
-import React, { useState } from "react";
-import styled from "styled-components";
-import { Card, Button, Input } from "@belucha/ui";
-
-// TODO: Migrate to Medusa REST API
-// Brand management will be available soon via Medusa backend
-
-const Container = styled.div`
-  max-width: 1200px;
-  margin: 0 auto;
-`;
-
-const Title = styled.h1`
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 32px;
-  color: #1f2937;
-`;
-
-const Section = styled(Card)`
-  padding: 24px;
-  margin-bottom: 24px;
-`;
-
-const BrandsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
-  margin-top: 24px;
-`;
-
-const BrandCard = styled(Card)`
-  padding: 20px;
-  text-align: center;
-  transition: transform 0.2s ease;
-
-  &:hover {
-    transform: translateY(-4px);
-  }
-`;
-
-const BrandLogo = styled.div`
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  background-color: #f3f4f6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32px;
-  color: #0ea5e9;
-  overflow: hidden;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-`;
-
-const BrandName = styled.h3`
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 8px;
-`;
+import React, { useState, useEffect } from "react";
+import {
+  Page,
+  Card,
+  Button,
+  TextField,
+  Text,
+  BlockStack,
+  InlineStack,
+  Banner,
+  Box,
+  Modal,
+} from "@shopify/polaris";
+import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 export default function BrandPage() {
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    slug: "",
-    description: "",
-  });
+  const client = getMedusaAdminClient();
+  const [brands, setBrands] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [formData, setFormData] = useState({ name: "", logo_image: "", address: "" });
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // TODO: Migrate to Medusa REST API
-  const loading = false;
-  const creating = false;
-  const brands = [];
+  const loadBrands = () => {
+    setLoading(true);
+    client.getBrands().then((r) => {
+      setBrands(r.brands || []);
+      setLoading(false);
+    }).catch(() => {
+      setBrands([]);
+      setLoading(false);
+    });
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    loadBrands();
+  }, []);
+
+  const handleSubmit = async () => {
+    const name = (formData.name || "").trim();
+    if (!name) {
+      setMessage({ type: "error", text: "Brand name is required." });
+      return;
+    }
+    setCreating(true);
     setMessage({ type: "", text: "" });
-
     try {
-      const slug = formData.slug || formData.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      await client.createBrand({
+        name,
+        logo_image: (formData.logo_image || "").trim() || undefined,
+        address: (formData.address || "").trim() || undefined,
+      });
+      setMessage({ type: "success", text: "Brand created." });
+      setFormData({ name: "", logo_image: "", address: "" });
+      setModalOpen(false);
+      loadBrands();
+    } catch (e) {
+      setMessage({ type: "error", text: e?.message || "Failed to create brand." });
+    } finally {
+      setCreating(false);
+    }
+  };
 
-      // TODO: Implement Medusa REST API call
-      // const medusaClient = getMedusaAdminClient();
-      // await medusaClient.createBrand({ name: formData.name, slug, description: formData.description || "" });
-
-      setMessage({ type: "info", text: "Brand management will be available soon via Medusa REST API" });
-      setFormData({ name: "", slug: "", description: "" });
-      setShowForm(false);
-    } catch (error) {
-      console.error("Error creating brand:", error);
-      setMessage({ type: "error", text: error.message || "An error occurred while creating the brand" });
+  const handleDelete = async (id) => {
+    if (!confirm("Delete this brand?")) return;
+    try {
+      await client.deleteBrand(id);
+      setMessage({ type: "success", text: "Brand deleted." });
+      loadBrands();
+    } catch (e) {
+      setMessage({ type: "error", text: e?.message || "Failed to delete." });
     }
   };
 
   return (
-    <Container>
-      <Title>Brand Management</Title>
-
-      {message.text && (
-        <div
-          style={{
-            padding: "16px",
-            marginBottom: "24px",
-            borderRadius: "8px",
-            backgroundColor: message.type === "success" ? "#d1fae5" : message.type === "info" ? "#dbeafe" : "#fee2e2",
-            color: message.type === "success" ? "#065f46" : message.type === "info" ? "#1e40af" : "#991b1b",
-          }}
-        >
-          {message.text}
-        </div>
-      )}
-
-      <Section>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: "600", color: "#1f2937" }}>Your Brands</h2>
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "Add New Brand"}
-          </Button>
-        </div>
-
-        {showForm && (
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <Input
-              label="Brand Name *"
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
-            <Input
-              label="Slug (auto-generated if empty)"
-              type="text"
-              value={formData.slug}
-              onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-            />
-            <div>
-              <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
-                Description
-              </label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  minHeight: "100px",
-                }}
-              />
-            </div>
-            <Button type="submit" disabled={creating}>
-              {creating ? "Creating..." : "Create Brand"}
-            </Button>
-          </form>
+    <Page
+      title="Brands"
+      primaryAction={{
+        content: "Add Brand",
+        onAction: () => setModalOpen(true),
+      }}
+    >
+      <BlockStack gap="400">
+        {message.text && (
+          <Banner
+            tone={message.type === "success" ? "success" : message.type === "error" ? "critical" : "info"}
+            onDismiss={() => setMessage({ type: "", text: "" })}
+          >
+            {message.text}
+          </Banner>
         )}
 
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "40px" }}>
-            <i className="fas fa-spinner fa-spin" style={{ fontSize: "32px", color: "#0ea5e9" }} />
-          </div>
-        ) : brands.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px 20px", color: "#6b7280" }}>
-            <i className="fas fa-tag" style={{ fontSize: "48px", marginBottom: "16px", color: "#d1d5db" }} />
-            <p style={{ fontSize: "16px", marginBottom: "8px", fontWeight: "600" }}>Brand management coming soon</p>
-            <p style={{ fontSize: "14px" }}>Brand management will be available soon via Medusa REST API</p>
-          </div>
-        ) : (
-          <BrandsGrid>
-            {brands.map((brand) => (
-              <BrandCard key={brand.id}>
-                <BrandLogo>
-                  {brand.logo?.url ? (
-                    <img src={brand.logo.url} alt={brand.name} />
-                  ) : (
-                    <i className="fas fa-tag" />
-                  )}
-                </BrandLogo>
-                <BrandName>{brand.name}</BrandName>
-                {brand.description && (
-                  <p style={{ fontSize: "14px", color: "#6b7280" }}>{brand.description}</p>
-                )}
-              </BrandCard>
-            ))}
-          </BrandsGrid>
-        )}
-      </Section>
-    </Container>
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingMd">
+              Your brands (product form uses this list only)
+            </Text>
+
+            <Modal
+              open={modalOpen}
+              onClose={() => setModalOpen(false)}
+              title="Add Brand"
+              primaryAction={{
+                content: "Create",
+                onAction: handleSubmit,
+                loading: creating,
+              }}
+              secondaryActions={[{ content: "Cancel", onAction: () => setModalOpen(false) }]}
+            >
+              <Modal.Section>
+                <BlockStack gap="300">
+                  <TextField
+                    label="Name"
+                    value={formData.name}
+                    onChange={(v) => setFormData((p) => ({ ...p, name: v }))}
+                    placeholder="e.g. My Brand"
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label="Logo (URL)"
+                    value={formData.logo_image}
+                    onChange={(v) => setFormData((p) => ({ ...p, logo_image: v }))}
+                    placeholder="https://…"
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label="Address"
+                    value={formData.address}
+                    onChange={(v) => setFormData((p) => ({ ...p, address: v }))}
+                    placeholder="Optional"
+                    multiline={2}
+                    autoComplete="off"
+                  />
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Handle is auto-generated from name.
+                  </Text>
+                </BlockStack>
+              </Modal.Section>
+            </Modal>
+
+            {loading ? (
+              <Box padding="800">
+                <Text as="p" tone="subdued">Loading…</Text>
+              </Box>
+            ) : brands.length === 0 ? (
+              <Box padding="800" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">No brands yet</Text>
+                  <Text as="p" tone="subdued">Add a brand to use in product form (Brand dropdown).</Text>
+                </BlockStack>
+              </Box>
+            ) : (
+              <BlockStack gap="300">
+                {brands.map((brand) => (
+                  <Card key={brand.id} padding="400">
+                    <InlineStack gap="400" blockAlign="center" wrap>
+                      <Box minWidth="48px" minHeight="48px" background="bg-fill-secondary" borderRadius="full" display="flex" alignItems="center" justifyContent="center">
+                        {brand.logo_image ? (
+                          <img src={brand.logo_image} alt={brand.name} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: "50%" }} />
+                        ) : (
+                          <Text as="span" variant="bodyMd" tone="subdued">—</Text>
+                        )}
+                      </Box>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd" fontWeight="semibold">{brand.name}</Text>
+                        {brand.handle && <Text as="p" variant="bodySm" tone="subdued">{brand.handle}</Text>}
+                        {brand.address && <Text as="p" variant="bodySm" tone="subdued">{brand.address}</Text>}
+                      </BlockStack>
+                      <Button variant="plain" tone="critical" onClick={() => handleDelete(brand.id)}>Delete</Button>
+                    </InlineStack>
+                  </Card>
+                ))}
+              </BlockStack>
+            )}
+          </BlockStack>
+        </Card>
+      </BlockStack>
+    </Page>
   );
 }

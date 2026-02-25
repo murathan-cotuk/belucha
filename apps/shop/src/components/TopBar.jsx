@@ -3,32 +3,38 @@
 import React from "react";
 import Link from "next/link";
 import styled from "styled-components";
+import { tokens } from "@/design-system/tokens";
 
 const Bar = styled.div`
-  background-color: #0f172a;
-  color: #94a3b8;
-  padding: 10px 0;
-  font-size: 13px;
+  height: ${tokens.topBar.height};
+  background: ${tokens.dark[900]};
+  color: white;
+  font-size: ${tokens.topBar.fontSize};
+  font-family: ${tokens.fontFamily.sans};
+  display: flex;
+  align-items: center;
+  justify-content: center;
 `;
 
 const Container = styled.div`
   max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 ${tokens.containerPadding};
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 32px;
+  gap: ${tokens.spacing.xl};
   flex-wrap: wrap;
 `;
 
 const Item = styled(Link)`
   color: inherit;
   text-decoration: none;
-  transition: color 0.2s;
+  transition: opacity ${tokens.transition.base};
 
   &:hover {
-    color: #fff;
+    opacity: 0.9;
   }
 `;
 
@@ -44,7 +50,9 @@ export default function TopBar({ items = DEFAULT_ITEMS }) {
     <Bar>
       <Container>
         {items.slice(0, 4).map((item, i) => (
-          <Item key={i} href={item.href || "#"}>{item.text}</Item>
+          <Item key={i} href={item.href || "#"}>
+            {item.text}
+          </Item>
         ))}
       </Container>
     </Bar>

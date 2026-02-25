@@ -77,12 +77,15 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const email = localStorage.getItem("sellerEmail") || "";
-    setFormData((prev) => ({ ...prev, email }));
+    const storeName = localStorage.getItem("storeName") || "";
+    setFormData((prev) => ({ ...prev, email, storeName }));
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Implement profile update
+    if (formData.storeName && typeof window !== "undefined") {
+      localStorage.setItem("storeName", formData.storeName.trim());
+    }
     alert("Profile updated successfully!");
   };
 

@@ -41,7 +41,6 @@ const SEARCHABLE_ITEMS = [
   { category: "Settings", label: "Taxes and duties", url: "/settings/taxes", keywords: "taxes" },
   { category: "Settings", label: "Locations", url: "/settings/locations", keywords: "locations" },
   { category: "Settings", label: "Notifications", url: "/settings/notifications", keywords: "notifications" },
-  { category: "Navigation", label: "Profile", url: "/profile", keywords: "profile" },
   { category: "Navigation", label: "Store", url: "/store", keywords: "store" },
 ];
 

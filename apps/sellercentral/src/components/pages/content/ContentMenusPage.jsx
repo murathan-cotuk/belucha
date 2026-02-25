@@ -25,6 +25,7 @@ const CheckIcon = () => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden><path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0Z" /></svg>
 );
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { titleToHandle } from "@/lib/slugify";
 
 const LINK_TYPES = [
   { label: "Collection", value: "collection" },
@@ -40,8 +41,7 @@ const TAB_SIZE = 28;
 const NEST_BOUNDARY_PX = 20 + 3 * TAB_SIZE;
 
 function slugFromName(name) {
-  if (!name || typeof name !== "string") return "";
-  return name.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  return titleToHandle(name || "");
 }
 
 function buildMenuTree(items) {
@@ -240,15 +240,19 @@ function MenuEditorPanel(props) {
       setSaving(true);
       setError(null);
       const location = localMenuLocation || "main";
+      const menuIdToRefresh = panelMenuId ?? selectedMenuId;
       if (isNew) {
         const created = await client.createMenu({ name, slug, location });
         await fetchMenus();
         if (router) router.push(`/content/menus/${created.id}`);
-      } else if (panelMenuId) {
+        return;
+      }
+      if (panelMenuId) {
         await client.updateMenu(panelMenuId, { name, slug, location });
         await fetchMenus();
+        currentMenuIdRef.current = panelMenuId;
+        await fetchItems(panelMenuId);
       }
-      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || "Failed to save menu");
     } finally {
@@ -856,12 +860,17 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const handleDeleteItem = async (item) => {
     if (!confirm(`Remove "${item.label}" from menu?`)) return;
     if (!selectedMenuId) return;
+    const menuId = panelMenuId ?? selectedMenuId;
+    setError(null);
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
     try {
-      setError(null);
       await client.deleteMenuItem(selectedMenuId, item.id);
-      await fetchItems(panelMenuId ?? selectedMenuId);
+      currentMenuIdRef.current = menuId;
+      await fetchItems(menuId);
     } catch (err) {
       setError(err?.message || "Failed to remove item");
+      currentMenuIdRef.current = menuId;
+      await fetchItems(menuId);
     }
   };
 
