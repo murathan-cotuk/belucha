@@ -107,41 +107,71 @@ export default function InventoryPage() {
                 </Box>
               ) : (
                 <BlockStack gap="200">
-                  {products.map((product) => (
-                    <Link
-                      key={product.id}
-                      href={`/products/${product.handle || product.id}`}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      <Box
-                        padding="300"
-                        background="bg-surface-secondary"
-                        borderRadius="200"
+                  {products.map((product) => {
+                    const meta = product.metadata && typeof product.metadata === "object" ? product.metadata : {};
+                    const media = meta.media;
+                    const thumbUrl = Array.isArray(media) && media[0] ? media[0] : (typeof media === "string" && media ? media : null);
+                    const price = product.price != null ? Number(product.price) : (product.variants?.[0]?.prices?.[0]?.amount ? Number(product.variants[0].prices[0].amount) / 100 : 0);
+                    const inv = product.inventory != null ? Number(product.inventory) : 0;
+                    const sku = product.sku || "—";
+                    return (
+                      <Link
+                        key={product.id}
+                        href={`/products/${product.handle || product.id}`}
+                        style={{ textDecoration: "none", color: "inherit" }}
                       >
-                        <InlineStack align="space-between" blockAlign="center" gap="400">
-                          <InlineStack gap="300" blockAlign="center" wrap={false}>
-                            <Box
-                              minWidth="48px"
-                              minHeight="48px"
-                              background="bg-fill-secondary"
-                              borderRadius="200"
-                            />
-                            <BlockStack gap="100">
-                              <Text as="p" variant="bodyMd" fontWeight="medium">
-                                {product.title}
-                              </Text>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                €{(product.price != null ? Number(product.price) : (product.variants?.[0]?.prices?.[0]?.amount ? Number(product.variants[0].prices[0].amount) / 100 : 0)).toFixed(2)} · {product.status || "draft"}
-                              </Text>
-                            </BlockStack>
+                        <Box
+                          padding="300"
+                          background="bg-surface-secondary"
+                          borderRadius="200"
+                        >
+                          <InlineStack align="space-between" blockAlign="center" gap="400">
+                            <InlineStack gap="300" blockAlign="center" wrap={false}>
+                              <Box
+                                minWidth="56px"
+                                width="56px"
+                                minHeight="56px"
+                                height="56px"
+                                background="bg-fill-secondary"
+                                borderRadius="200"
+                                overflow="hidden"
+                              >
+                                {thumbUrl ? (
+                                  <img
+                                    src={thumbUrl}
+                                    alt=""
+                                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                  />
+                                ) : null}
+                              </Box>
+                              <BlockStack gap="100">
+                                <Text as="p" variant="bodyMd" fontWeight="medium">
+                                  {product.title || "Untitled"}
+                                </Text>
+                                <InlineStack gap="200" wrap>
+                                  <Text as="span" variant="bodySm" tone="subdued">
+                                    SKU: {sku}
+                                  </Text>
+                                  <Text as="span" variant="bodySm" tone="subdued">
+                                    · Qty: {inv}
+                                  </Text>
+                                  <Text as="span" variant="bodySm" tone="subdued">
+                                    · €{price.toFixed(2)}
+                                  </Text>
+                                  <Text as="span" variant="bodySm" tone="subdued">
+                                    · {product.status || "draft"}
+                                  </Text>
+                                </InlineStack>
+                              </BlockStack>
+                            </InlineStack>
+                            <Text as="span" variant="bodySm" tone="subdued">
+                              View
+                            </Text>
                           </InlineStack>
-                          <Text as="span" variant="bodySm" tone="subdued">
-                            View
-                          </Text>
-                        </InlineStack>
-                      </Box>
-                    </Link>
-                  ))}
+                        </Box>
+                      </Link>
+                    );
+                  })}
                 </BlockStack>
               )}
             </BlockStack>

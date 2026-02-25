@@ -150,7 +150,7 @@ export default function ProductTemplate() {
   if (!product) return <Container>Product not found</Container>;
 
   const images = product.images || [];
-  const mainImage = images[selectedImage]?.url || product.thumbnail || "https://via.placeholder.com/600";
+  const mainImage = images[selectedImage]?.url || product.thumbnail || (Array.isArray(product.metadata?.media) && product.metadata.media[0]) || "https://via.placeholder.com/600";
 
   return (
     <Container>
@@ -173,7 +173,13 @@ export default function ProductTemplate() {
         <ProductInfo>
           <Title>{product.title}</Title>
           <PriceContainer>
-            <Price>${product.variants?.[0]?.prices?.[0]?.amount ? (product.variants[0].prices[0].amount / 100).toFixed(2) : '0.00'}</Price>
+            <Price>
+              €{product.variants?.[0]?.prices?.[0]?.amount != null
+                ? (Number(product.variants[0].prices[0].amount) / 100).toFixed(2)
+                : product.price != null
+                  ? Number(product.price).toFixed(2)
+                  : '0.00'}
+            </Price>
           </PriceContainer>
           <Description
             dangerouslySetInnerHTML={{
@@ -201,9 +207,14 @@ export default function ProductTemplate() {
             <p>
               <strong>Product ID:</strong> {product.id}
             </p>
+            {product.metadata?.ean && (
+              <p>
+                <strong>EAN / Barcode:</strong> {product.metadata.ean}
+              </p>
+            )}
             {product.collection && (
               <p>
-                <strong>Collection:</strong> {product.collection.title}
+                <strong>Collection:</strong> {typeof product.collection === 'object' ? product.collection.title : product.collection}
               </p>
             )}
             {product.variants?.[0]?.inventory_quantity !== undefined && (

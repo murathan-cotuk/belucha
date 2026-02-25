@@ -254,42 +254,66 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   })();
   const collectionIds = Array.isArray(meta.collection_ids) ? meta.collection_ids : (meta.collection_id != null ? [meta.collection_id] : []);
 
-  const variantsList = (() => {
+  // Variant groups: each group has a name (e.g. Color, Size) and options (value, sku, inventory). No auto-append.
+  const variantGroups = (() => {
     const v = product?.variants;
-    if (!Array.isArray(v) || v.length === 0) return [{ title: "", value: "", sku: "", inventory: "" }];
-    return v.map((item) => {
-      if (item && typeof item === "object") {
-        const title = item.title ?? item.name ?? "";
-        const value = item.value ?? (Array.isArray(item.options) ? item.options.map((o) => (o && o.value) || o).filter(Boolean).join(", ") : "");
-        return {
-          title: String(title),
-          value: String(value),
-          sku: String(item.sku ?? item.sku_number ?? ""),
-          inventory: item.inventory != null ? String(item.inventory) : "",
-        };
-      }
-      return { title: "", value: String(item), sku: "", inventory: "" };
-    });
+    if (!Array.isArray(v) || v.length === 0) return [];
+    const byTitle = new Map();
+    for (const item of v) {
+      if (!item || typeof item !== "object") continue;
+      const title = String(item.title ?? item.name ?? "Variant").trim() || "Variant";
+      const value = item.value ?? (Array.isArray(item.options) ? item.options.map((o) => (o && o.value) || o).filter(Boolean).join(", ") : "");
+      const sku = String(item.sku ?? item.sku_number ?? "").trim();
+      const inventory = item.inventory != null ? String(item.inventory) : "";
+      if (!byTitle.has(title)) byTitle.set(title, { name: title, options: [] });
+      byTitle.get(title).options.push({ value: String(value), sku, inventory });
+    }
+    return Array.from(byTitle.values());
   })();
 
-  const setVariantsList = (next) => {
-    const normalized = next.map(({ title, value, sku, inventory }) => ({
-      title: title || "Variant",
-      value: value || "",
-      sku: (sku ?? "").toString().trim(),
-      inventory: inventory !== "" && inventory != null ? parseInt(String(inventory), 10) : 0,
-    }));
-    update({ variants: normalized });
+  const setVariantGroups = (next) => {
+    const flat = next.flatMap((g) =>
+      (g.options || []).map((o) => ({
+        title: (g.name || "Variant").trim() || "Variant",
+        value: (o.value ?? "").toString().trim(),
+        sku: (o.sku ?? "").toString().trim(),
+        inventory: o.inventory !== "" && o.inventory != null ? parseInt(String(o.inventory), 10) : 0,
+      }))
+    );
+    update({ variants: flat });
   };
 
-  const updateVariantRow = (i, field, val, maybeAppendEmpty) => {
-    const n = [...variantsList];
-    if (!n[i]) return;
-    n[i] = { ...n[i], [field]: val };
-    const isLast = i === variantsList.length - 1;
-    const hasContent = (n[i].title || "").trim() || (n[i].value || "").trim();
-    if (maybeAppendEmpty && isLast && hasContent) n.push({ title: "", value: "", sku: "", inventory: "" });
-    setVariantsList(n);
+  const updateVariantGroupName = (groupIndex, name) => {
+    const next = variantGroups.map((g, i) => (i === groupIndex ? { ...g, name: name || g.name } : g));
+    setVariantGroups(next);
+  };
+  const updateVariantGroupOption = (groupIndex, optionIndex, field, value) => {
+    const next = variantGroups.map((g, i) => {
+      if (i !== groupIndex) return g;
+      const opts = [...(g.options || [])];
+      if (!opts[optionIndex]) return g;
+      opts[optionIndex] = { ...opts[optionIndex], [field]: value };
+      return { ...g, options: opts };
+    });
+    setVariantGroups(next);
+  };
+  const addVariantGroupOption = (groupIndex) => {
+    const next = variantGroups.map((g, i) => (i === groupIndex ? { ...g, options: [...(g.options || []), { value: "", sku: "", inventory: "" }] } : g));
+    setVariantGroups(next);
+  };
+  const removeVariantGroupOption = (groupIndex, optionIndex) => {
+    const next = variantGroups.map((g, i) => {
+      if (i !== groupIndex) return g;
+      const opts = (g.options || []).filter((_, j) => j !== optionIndex);
+      return { ...g, options: opts };
+    });
+    setVariantGroups(next);
+  };
+  const addVariantGroup = () => {
+    setVariantGroups([...variantGroups, { name: "", options: [{ value: "", sku: "", inventory: "" }] }]);
+  };
+  const removeVariantGroup = (groupIndex) => {
+    setVariantGroups(variantGroups.filter((_, i) => i !== groupIndex));
   };
 
   const handleMediaDrop = useCallback(
@@ -375,7 +399,19 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       )}
 
       {isDirty && (
-        <Box paddingBlockEnd="200">
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 100,
+            marginBottom: 16,
+            paddingTop: 8,
+            paddingBottom: 8,
+            background: "var(--p-color-bg-surface)",
+            borderBottom: "1px solid var(--p-color-border)",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px", background: "var(--p-color-bg-surface-secondary)", borderRadius: 8, border: "1px solid var(--p-color-border)" }}>
             <span style={{ display: "inline-flex", transform: "rotate(180deg)", transition: "transform 0.25s ease" }} aria-hidden>
               <SearchIcon />
@@ -384,7 +420,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
             <Button variant="secondary" size="slim" onClick={handleDiscard}>Discard</Button>
             <Button variant="primary" size="slim" onClick={save} loading={saving}>{saving ? "Saving…" : "Save"}</Button>
           </div>
-        </Box>
+        </div>
       )}
 
       <div className="product-edit-header">
@@ -552,42 +588,35 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Variants</Text>
-              <Text as="p" variant="bodySm" tone="subdued">Option name (e.g. Color) and value (e.g. Red). New row appears as you fill the last one. Save to store as variations.</Text>
-              {variantsList.map((v, i) => (
-                <Box
-                  key={i}
-                  padding="200"
-                  background={expandedVariantIndex === i ? "bg-surface-selected" : "bg-surface-secondary"}
-                  borderRadius="200"
-                  style={expandedVariantIndex === i ? { border: "1px solid var(--p-color-border-info)" } : undefined}
-                >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { if (e.target.closest("input, button")) return; setExpandedVariantIndex(expandedVariantIndex === i ? null : i); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!e.target.closest("input")) setExpandedVariantIndex(expandedVariantIndex === i ? null : i); } }}
-                    style={{ cursor: "pointer", marginBottom: expandedVariantIndex === i ? 8 : 0 }}
-                    aria-expanded={expandedVariantIndex === i}
-                  >
-                    <InlineStack gap="200" wrap blockAlign="center">
-                      <Box minWidth="120px" flex="1">
-                        <TextField label="Option name" labelHidden value={v.title} onChange={(val) => updateVariantRow(i, "title", val, true)} placeholder="Variant" autoComplete="off" />
-                      </Box>
-                      <Box minWidth="140px" flex="1">
-                        <TextField label="Option value" labelHidden value={v.value} onChange={(val) => updateVariantRow(i, "value", val, true)} placeholder="e.g. Red, Blue" autoComplete="off" />
-                      </Box>
-                      <Box minWidth="100px">
-                        <TextField label="SKU" labelHidden value={v.sku} onChange={(val) => updateVariantRow(i, "sku", val, false)} placeholder="SKU" autoComplete="off" />
-                      </Box>
-                      <Box minWidth="80px">
-                        <TextField label="Qty" labelHidden type="number" min={0} value={v.inventory} onChange={(val) => updateVariantRow(i, "inventory", val, false)} placeholder="0" />
-                      </Box>
-                      <Button size="slim" variant="plain" tone="critical" onClick={(e) => { e.stopPropagation(); setVariantsList(variantsList.filter((_, j) => j !== i)); }} aria-label="Remove variant">×</Button>
-                    </InlineStack>
-                  </div>
+              <Text as="p" variant="bodySm" tone="subdued">Add a variant group (e.g. Color, Size), then add option rows under it. Click &quot;Add variant&quot; for each new group.</Text>
+              {variantGroups.map((group, gi) => (
+                <Box key={gi} padding="300" background="bg-surface-secondary" borderRadius="200" borderWidth="025" borderColor="border">
+                  <InlineStack gap="200" wrap blockAlign="center">
+                    <Box minWidth="140px">
+                      <TextField label="Variant group name" labelHidden value={group.name} onChange={(val) => updateVariantGroupName(gi, val)} placeholder="e.g. Color, Size" autoComplete="off" />
+                    </Box>
+                    <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroup(gi)} aria-label="Remove group">Remove group</Button>
+                  </InlineStack>
+                  <Box paddingBlockStart="200">
+                    {(group.options || []).map((opt, oi) => (
+                      <InlineStack key={oi} gap="200" wrap blockAlign="center" paddingBlockStart="100">
+                        <Box minWidth="120px">
+                          <TextField label="Value" labelHidden value={opt.value} onChange={(val) => updateVariantGroupOption(gi, oi, "value", val)} placeholder="e.g. Red, S" autoComplete="off" />
+                        </Box>
+                        <Box minWidth="100px">
+                          <TextField label="SKU" labelHidden value={opt.sku} onChange={(val) => updateVariantGroupOption(gi, oi, "sku", val)} placeholder="SKU" autoComplete="off" />
+                        </Box>
+                        <Box minWidth="80px">
+                          <TextField label="Qty" labelHidden type="number" min={0} value={opt.inventory} onChange={(val) => updateVariantGroupOption(gi, oi, "inventory", val)} placeholder="0" />
+                        </Box>
+                        <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroupOption(gi, oi)} aria-label="Remove option">×</Button>
+                      </InlineStack>
+                    ))}
+                    <Button size="slim" variant="plain" onClick={() => addVariantGroupOption(gi)}>+ Option</Button>
+                  </Box>
                 </Box>
               ))}
-              <Button variant="secondary" size="slim" onClick={() => setVariantsList([...variantsList, { title: "", value: "", sku: "", inventory: "" }])}>Add variant</Button>
+              <Button variant="secondary" size="slim" onClick={addVariantGroup}>Add variant</Button>
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Metafields (catalog)</Text>

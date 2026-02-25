@@ -13,7 +13,9 @@ const SCROLL_THRESHOLD = 60;
 function menuItemHref(item) {
   if (!item) return "#";
   if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if (item.link_type === "category" && item.link_value) return `/collections/${item.link_value}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/collections/${item.link_value}`;
+  if (item.link_type === "page" && item.link_value) return `/pages/${item.link_value}`;
+  if (item.link_type === "product" && item.link_value) return `/product/${item.link_value}`;
   return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
 }
 
@@ -297,7 +299,11 @@ export default function ShopHeader() {
       const second = menus.find((m) => (m.location || "").toLowerCase() === "second");
       setMainMenuItems(main?.items?.filter((i) => !i.parent_id) || []);
       setSecondMenuItems(second?.items?.filter((i) => !i.parent_id) || []);
-    }).catch(() => {});
+    }).catch((err) => {
+      if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+        console.warn("ShopHeader getMenus:", err?.message || err);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -383,35 +389,37 @@ export default function ShopHeader() {
               </SearchWrap>
             </Center>
             <Right>
-              <IconLink href="/language" title="Sprache" style={{ fontSize: 14, fontWeight: 600 }}>DE</IconLink>
-              <IconLink href="/account" title="Konto"><i className="fas fa-user" style={{ fontSize: 18 }} /></IconLink>
-              <IconLink href="/help" title="Hilfe"><i className="fas fa-question-circle" style={{ fontSize: 18 }} /></IconLink>
-              <CartBtn href="/cart" title="Warenkorb">
-                <i className="fas fa-shopping-cart" style={{ fontSize: 18 }} />
-                <CartBadge>0</CartBadge>
-              </CartBtn>
               <UserMenu data-user-menu>
-                <UserBtn type="button" onClick={() => setUserMenuOpen((v) => !v)}>
-                  <i className="fas fa-user-circle" style={{ fontSize: 22, color: "#374151" }} />
+                <UserBtn type="button" onClick={() => setUserMenuOpen((v) => !v)} title="Konto">
+                  <i className="fas fa-user" style={{ fontSize: 18 }} />
                 </UserBtn>
                 <UserDropdown $open={userMenuOpen}>
                   {isAuthenticated ? (
                     <>
                       {user && <div style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>{user.firstName} {user.lastName}</div>}
-                      <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Konto</UserDropdownItem>
-                      <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Bestellungen</UserDropdownItem>
-                      <UserDropdownItem href="/help" onClick={() => setUserMenuOpen(false)}>Hilfe</UserDropdownItem>
+                      <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Hesap bilgilerim</UserDropdownItem>
+                      <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Siparişler</UserDropdownItem>
+                      <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Yorumlar</UserDropdownItem>
+                      <UserDropdownItem href="/invoices" onClick={() => setUserMenuOpen(false)}>Faturalar</UserDropdownItem>
+                      <UserDropdownItem href="/favorites" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
+                      <UserDropdownItem href="/addresses" onClick={() => setUserMenuOpen(false)}>Adressen</UserDropdownItem>
+                      <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Meine Bonuspunkte</UserDropdownItem>
+                      <UserDropdownItem href="/language" onClick={() => setUserMenuOpen(false)} style={{ borderTop: "1px solid #e5e7eb", marginTop: 4, paddingTop: 8 }}>Dil (DE)</UserDropdownItem>
                       <UserDropdownBtn onClick={() => { logout(); setUserMenuOpen(false); }}>Abmelden</UserDropdownBtn>
                     </>
                   ) : (
                     <>
                       <UserDropdownItem href="/login" onClick={() => setUserMenuOpen(false)}>Anmelden</UserDropdownItem>
                       <UserDropdownItem href="/register" onClick={() => setUserMenuOpen(false)}>Registrieren</UserDropdownItem>
-                      <UserDropdownItem href="/help" onClick={() => setUserMenuOpen(false)}>Hilfe</UserDropdownItem>
+                      <UserDropdownItem href="/language" onClick={() => setUserMenuOpen(false)} style={{ borderTop: "1px solid #e5e7eb", marginTop: 4, paddingTop: 8 }}>Dil (DE)</UserDropdownItem>
                     </>
                   )}
                 </UserDropdown>
               </UserMenu>
+              <CartBtn href="/cart" title="Sepet">
+                <i className="fas fa-shopping-cart" style={{ fontSize: 18 }} />
+                <CartBadge>0</CartBadge>
+              </CartBtn>
             </Right>
           </NavRow>
 

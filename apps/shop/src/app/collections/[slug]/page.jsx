@@ -70,8 +70,7 @@ export default function CollectionPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <SlimBar />
+      <ShopHeader />
       <main className="flex-grow container mx-auto px-4 py-8">
         <h1 className="text-4xl font-bold mb-4">{category.name}</h1>
         {category.description && (
