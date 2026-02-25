@@ -65,7 +65,8 @@ class MedusaAdminClient {
       if (error?.statusCode === 404 || error?.statusCode === 503) {
         console.warn(`Medusa Admin API (${endpoint}):`, error?.message || error?.statusCode);
       } else {
-        console.error(`Medusa Admin API Error (${endpoint}):`, error?.message || error);
+        const errMsg = error?.message ?? (typeof error === 'string' ? error : 'Request failed');
+        console.error(`Medusa Admin API Error (${endpoint}):`, errMsg);
       }
       throw out;
     }
@@ -259,6 +260,17 @@ class MedusaAdminClient {
     const base = params.adminHub === true ? '/admin-hub/collections' : '/admin/collections'
     const data = await this.request(`${base}${q}`)
     return { collections: data.collections || [], count: data.count || 0 }
+  }
+
+  /** Get single collection by id (standalone admin_hub_collections only) */
+  async getCollection(id) {
+    if (!id) return null
+    try {
+      const data = await this.request(`/admin-hub/collections/${id}`)
+      return data.collection || null
+    } catch {
+      return null
+    }
   }
 
   async createCollection(data) {

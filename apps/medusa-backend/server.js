@@ -505,13 +505,8 @@ async function start() {
     } catch (e) {
       console.warn('Load admin/products/[id] route:', e.message)
     }
-    try {
-      const storeProducts = require(path.join(__dirname, 'api', 'store', 'products', 'route.ts'))
-      httpApp.get('/store/products', (req, res) => runHandler(storeProducts.GET, req, res))
-      console.log('Store route: GET /store/products')
-    } catch (e) {
-      console.error('Load store/products route:', e.message)
-    }
+    // Store products: serve from Admin Hub so shop shows image, price, EAN (seller central products)
+    // Store products list/detail: served from Admin Hub so shop shows image, price, EAN (see admin hub block below)
 
     // GET /admin/orders – Medusa order servisi varsa listele; yoksa boş liste (404 yerine 200)
     const adminOrdersGET = async (req, res) => {
@@ -617,6 +612,19 @@ async function start() {
         console.warn('deleteAdminHubCollectionDb:', e && e.message)
         return false
       }
+    }
+    const getAdminHubCollectionByIdDb = async (id) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('SELECT id, title, handle FROM admin_hub_collections WHERE id = $1', [id])
+        await client.end()
+        return res.rows && res.rows[0] ? res.rows[0] : null
+      } catch (_) { return null }
     }
 
     // GET /admin/collections – Medusa + has_collection kategorileri + admin_hub_collections (standalone)
@@ -761,11 +769,31 @@ async function start() {
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       }
     }
+    const adminCollectionByIdGET = async (req, res) => {
+      try {
+        const id = req.params.id
+        if (!id) return res.status(400).json({ message: 'id is required' })
+        const row = await getAdminHubCollectionByIdDb(id)
+        if (row) return res.json({ collection: { id: row.id, title: row.title, handle: row.handle, _standalone: true } })
+        const adminHub = resolveAdminHub()
+        if (adminHub) {
+          try {
+            const category = await adminHub.getCategoryById(id)
+            if (category && category.has_collection) return res.json({ collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true } })
+          } catch (_) {}
+        }
+        return res.status(404).json({ message: 'Collection not found' })
+      } catch (err) {
+        console.error('Admin collection GET by id error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
     httpApp.get('/admin-hub/collections', (req, res) => adminCollectionsGET(req, res))
+    httpApp.get('/admin-hub/collections/:id', (req, res) => adminCollectionByIdGET(req, res))
     httpApp.post('/admin-hub/collections', (req, res) => adminCollectionsPOST(req, res))
     httpApp.patch('/admin-hub/collections/:id', (req, res) => adminCollectionByIdPATCH(req, res))
     httpApp.delete('/admin-hub/collections/:id', (req, res) => adminCollectionByIdDELETE(req, res))
-    console.log('Admin route: GET/POST/PATCH/DELETE /admin-hub/collections')
+    console.log('Admin route: GET/POST/PATCH/DELETE /admin-hub/collections, GET /admin-hub/collections/:id')
 
     // --- Admin Hub Menus ---
     const resolveMenuService = () => {
@@ -1158,20 +1186,123 @@ async function start() {
     httpApp.delete('/admin-hub/products/:id', adminHubProductByIdDELETE)
     console.log('Admin Hub routes: GET/POST /admin-hub/products, GET/PUT/DELETE /admin-hub/products/:id')
 
-    // GET /store/menus – Public menüler (Shop Navbar). location=main vb. query ile filtrelenebilir.
-    const storeMenusGET = async (req, res) => {
-      const svc = resolveMenuService()
-      if (!svc) return res.status(200).json({ menus: [], count: 0 })
+    // Store API: list/detail from Admin Hub so shop shows image, price, EAN
+    const mapAdminHubToStoreProduct = (p) => {
+      const meta = p.metadata && typeof p.metadata === 'object' ? p.metadata : {}
+      const media = meta.media
+      const thumb = Array.isArray(media) && media[0] ? media[0] : (typeof media === 'string' && media ? media : null)
+      const priceCents = p.price != null ? Math.round(Number(p.price) * 100) : 0
+      return {
+        id: p.id,
+        title: p.title,
+        handle: p.handle,
+        description: p.description,
+        status: p.status,
+        thumbnail: thumb || null,
+        images: thumb ? [{ url: thumb, alt: p.title }] : [],
+        metadata: meta,
+        variants: [{
+          id: p.id + '-variant',
+          product_id: p.id,
+          prices: [{ amount: priceCents, currency_code: 'eur' }],
+          inventory_quantity: p.inventory != null ? p.inventory : 0,
+        }],
+      }
+    }
+    const storeProductsFromAdminHubGET = async (req, res) => {
       try {
-        let menus = await svc.listMenus()
+        let list = await listAdminHubProductsDb(req.query || {})
+        const collectionId = (req.query.collection_id || '').toString().trim()
+        if (collectionId) {
+          list = list.filter((p) => (p.collection_id || '') === collectionId || (p.handle || '') === collectionId)
+        }
+        const products = list.map(mapAdminHubToStoreProduct)
+        res.json({ products, count: products.length })
+      } catch (err) {
+        console.error('Store products GET (admin hub):', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const storeProductByIdFromAdminHubGET = async (req, res) => {
+      try {
+        const idOrHandle = (req.params.idOrHandle || req.params.id || '').toString().trim()
+        if (!idOrHandle) {
+          res.status(400).json({ message: 'Product id or handle required' })
+          return
+        }
+        const product = await getAdminHubProductByIdOrHandleDb(idOrHandle)
+        if (!product) {
+          res.status(404).json({ message: 'Product not found' })
+          return
+        }
+        res.json({ product: mapAdminHubToStoreProduct(product) })
+      } catch (err) {
+        console.error('Store product by id GET (admin hub):', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/store/products', storeProductsFromAdminHubGET)
+    httpApp.get('/store/products/:idOrHandle', storeProductByIdFromAdminHubGET)
+    console.log('Store routes: GET /store/products, GET /store/products/:idOrHandle (from Admin Hub)')
+
+    // GET /store/menus – Public menüler (Shop). Her menü SADECE kendi menu_id’sine ait item’ları alır (raw DB).
+    const getStoreMenusFromDb = async () => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const menusRes = await client.query('SELECT id, name, slug, location FROM admin_hub_menus ORDER BY name')
+        const menus = (menusRes.rows || []).map((r) => ({
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          location: r.location || 'main',
+        }))
+        const menusWithItems = []
+        for (const menu of menus) {
+          const itemsRes = await client.query(
+            'SELECT id, menu_id, label, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE menu_id = $1 ORDER BY sort_order ASC, label ASC',
+            [menu.id]
+          )
+          const items = (itemsRes.rows || []).map((r) => ({
+            id: r.id,
+            menu_id: r.menu_id,
+            label: r.label,
+            link_type: r.link_type || 'url',
+            link_value: r.link_value,
+            parent_id: r.parent_id,
+            sort_order: r.sort_order != null ? r.sort_order : 0,
+          }))
+          menusWithItems.push({ ...menu, items })
+        }
+        await client.end()
+        return menusWithItems
+      } catch (e) {
+        console.warn('Store menus from DB:', e && e.message)
+        return null
+      }
+    }
+    const storeMenusGET = async (req, res) => {
+      try {
         const location = (req.query.location || '').trim()
-        if (location) menus = menus.filter((m) => (m.location || 'main') === location)
-        const menusWithItems = await Promise.all(
-          menus.map(async (menu) => {
-            const items = await svc.listMenuItems(menu.id).catch(() => [])
-            return { ...menu, items: items || [] }
-          })
-        )
+        let menusWithItems = await getStoreMenusFromDb()
+        if (!menusWithItems) {
+          const svc = resolveMenuService()
+          if (!svc) return res.status(200).json({ menus: [], count: 0 })
+          let menus = await svc.listMenus()
+          if (location) menus = menus.filter((m) => (m.location || 'main') === location)
+          menusWithItems = await Promise.all(
+            menus.map(async (menu) => {
+              const items = await svc.listMenuItems(menu.id).catch(() => [])
+              return { ...menu, items: items || [] }
+            })
+          )
+        } else {
+          if (location) menusWithItems = menusWithItems.filter((m) => (m.location || 'main') === location)
+        }
         res.json({ menus: menusWithItems, count: menusWithItems.length })
       } catch (err) {
         console.error('Store menus GET error:', err)

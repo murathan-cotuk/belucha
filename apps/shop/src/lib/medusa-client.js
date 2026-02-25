@@ -41,10 +41,21 @@ class MedusaClient {
 
     try {
       const response = await fetch(url, config)
-      
+
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: response.statusText }))
-        throw new Error(error.message || `HTTP error! status: ${response.status}`)
+        let message = response.statusText || `HTTP ${response.status}`
+        try {
+          const text = await response.text()
+          if (text && text.trim().startsWith('{')) {
+            const body = JSON.parse(text)
+            message = body.message || body.error || body.msg || message
+          }
+        } catch (_) {
+          // ignore parse errors, use statusText
+        }
+        const err = new Error(message || `HTTP error! status: ${response.status}`)
+        err.status = response.status
+        throw err
       }
 
       return await response.json()
@@ -54,7 +65,9 @@ class MedusaClient {
       }
       const isFetchFailure = error.name === 'TypeError' || (error.message && String(error.message).includes('Failed to fetch'))
       if (isFetchFailure) {
-        throw new Error('Medusa backend is not reachable. Ensure it is running and NEXT_PUBLIC_MEDUSA_BACKEND_URL is correct.')
+        const err = new Error('Medusa backend is not reachable. Ensure it is running and NEXT_PUBLIC_MEDUSA_BACKEND_URL is correct.')
+        err.cause = error
+        throw err
       }
       throw error
     }
@@ -65,11 +78,25 @@ class MedusaClient {
    */
   async getProducts(params = {}) {
     const queryParams = new URLSearchParams(params).toString()
-    return this.request(`/store/products${queryParams ? `?${queryParams}` : ''}`)
+    try {
+      return await this.request(`/store/products${queryParams ? `?${queryParams}` : ''}`)
+    } catch (e) {
+      if (e.status === 404 || e.status >= 500) {
+        return { products: [], count: 0 }
+      }
+      throw e
+    }
   }
 
   async getProduct(id) {
-    return this.request(`/store/products/${id}`)
+    try {
+      return await this.request(`/store/products/${id}`)
+    } catch (e) {
+      if (e.status === 404) {
+        return { product: null }
+      }
+      throw e
+    }
   }
 
   /**

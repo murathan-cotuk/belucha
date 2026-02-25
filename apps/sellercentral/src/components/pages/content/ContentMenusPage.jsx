@@ -123,6 +123,7 @@ function MenuEditorPanel(props) {
   const {
     panelMode,
     panelMenuId,
+    selectedMenuId,
     panelMenu,
     menuForm,
     setMenuForm,
@@ -205,12 +206,12 @@ function MenuEditorPanel(props) {
       setLocalMenuName(panelMenu.name ?? "");
       setLocalMenuSlug(panelMenu.slug ?? "");
       setLocalMenuLocation(panelMenu.location ?? "main");
-      setLocalSlugManuallyEdited(false);
+      setMenuSlugManuallyEdited(false);
     } else if (isNew) {
       setLocalMenuName(menuForm.name);
       setLocalMenuSlug(menuForm.slug);
       setLocalMenuLocation(menuForm.location ?? "main");
-      setLocalSlugManuallyEdited(false);
+      setMenuSlugManuallyEdited(false);
     }
   }, [panelMenu, isNew, menuForm.name, menuForm.slug, menuForm.location]);
 
@@ -219,12 +220,12 @@ function MenuEditorPanel(props) {
       setLocalMenuName(panelMenu.name ?? "");
       setLocalMenuSlug(panelMenu.slug ?? "");
       setLocalMenuLocation(panelMenu.location ?? "main");
-      setLocalSlugManuallyEdited(false);
+      setMenuSlugManuallyEdited(false);
     } else {
       setLocalMenuName(menuForm.name);
       setLocalMenuSlug(menuForm.slug);
       setLocalMenuLocation(menuForm.location ?? "main");
-      setLocalSlugManuallyEdited(false);
+      setMenuSlugManuallyEdited(false);
     }
   };
 
@@ -247,7 +248,7 @@ function MenuEditorPanel(props) {
         await client.updateMenu(panelMenuId, { name, slug, location });
         await fetchMenus();
       }
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || "Failed to save menu");
     } finally {
@@ -287,7 +288,7 @@ function MenuEditorPanel(props) {
                   value={localMenuName}
                   onChange={(value) => {
                     setLocalMenuName(value);
-                    if (!localSlugManuallyEdited) setLocalMenuSlug(slugFromName(value));
+                    if (!menuSlugManuallyEdited) setLocalMenuSlug(slugFromName(value));
                   }}
                   placeholder="e.g. Main menu"
                   autoComplete="off"
@@ -296,7 +297,7 @@ function MenuEditorPanel(props) {
                   label="Key"
                   value={localMenuSlug}
                   onChange={(value) => {
-                    setLocalSlugManuallyEdited(true);
+                    setMenuSlugManuallyEdited(true);
                     setLocalMenuSlug(value);
                   }}
                   placeholder="e.g. main-menu"
@@ -660,18 +661,24 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     }
   };
 
-  const fetchItems = async () => {
-    if (!selectedMenuId) {
+  const fetchItems = useCallback(async (menuId) => {
+    if (!menuId) {
       setItems([]);
       return;
     }
     try {
-      const data = await client.getMenuItems(selectedMenuId);
-      setItems(data.items || []);
+      const data = await client.getMenuItems(menuId);
+      setItems((prev) => {
+        // Only apply if this is still the menu we asked for (avoid race when switching menus)
+        return (currentMenuIdRef.current === menuId ? (data.items || []) : prev);
+      });
     } catch {
-      setItems([]);
+      setItems((prev) => (currentMenuIdRef.current === menuId ? [] : prev));
     }
-  };
+  }, []);
+
+  const currentMenuIdRef = useRef(selectedMenuId);
+  currentMenuIdRef.current = selectedMenuId;
 
   useEffect(() => {
     fetchMenus();
@@ -682,8 +689,14 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     if (panelMode === "edit" && panelMenuId) setSelectedMenuId(panelMenuId);
   }, [panelMode, panelMenuId]);
   useEffect(() => {
-    fetchItems();
-  }, [selectedMenuId]);
+    if (!selectedMenuId) {
+      setItems([]);
+      return;
+    }
+    hasInitializedExpandedRef.current = false; // Reset so new menu gets fresh expand state
+    setItems([]); // Clear immediately so we don't show another menu's items
+    fetchItems(selectedMenuId);
+  }, [selectedMenuId, fetchItems]);
 
   useEffect(() => {
     if (items.length > 0 && !hasInitializedExpandedRef.current) {
@@ -846,7 +859,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     try {
       setError(null);
       await client.deleteMenuItem(selectedMenuId, item.id);
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || "Failed to remove item");
     }
@@ -902,7 +915,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       setItemModalOpen(false);
       setEditingItemId(null);
       setAddUnderParentId(null);
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || (editingItemId ? "Failed to update item" : "Failed to add item"));
     } finally {
@@ -934,7 +947,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
         parent_id: newParentId || null,
         sort_order: newSortOrder,
       });
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || "Failed to move item");
     } finally {
@@ -959,7 +972,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       for (let i = 0; i < orderedIds.length; i++) {
         await client.updateMenuItem(selectedMenuId, orderedIds[i], { sort_order: i });
       }
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
     } catch (err) {
       setError(err?.message || "Failed to move item");
     } finally {
@@ -1017,7 +1030,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
         if (created?.id) createdIds.set(item.key, created.id);
         setImportProgress((prev) => prev ? { ...prev, done: i + 1 } : { total: list.length, done: i + 1, error: null });
       }
-      await fetchItems();
+      await fetchItems(panelMenuId ?? selectedMenuId);
       setImportCsvOpen(false);
       setImportCsvFile(null);
       setImportUnderParentId("");
@@ -1094,6 +1107,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
               <MenuEditorPanel
               panelMode={panelMode}
               panelMenuId={panelMenuId}
+              selectedMenuId={selectedMenuId}
               panelMenu={panelMenu}
               menuForm={menuForm}
               setMenuForm={setMenuForm}

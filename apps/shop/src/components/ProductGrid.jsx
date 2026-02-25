@@ -33,8 +33,9 @@ export function ProductGrid({ products = [] }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {products.map((product) => {
-        const image = product.images?.[0]?.url || product.thumbnail
-        const price = product.variants?.[0]?.prices?.[0]?.amount || 0
+        const image = product.images?.[0]?.url || product.thumbnail || (Array.isArray(product.metadata?.media) && product.metadata.media?.[0])
+        const priceCents = product.variants?.[0]?.prices?.[0]?.amount
+        const price = priceCents != null ? Number(priceCents) : (product.price != null ? Math.round(Number(product.price) * 100) : 0)
         const formattedPrice = (price / 100).toFixed(2)
 
         return (
@@ -62,7 +63,7 @@ export function ProductGrid({ products = [] }) {
                 {product.description || product.subtitle}
               </p>
               <div className="flex items-center justify-between">
-                <span className="text-xl font-bold">${formattedPrice}</span>
+                <span className="text-xl font-bold">€{formattedPrice}</span>
                 <button
                   onClick={() => handleAddToCart(product)}
                   disabled={cartLoading}

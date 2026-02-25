@@ -409,9 +409,6 @@ export default function Navbar() {
               <DropdownItem href="/invoices" onClick={() => setIsDropdownOpen(false)}>
                 Rechnungen
               </DropdownItem>
-              <DropdownItem href="/help" onClick={() => setIsDropdownOpen(false)}>
-                Hilfe
-              </DropdownItem>
                   <DropdownButton
                     onClick={() => {
                       logout();
@@ -428,9 +425,6 @@ export default function Navbar() {
               </DropdownItem>
                   <DropdownItem href="/register" onClick={() => setIsDropdownOpen(false)}>
                     Registrieren
-                  </DropdownItem>
-                  <DropdownItem href="/help" onClick={() => setIsDropdownOpen(false)}>
-                    Hilfe
                   </DropdownItem>
                 </>
               )}

@@ -8,7 +8,9 @@ import { getMedusaClient } from "@/lib/medusa-client";
 function menuItemHref(item) {
   if (!item) return "#";
   if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if (item.link_type === "category" && item.link_value) return `/collections/${item.link_value}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/collections/${item.link_value}`;
+  if (item.link_type === "page" && item.link_value) return `/pages/${item.link_value}`;
+  if (item.link_type === "product" && item.link_value) return `/product/${item.link_value}`;
   return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
 }
 
@@ -27,7 +29,7 @@ const Container = styled.div`
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(${(p) => p.$columns || 4}, 1fr);
   gap: 32px;
   margin-bottom: 32px;
 `;
@@ -89,46 +91,41 @@ const Copyright = styled.p`
 const FOOTER_LOCATIONS = ["footer-menu1", "footer-menu2", "footer-menu3", "footer-menu4"];
 
 export default function Footer() {
-  const [menusByLocation, setMenusByLocation] = useState({});
+  const [footerColumns, setFooterColumns] = useState([]);
 
   useEffect(() => {
     const client = getMedusaClient();
     client.getMenus().then((data) => {
       const menus = data.menus || [];
-      const byLoc = {};
-      FOOTER_LOCATIONS.forEach((loc) => {
+      const columns = FOOTER_LOCATIONS.map((loc) => {
         const menu = menus.find((m) => (m.location || "").toLowerCase() === loc.toLowerCase());
-        byLoc[loc] = menu?.items?.filter((i) => !i.parent_id) || [];
-      });
-      setMenusByLocation(byLoc);
-    }).catch(() => setMenusByLocation({}));
+        if (!menu) return null;
+        const items = (menu.items || []).filter((i) => !i.parent_id);
+        return { location: loc, menu, items };
+      }).filter(Boolean);
+      setFooterColumns(columns);
+    }).catch(() => setFooterColumns([]));
   }, []);
 
   return (
     <FooterContainer>
       <Container>
-        <Grid>
-          {FOOTER_LOCATIONS.map((loc) => {
-            const items = menusByLocation[loc] || [];
-            return (
-              <Column key={loc}>
+        {footerColumns.length > 0 && (
+          <Grid $columns={footerColumns.length}>
+            {footerColumns.map(({ location, menu, items }) => (
+              <Column key={location}>
+                <Title>{menu.name || "Menü"}</Title>
                 {items.length > 0 ? (
-                  <>
-                    {items.map((item) => (
-                      <FooterLink key={item.id} href={menuItemHref(item)}>{item.label}</FooterLink>
-                    ))}
-                  </>
+                  items.map((item) => (
+                    <FooterLink key={item.id} href={menuItemHref(item)}>{item.label}</FooterLink>
+                  ))
                 ) : (
-                  <>
-                    <Title>Belucha</Title>
-                    <Placeholder>Menü konfigurieren</Placeholder>
-                    <LogoPlaceholder href="/">Belucha</LogoPlaceholder>
-                  </>
+                  <Placeholder>Keine Einträge</Placeholder>
                 )}
               </Column>
-            );
-          })}
-        </Grid>
+            ))}
+          </Grid>
+        )}
         <Bottom>
           <Copyright>© {new Date().getFullYear()} Belucha. All rights reserved.</Copyright>
           <FooterLink href={process.env.NEXT_PUBLIC_SELLERCENTRAL_URL || "https://belucha-sellercentral.vercel.app"}>
