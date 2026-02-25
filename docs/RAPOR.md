@@ -1,284 +1,241 @@
-# 📊 BELUCHA PROJE RAPORU - GÜNCEL DURUM
+# RAPOR — Net Talimat Uygulaması
 
-**Rapor Tarihi:** 2026-02-04  
-**Raporlayan:** Cursor AI Assistant  
-**Proje Durumu:** 🔴 KRİTİK ADIMLAR BEKLEMEDE
+## 1. Değiştirilen Dosyalar
+
+| Dosya | Değişiklik |
+|-------|------------|
+| `apps/shop/src/components/templates/ProductTemplate.jsx` | Verkäufer: `product.metadata.seller_name` → `shop_name` → fallback `"Shop"` (reactive). data-seller-source="metadata" eklendi. |
+| `apps/shop/src/components/TopBar.jsx` | İçerik ortalandı (`justify-content: center`). Dil seçici (DE) kaldırıldı. |
+| `apps/shop/src/components/ShopHeader.jsx` | Navbar: Sadece scroll up'ta sticky; scroll down'da gizlenir. Compact 72→60px. Backdrop blur, Framer Motion (y animasyonu), hover underline, compact'ta güçlü gölge. |
+| `apps/shop/src/design-system/tokens.js` | `navbar.heightCompact: "60px"` eklendi. |
+| `apps/medusa-backend/server.js` | `GET /store/products?q=...` ile arama: `q` varsa title/description/handle üzerinde filtre, max 8 ürün döner. |
+| `apps/shop/src/components/DropdownSearch.jsx` | Fallback: debounce 300ms, API `q` + limit 8, loading/no-result state, thumbnail + title + price, HighlightText (matched text bold). |
 
 ---
 
-## 🔧 Migration Sorunları ve Çözümler
+## 2. Eklenen / Kullanılan Endpoint'ler
 
-### Medusa CLI Migration Çalışmıyorsa
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/store/products?q=...&limit=8` | Arama: `q` parametresi varsa ürünler title, description, handle alanlarında filtrelenir; en fazla 8 ürün döner. Mevcut `storeProductsFromAdminHubGET` içinde implement edildi. |
+| GET | `/store/collections` | Koleksiyon listesi (id, title, handle). Landing ve collection sayfaları için. |
 
-**Sorun:** `npx medusa migrations run` hata veriyor (ör. `ERR_INVALID_ARG_TYPE`, `Cannot find module 'ajv/dist/core'`)
+---
 
-**Çözüm 1: Script ile (TypeORM)**
-```bash
-cd apps/medusa-backend
-npm run run-migrations
+## 3. Değiştirilen Component'ler
+
+| Component | Özet |
+|-----------|------|
+| **ProductTemplate** | Verkäufer alanı artık sadece `product.metadata.seller_name` / `shop_name` / `"Shop"` ile render ediliyor; hardcoded yok. |
+| **TopBar** | Ortalanmış tek satır; DE link kaldırıldı. |
+| **ShopHeader** | Scroll yönüne göre görünür/gizli; görünürken scroll sonrası compact (60px); cam efekti; Framer Motion ile y animasyonu; link hover underline; compact iken gölge artıyor. |
+| **DropdownSearch (fallback)** | 300ms debounce, `getProducts({ q, limit: 8 })`, loading/empty state, fiyat gösterimi, eşleşen metin bold. |
+
+---
+
+## 4. Store Name Akış Diyagramı
+
+```
+[Sellercentral] Settings → General → Store name kaydet
+        │
+        ▼
+PATCH /admin-hub/seller-settings  { store_name: "..." }
+        │
+        ▼
+DB: admin_hub_seller_settings (seller_id, store_name)
+        │
+        ▼
+GET /store/products veya GET /store/products/:id
+        │
+        ▼
+Backend: mapAdminHubToStoreProduct sonrası
+         metadata.seller_name / shop_name yoksa
+         getSellerStoreName(seller_id) ile DB'den doldurulur
+        │
+        ▼
+Response: product.metadata.seller_name, product.metadata.shop_name
+        │
+        ▼
+[Shop] ProductTemplate.jsx
+         sellerName = product?.metadata?.seller_name
+                   || product?.metadata?.shop_name
+                   || "Shop"
+        │
+        ▼
+"Verkäufer" label altında {sellerName} render
 ```
 
-**Çözüm 2: SQL ile (PostgreSQL)**
-```sql
-ALTER TABLE admin_hub_categories
-ADD COLUMN IF NOT EXISTS is_visible boolean DEFAULT true,
-ADD COLUMN IF NOT EXISTS has_collection boolean DEFAULT false,
-ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;
+---
+
+## 5. Search Akış Diyagramı
+
+**Algolia yoksa (fallback):**
+
+```
+[User] Arama kutusuna yazar (min 2 karakter)
+        │
+        ▼
+Frontend: 300ms debounce
+        │
+        ▼
+GET /store/products?q=...&limit=8
+        │
+        ▼
+Backend: listAdminHubProductsDb(limit: 200)
+         → q varsa: title/description/handle ile filtre, slice(0, 8)
+         → mapAdminHubToStoreProduct + seller_name enjeksiyonu
+        │
+        ▼
+Response: { products, count }
+        │
+        ▼
+Dropdown: loading → sonuçlar (thumbnail, title + highlight, price)
+          sonuç yoksa: "Keine Ergebnisse für ..."
 ```
 
-**Not:** Medusa v2 bazen kendi ORM'ini kullandığı için TypeORM migration script'i uyumlu olmayabilir. O durumda SQL ile manuel ekleme yapın.
+**Algolia varsa:** Mevcut InstantSearch + useSearchBox + useHits; index'te title, description, handle searchable ve ranking ayarları kontrol edilmeli.
 
 ---
 
-## 🚨 GERÇEK DURUM (DÜRÜST CHECK)
+## 6. Navbar Animasyon Mantığı
 
-### 1. Backend "Tamamlandı" Demek İçin 1 Şart Eksik
+```
+scrollY ≤ SCROLL_THRESHOLD (80px)
+   → visible = true, compact = false
+   → Header tam (72px), SubNav görünür, spacer 160px
 
-**Migration çalışmadan backend tamamlanmış sayılmaz.**
+scrollY > lastScrollY (aşağı kaydırma)
+   → visible = false
+   → Header animate y: "-100%" (Framer Motion spring)
+   → Spacer 0
 
-**Şu An:**
-- ✅ Kod hazır
-- ❌ DB hazır değil (`is_visible`, `has_collection` kolonları yok)
-
-**Sonuç:** Frontend'te alınacak hataların %60'ı "kolon yok / undefined / silent fail" olacak.
-
-**👉 İLK KIRMIZI ALARM BURADA.**
-
----
-
-### 2. Admin Hub Frontend - React Hatası
-
-**Hata:** `setSingleCategory is defined multiple times`
-
-**Kontrol Edildi:**
-- ✅ `"use client"` en üst satırda var
-- ✅ `singleCategory` sadece 1 kere tanımlı (satır 175)
-- ⚠️ Ancak Next.js Server/Client boundary ihlali olabilir
-
-**Düzeltme Yapıldı:**
-- `"use client"` direktifinden sonraki yorumlar kaldırıldı
-- Import'lar direktiften hemen sonra başlıyor
-
-**Durum:** ✅ Düzeltildi (test edilmeli)
-
----
-
-### 3. Medusa configLoader Konusu
-
-**Durum:**
-- ✅ `configLoader` manuel çağrılmıyor
-- ✅ Sadece `MedusaAppLoader` kullanılıyor
-- ✅ `directory: path.resolve(__dirname)` doğru (string)
-
-**Durum:** ✅ Doğru
-
----
-
-## 📋 ADIM ADIM YAPILACAKLAR
-
-### ✅ ADIM 1 — MIGRATION'ı ÇALIŞTIR (ZORUNLU)
-
-**Komut:**
-```bash
-cd apps/medusa-backend
-npx medusa migrations run
+scrollY < lastScrollY (yukarı kaydırma) ve scrollY > 80
+   → visible = true, compact = true
+   → Header 60px, logo küçük, shadow artar, SubNav gizli
+   → Spacer 100px
 ```
 
-**Alternatif (eğer CLI çalışmazsa):**
-```bash
-cd apps/medusa-backend
-node server.js
-# Migration otomatik çalışmalı
+- **Cam efekti:** `backdrop-filter: blur(12px)`, `background: rgba(255,255,255,0.92)`.
+- **Hover:** Nav linklerde `text-decoration: underline`.
+- **Compact:** `tokens.navbar.heightCompact` (60px), `tokens.shadow.hover`.
+
+---
+
+## 7. Landing Page (Bölüm 2) — Eklenen / Değiştirilen Dosyalar
+
+### Eklenen endpoint
+- **GET /store/collections** — Admin Hub koleksiyon listesi (id, title, handle). Shop client: `getCollections()`.
+
+### Eklenen dosyalar (landing component'ler)
+| Dosya | Açıklama |
+|-------|----------|
+| `apps/shop/src/components/landing/HeroSection.jsx` | 70vh hero; sol metin, sağ 3D placeholder; alt yarı floating collection cards. Props: headline, subline, ctaText, ctaHref, collections. |
+| `apps/shop/src/components/landing/CategoryShowcase.jsx` | 4–6 kategori grid; hover zoom; image overlay + başlık. Props: title, categories. |
+| `apps/shop/src/components/landing/FlashSaleSection.jsx` | Turuncu badge, countdown (opsiyonel), yatay scroll ürün kartları, "Jetzt entdecken". Props: title, badgeText, ctaText, ctaHref, products, endDate. |
+| `apps/shop/src/components/landing/FeaturedCollections.jsx` | 2x2 büyük banner. Props: title, collections. |
+| `apps/shop/src/components/landing/SellerHighlight.jsx` | Grid: logo, ad, rating, "Zum Shop". Props: title, sellers (API bağlantı noktası açık). |
+| `apps/shop/src/components/landing/TrustBar.jsx` | Schneller Versand, 30 Tage Rückgabe, Sichere Zahlung, Geprüfte Verkäufer. Props: items. |
+| `apps/shop/src/components/landing/RecommendCarousel.jsx` | "Beliebt bei unseren Kunden" carousel. Props: title, products. |
+| `apps/shop/src/components/landing/index.js` | Landing export. |
+
+### Değiştirilen dosyalar
+| Dosya | Değişiklik |
+|-------|------------|
+| `apps/shop/src/app/page.jsx` | Landing sırasına göre yeniden yapıldı: HeroSection → CategoryShowcase → FlashSaleSection → FeaturedCollections → SellerHighlight → TrustBar → RecommendCarousel. getCollections(), getCategories(), useMedusaProducts() ile veri. |
+| `apps/shop/src/lib/medusa-client.js` | `getCollections()` eklendi (GET /store/collections). |
+
+### Veri akışı (API bağlantı noktaları)
+- **HeroSection / FeaturedCollections:** `getCollections()` → collections.
+- **CategoryShowcase:** `getCategories()` veya collections fallback.
+- **FlashSaleSection / RecommendCarousel:** `useMedusaProducts()` veya products prop.
+- **SellerHighlight:** sellers prop (şu an boş; ileride seller API bağlanacak).
+- **TrustBar:** Varsayılan sabit metin; isteğe göre items prop.
+
+---
+
+## 8. Sistem Kurulumu Raporu (Menü, Marka, GPSR, Header, Sepet, SEO, Rapor)
+
+### 8.1 HTTP 404 Düzeltmesi
+- **Sebep:** Shop `getCategories()` → `GET /store/categories` endpoint’i yoktu.
+- **Yapılan:** `apps/medusa-backend/server.js` içinde `storeCategoriesGET` eklendi, `httpApp.get('/store/categories', storeCategoriesGET)` kaydedildi. `resolveAdminHub().getCategoryTree({ is_visible: true })` ile `{ categories, tree, count }` dönüyor; `slug` query destekleniyor.
+
+### 8.2 Yeni Veritabanı Tabloları
+| Tablo | Açıklama |
+|-------|----------|
+| `admin_hub_brands` | id, name, handle (UNIQUE), logo_image, address, created_at, updated_at |
+| `store_carts` | id (uuid PK), created_at, updated_at |
+| `store_cart_items` | id (uuid PK), cart_id (FK store_carts), variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle, created_at, updated_at |
+
+### 8.3 Migration
+- Migration tek blokta: `server.js` içinde `admin_hub_menus`, `admin_hub_menu_items`, `admin_hub_media`, `admin_hub_pages`, `admin_hub_collections`, `admin_hub_seller_settings`, `admin_hub_brands` sonrası `store_carts` ve `store_cart_items` CREATE TABLE IF NOT EXISTS ile ekleniyor. `idx_store_cart_items_cart_id` index’i eklendi.
+
+### 8.4 Yeni Endpoint Listesi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/store/categories` | Kategori ağacı (slug opsiyonel). |
+| GET | `/admin-hub/brands` | Marka listesi. |
+| POST | `/admin-hub/brands` | Marka oluştur (name, handle auto slugify, logo_image, address). |
+| PATCH | `/admin-hub/brands/:id` | Marka güncelle. |
+| DELETE | `/admin-hub/brands/:id` | Marka sil. |
+| POST | `/store/carts` | Yeni sepet oluştur; `{ cart }` döner. |
+| GET | `/store/carts/:id` | Sepet + line items. |
+| POST | `/store/carts/:id/line-items` | Body: `variant_id`, `quantity`. Ürün/variant fiyatı backend’te çözülür. |
+| PATCH | `/store/carts/:id/line-items/:lineId` | Body: `quantity`. 0 ise satır silinir. |
+| DELETE | `/store/carts/:id/line-items/:lineId` | Satır silinir. |
+
+### 8.5 Değiştirilen / Eklenen Frontend Bileşenleri
+| Bileşen | Değişiklik |
+|---------|------------|
+| **ShopHeader** | Main/Second menü API’den (`getMenus()`); Kategorien dropdown + SubNav. SubNav gölge yok (banner ile birleşik). Sepet ikonu → sidebar açar (href kaldırıldı). Badge: `useCart().itemCount`. |
+| **Navbar** | Menü/categories API; linkler `/kollektion/`, `/produkt/`. Sepet ikonu → sidebar açar; badge `itemCount`. |
+| **ProductTemplate** | Slug: `params.slug ?? params.handle`. Canonical `/produkt/{handle}`. Marka: `meta.brand_name \|\| meta.brand`, logo varsa küçük. GPSR: "Produktsicherheitsinformationen" (hersteller, hersteller_information, verantwortliche_person_information) doluysa description altında. |
+| **ProductCard** | Ürün linki `/produkt/{handle}`. `useCart().addToCart` (global sepet). |
+| **DropdownSearch** | Hit linkleri ve `window.location.href` fallback: `/produkt/` kullanılıyor. |
+| **Footer** | Linkler `/produkt/`, `/kollektion/`. |
+| **CartContext** (yeni) | Global sepet state; cartId localStorage’da (`belucha_cart_id`). `addToCart`, `updateLineItem`, `removeLineItem`, `openCartSidebar`, `closeCartSidebar`, `itemCount`, `subtotalCents`. |
+| **CartSidebar** (yeni) | Sağdan 420px drawer; overlay; liste (thumbnail, title, fiyat, adet +/-); ara toplam; "Versand: Wird an der Kasse berechnet"; "Zur Kasse" (→ /cart); "Warenkorb anzeigen" (→ /cart). Sepete eklemede otomatik açılmıyor. |
+| **Providers** | `CartProvider` + `CartSidebar` eklendi. |
+| **ProductEditPage** (Sellercentral) | Marka: Select (GET /admin-hub/brands). GPSR (opsiyonel): hersteller, hersteller_information, verantwortliche_person_information (metadata). |
+| **BrandPage** (Sellercentral) | Liste + "Add Brand" modal (Name, Logo URL, Address; handle otomatik). CRUD: createBrand, deleteBrand. |
+
+### 8.6 Cart State Yapısı
+- **Kaynak:** `context/CartContext.jsx` (CartProvider).
+- **Persist:** `localStorage` key `belucha_cart_id` → cart id. Sayfa yüklenince `getCart(cartId)` ile doldurulur.
+- **API:** createCart → POST /store/carts; getCart → GET /store/carts/:id; addToCart → POST line-items; updateLineItem → PATCH line-items/:lineId; removeLineItem → DELETE line-items/:lineId.
+- **Sidebar:** `sidebarOpen` state; sadece sepete tıklanınca açılır; ürün eklenince otomatik açılmaz.
+
+### 8.7 Header Scroll Algoritması
+- **atTop:** `scrollY <= 80` → Tam header (TopBar + Nav + SubNav), spacer 160px.
+- **Scroll DOWN:** `visible = false`, header `translateY(-100%)`, spacer 0. Hiçbiri sticky değil.
+- **Scroll UP:** Sadece navbar görünür (`visible = true`, `compact = true`); TopBar ve SubNav gizli. Spacer 72px veya 60px. Navbar yukarıdan kayarak gelir (Framer Motion).
+- **Jitter önleme:** Scroll listener’da tek “ticking” guard; sabit spacer yükseklikleri; `transform translateY` kullanımı.
+
+### 8.8 Menü Veri Akışı
+```
+[Sellercentral] Content → Menüs → main_menu / second_menu item’ları kaydet
+        │
+        ▼
+DB: admin_hub_menus + admin_hub_menu_items
+        │
+        ▼
+GET /store/menus  (location: main | second opsiyonel)
+        │
+        ▼
+Response: { menus: [ { id, name, location, items: [ { id, label, link_type, link_value } ] } ] }
+        │
+        ▼
+[Shop] ShopHeader / Navbar
+        main_menu items → Kategorien dropdown (menuItemHref: collection → /kollektion/{value}, product → /produkt/{value})
+        second_menu items → SubNav (SecondMenuRowInner); box-shadow: none
+        │
+        ▼
+Save → Shop yenilendikten sonra aynı veri yansır (tek kaynak, DRY).
 ```
 
-**Kontrol:**
-```sql
-SELECT is_visible, has_collection FROM admin_hub_categories LIMIT 1;
-```
+**Kullanılan endpoint:** `GET /store/menus`. **Bağlanan bileşenler:** ShopHeader (main + second), Navbar (main menü veya categories fallback).
 
-**Beklenen:** Kolonlar görünmeli, hata olmamalı.
-
-**Durum:** ⏳ YAPILMADI - ÖNCELİK #1
-
----
-
-### ✅ ADIM 2 — ADMIN HUB PAGE.JSX DÜZELT
-
-**Yapılan:**
-1. ✅ `"use client"` en üst satırda (yorumlar kaldırıldı)
-2. ✅ `singleCategory` sadece 1 kere tanımlı (satır 175)
-3. ✅ Tüm useState'ler tek tek kontrol edildi (duplicate yok)
-
-**Durum:** ✅ DÜZELTİLDİ (test edilmeli)
-
----
-
-### ⏳ ADIM 3 — BACKEND'İ TEK BAŞINA AYAĞA KALDIR
-
-**Komut:**
-```bash
-cd apps/medusa-backend
-node server.js
-```
-
-**Beklenen:**
-- ❌ Error yok
-- ✅ "Medusa started" benzeri log
-- ✅ Port 9000'de dinliyor
-
-**Durum:** ⏳ TEST EDİLMEDİ
-
----
-
-### ⏳ ADIM 4 — API'Yİ POSTMAN / CURL İLE TEST ET
-
-**Test 1: POST Category**
-```bash
-POST http://localhost:9000/admin-hub/categories
-Content-Type: application/json
-
-{
-  "name": "Electronics",
-  "slug": "electronics",
-  "has_collection": true,
-  "is_visible": true
-}
-```
-
-**Beklenen:** 201 Created, category objesi dönmeli
-
-**Test 2: GET Tree**
-```bash
-GET http://localhost:9000/admin-hub/categories?tree=true
-```
-
-**Beklenen:** Tree formatında categories dönmeli
-
-**Durum:** ⏳ TEST EDİLMEDİ
-
----
-
-### ⏳ ADIM 5 — FRONTEND'E ONDAN SONRA DÖN
-
-**Komut:**
-```bash
-cd apps/sellercentral
-npm run dev
-# Then navigate to: http://localhost:3002/settings/categories
-```
-
-**Beklenen:**
-- ❌ `setSingleCategory` hatası yok
-- ✅ Sayfa açılıyor
-- ✅ Category formu çalışıyor
-
-**Durum:** ⏳ BACKEND TEST EDİLMEDİĞİ İÇİN YAPILMADI
-
----
-
-## 🔍 TESPİT EDİLEN SORUNLAR
-
-### 1. Migration Henüz Çalıştırılmadı
-**Etki:** Database'de `is_visible` ve `has_collection` kolonları yok.
-**Sonuç:** Frontend'te undefined hataları, silent fail'ler.
-
-**Çözüm:** ADIM 1'i yap.
-
----
-
-### 2. Backend Test Edilmedi
-**Etki:** API endpoint'lerinin çalışıp çalışmadığı bilinmiyor.
-**Sonuç:** Frontend'te "Failed to fetch" hataları.
-
-**Çözüm:** ADIM 3 ve 4'ü yap.
-
----
-
-### 3. Next.js Server/Client Boundary
-**Etki:** `"use client"` direktifi doğru ama yorumlar arasında kalmış olabilir.
-**Sonuç:** React "duplicate state" hatası.
-
-**Çözüm:** ADIM 2'de düzeltildi, test edilmeli.
-
----
-
-## 🎯 ÖNCELİK SIRASI
-
-1. **🔴 KRİTİK:** Migration çalıştır (ADIM 1)
-2. **🟡 ÖNEMLİ:** Backend test et (ADIM 3)
-3. **🟡 ÖNEMLİ:** API test et (ADIM 4)
-4. **🟢 NORMAL:** Frontend test et (ADIM 5)
-
----
-
-## 📊 MEVCUT DURUM ÖZETİ
-
-### Backend
-- ✅ Kod hazır
-- ✅ Entity'ler hazır
-- ✅ Services hazır
-- ✅ API endpoint'leri hazır
-- ❌ Migration çalıştırılmadı
-- ❌ Backend test edilmedi
-
-### Frontend - Admin Hub
-- ✅ `"use client"` düzeltildi
-- ✅ Duplicate state kontrol edildi
-- ⏳ Backend hazır olmadan test edilemez
-
-### Frontend - Shop
-- ✅ Navigation menu hazır
-- ✅ Collections route hazır
-- ⏳ Backend hazır olmadan test edilemez
-
----
-
-## 🧯 ŞU AN SENİ YORAN ASIL PROBLEM
-
-**"Her yerden hata akıyor"**
-
-**Sebep:** Aynı anda 3 katmanı debug etmeye çalışıyorsun:
-- ❌ DB hazır değil (migration çalışmadı)
-- ❌ Backend test edilmeden frontend yazılıyor
-- ❌ Next.js Server/Client boundary ihlal ediliyor (düzeltildi)
-
-**Çözüm:** Tek tek kilidi aç. Önce DB, sonra backend, sonra frontend.
-
----
-
-## ✅ YAPILAN DÜZELTMELER
-
-1. ✅ Platform admin features moved to SellerCentral (`apps/sellercentral/src/app/settings/categories`)
-2. ✅ `singleCategory` duplicate kontrolü yapıldı (sadece 1 tane var)
-3. ✅ Rapor güncellendi (gerçek durum yansıtıldı)
-
----
-
-## 🎯 SONRAKİ ADIM
-
-**TEK YAPILACAK ŞEY:**
-
-```bash
-cd apps/medusa-backend
-npx medusa migrations run
-```
-
-**VEYA:**
-
-```bash
-cd apps/medusa-backend
-node server.js
-```
-
-**Sonra PostgreSQL'de kontrol et:**
-```sql
-SELECT is_visible, has_collection FROM admin_hub_categories LIMIT 1;
-```
-
-**Bunu yapmadan frontend'e bakma bile.**
-
----
-
-**Rapor Sonu**  
-**Tarih:** 2026-02-04  
-**Durum:** 🔴 KRİTİK ADIMLAR BEKLEMEDE - Migration çalıştırılmalı
+### 8.9 SEO URL Yapısı
+- **Ürün:** `/produkt/{handle}`. Route: `apps/shop/src/app/produkt/[handle]/page.jsx`. Canonical: `/produkt/{handle}`.
+- **Koleksiyon:** `/kollektion/{handle}`. Route: `apps/shop/src/app/kollektion/[handle]/page.jsx`. Canonical: `/kollektion/{handle}`.
+- Türkçe karakter slug: Backend’te handle/slug mevcut yapı ile; gerekirse slugify genişletilebilir.
+- Eski route’lar (`/product/[slug]`, `/collections/[slug]`) duruyor; redirect eklenmedi.

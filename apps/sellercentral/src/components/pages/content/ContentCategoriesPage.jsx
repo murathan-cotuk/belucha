@@ -22,14 +22,10 @@ import {
 } from "@shopify/polaris";
 import { EditIcon, DeleteIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { titleToHandle } from "@/lib/slugify";
 
 function slugFromName(name) {
-  if (!name || typeof name !== "string") return "";
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
+  return titleToHandle(name || "");
 }
 
 /** Parse semicolon-separated hierarchical CSV into a flat create list (key, label, parentKey, sortOrder). */

@@ -1,7 +1,7 @@
 "use client";
 
-import SettingsSubpage from "@/components/SettingsSubpage";
+import GeneralSettingsPage from "@/components/pages/settings/GeneralSettingsPage";
 
 export default function SettingsGeneral() {
-  return <SettingsSubpage title="General" description="Store name, timezone, and general preferences." />;
+  return <GeneralSettingsPage />;
 }

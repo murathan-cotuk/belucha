@@ -290,8 +290,55 @@ async function start() {
           );
         `)
         await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_collections_handle ON admin_hub_collections(handle);')
+        try {
+          await client.query('ALTER TABLE admin_hub_collections ADD COLUMN metadata jsonb;')
+        } catch (e) {
+          if (e.code !== '42701') throw e
+        }
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS admin_hub_seller_settings (
+            seller_id varchar(255) PRIMARY KEY DEFAULT 'default',
+            store_name varchar(255),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS admin_hub_brands (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name varchar(255) NOT NULL,
+            handle varchar(255) NOT NULL UNIQUE,
+            logo_image text,
+            address text,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+        await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_brands_handle ON admin_hub_brands(handle);')
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_carts (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_cart_items (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            cart_id uuid NOT NULL REFERENCES store_carts(id) ON DELETE CASCADE,
+            variant_id text NOT NULL,
+            product_id text NOT NULL,
+            quantity integer NOT NULL DEFAULT 1 CHECK (quantity > 0),
+            unit_price_cents integer NOT NULL DEFAULT 0,
+            title text,
+            thumbnail text,
+            product_handle text,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_cart_items_cart_id ON store_cart_items(cart_id);')
         await client.end()
-        console.log('Admin Hub: admin_hub_menus, admin_hub_media, admin_hub_pages, admin_hub_collections tabloları hazır')
+        console.log('Admin Hub: admin_hub_menus, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
       } catch (migErr) {
         console.warn('Admin Hub migration (menus) skipped or failed:', migErr && migErr.message)
       }
@@ -545,6 +592,15 @@ async function start() {
     httpApp.get('/admin/orders', (req, res) => adminOrdersGET(req, res))
     console.log('Admin route: GET /admin/orders')
 
+    // Title → URL handle (ü→u, ö→o, ı→i, ç→c, ğ→g, ä→ae, ß→ss)
+    const slugifyTitle = (str) => {
+      if (!str || typeof str !== 'string') return ''
+      const map = { ü: 'u', Ü: 'u', ö: 'o', Ö: 'o', ı: 'i', I: 'i', İ: 'i', ç: 'c', Ç: 'c', ğ: 'g', Ğ: 'g', ä: 'ae', Ä: 'ae', ß: 'ss' }
+      let s = str.trim()
+      for (const [from, to] of Object.entries(map)) s = s.split(from).join(to)
+      return s.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    }
+
     // Standalone collections (admin_hub_collections) – kategoriye bağlı olmadan
     const listAdminHubCollectionsDb = async () => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
@@ -578,7 +634,7 @@ async function start() {
         return null
       }
     }
-    const updateAdminHubCollectionDb = async (id, title, handle) => {
+    const updateAdminHubCollectionDb = async (id, title, handle, metadata) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       if (!dbUrl || !dbUrl.startsWith('postgres')) return null
       try {
@@ -586,9 +642,10 @@ async function start() {
         const isRender = dbUrl.includes('render.com')
         const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
         await client.connect()
+        const metaJson = metadata != null && typeof metadata === 'object' ? JSON.stringify(metadata) : null
         const res = await client.query(
-          'UPDATE admin_hub_collections SET title = COALESCE(NULLIF($2, \'\'), title), handle = COALESCE(NULLIF($3, \'\'), handle), updated_at = now() WHERE id = $1 RETURNING id, title, handle',
-          [id, title || '', handle || '']
+          'UPDATE admin_hub_collections SET title = COALESCE(NULLIF($2, \'\'), title), handle = COALESCE(NULLIF($3, \'\'), handle), metadata = COALESCE($4, metadata), updated_at = now() WHERE id = $1 RETURNING id, title, handle, metadata',
+          [id, title || '', handle || '', metaJson]
         )
         await client.end()
         return res.rows && res.rows[0] ? res.rows[0] : null
@@ -621,9 +678,24 @@ async function start() {
         const isRender = dbUrl.includes('render.com')
         const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const res = await client.query('SELECT id, title, handle FROM admin_hub_collections WHERE id = $1', [id])
+        const res = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = $1', [id])
         await client.end()
-        return res.rows && res.rows[0] ? res.rows[0] : null
+        const r = res.rows && res.rows[0]
+        if (!r) return null
+        const meta = r.metadata && typeof r.metadata === 'object' ? r.metadata : {}
+        return {
+          id: r.id,
+          title: r.title,
+          handle: r.handle,
+          display_title: meta.display_title,
+          meta_title: meta.meta_title,
+          meta_description: meta.meta_description,
+          keywords: meta.keywords,
+          richtext: meta.richtext,
+          description_html: meta.richtext,
+          image_url: meta.image_url,
+          banner_image_url: meta.banner_image_url,
+        }
       } catch (_) { return null }
     }
 
@@ -674,7 +746,7 @@ async function start() {
         const b = req.body || {}
         const title = (b.title || '').trim()
         if (!title) return res.status(400).json({ message: 'title is required' })
-        const handle = (b.handle || '').trim() || title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+        const handle = (b.handle || '').trim() || slugifyTitle(title)
         const standalone = b.standalone === true || b.standalone === 'true'
         const categoryId = (b.category_id || '').trim() || null
         if (standalone) {
@@ -736,7 +808,15 @@ async function start() {
         const title = (b.title || '').trim()
         const handle = (b.handle || '').trim()
         const categoryId = (b.category_id || '').trim() || null
-        const updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined)
+        const metadata = {}
+        if (b.display_title !== undefined) metadata.display_title = b.display_title
+        if (b.meta_title !== undefined) metadata.meta_title = b.meta_title
+        if (b.meta_description !== undefined) metadata.meta_description = b.meta_description
+        if (b.keywords !== undefined) metadata.keywords = b.keywords
+        if (b.richtext !== undefined) metadata.richtext = b.richtext
+        if (b.image_url !== undefined) metadata.image_url = b.image_url
+        if (b.banner_image_url !== undefined) metadata.banner_image_url = b.banner_image_url
+        const updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
         if (!updated) return res.status(404).json({ message: 'Collection not found (only standalone collections can be updated here)' })
         if (categoryId) {
           try {
@@ -744,7 +824,21 @@ async function start() {
             if (adminHub) await adminHub.updateCategory(categoryId, { has_collection: true, metadata: { collection_id: id } })
           } catch (_) {}
         }
-        res.json({ collection: { id: updated.id, title: updated.title, handle: updated.handle } })
+        const meta = (updated.metadata && typeof updated.metadata === 'object') ? updated.metadata : {}
+        res.json({
+          collection: {
+            id: updated.id,
+            title: updated.title,
+            handle: updated.handle,
+            display_title: meta.display_title,
+            meta_title: meta.meta_title,
+            meta_description: meta.meta_description,
+            keywords: meta.keywords,
+            richtext: meta.richtext,
+            image_url: meta.image_url,
+            banner_image_url: meta.banner_image_url,
+          }
+        })
       } catch (err) {
         console.error('Admin collection PATCH error:', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
@@ -774,7 +868,7 @@ async function start() {
         const id = req.params.id
         if (!id) return res.status(400).json({ message: 'id is required' })
         const row = await getAdminHubCollectionByIdDb(id)
-        if (row) return res.json({ collection: { id: row.id, title: row.title, handle: row.handle, _standalone: true } })
+        if (row) return res.json({ collection: { ...row, _standalone: true } })
         const adminHub = resolveAdminHub()
         if (adminHub) {
           try {
@@ -794,6 +888,101 @@ async function start() {
     httpApp.patch('/admin-hub/collections/:id', (req, res) => adminCollectionByIdPATCH(req, res))
     httpApp.delete('/admin-hub/collections/:id', (req, res) => adminCollectionByIdDELETE(req, res))
     console.log('Admin route: GET/POST/PATCH/DELETE /admin-hub/collections, GET /admin-hub/collections/:id')
+
+    // --- Admin Hub Brands (serbest text yasak: product'ta sadece bu listeden seçilir) ---
+    const getBrandsDbClient = () => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      const { Client } = require('pg')
+      return new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+    }
+    const adminBrandsGET = async (req, res) => {
+      const client = getBrandsDbClient()
+      if (!client) return res.status(500).json({ message: 'Database unavailable' })
+      try {
+        await client.connect()
+        const r = await client.query('SELECT id, name, handle, logo_image, address, created_at FROM admin_hub_brands ORDER BY name')
+        await client.end()
+        res.json({ brands: (r.rows || []).map((row) => ({ id: row.id, name: row.name, handle: row.handle, logo_image: row.logo_image || null, address: row.address || null, created_at: row.created_at })) })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.error('Brands GET:', e)
+        res.status(500).json({ message: (e && e.message) || 'Internal server error' })
+      }
+    }
+    const adminBrandsPOST = async (req, res) => {
+      const body = req.body || {}
+      const name = (body.name || '').trim()
+      if (!name) return res.status(400).json({ message: 'name is required' })
+      const handle = (body.handle || '').trim() || slugifyTitle(name) || ('brand-' + Date.now())
+      const logo_image = (body.logo_image || body.logo || '').trim() || null
+      const address = (body.address || '').trim() || null
+      const client = getBrandsDbClient()
+      if (!client) return res.status(500).json({ message: 'Database unavailable' })
+      try {
+        await client.connect()
+        const r = await client.query(
+          'INSERT INTO admin_hub_brands (name, handle, logo_image, address) VALUES ($1, $2, $3, $4) ON CONFLICT (handle) DO UPDATE SET name = $1, logo_image = $3, address = $4, updated_at = now() RETURNING id, name, handle, logo_image, address, created_at',
+          [name, handle, logo_image, address]
+        )
+        await client.end()
+        const row = r.rows && r.rows[0]
+        res.status(201).json({ brand: row })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.error('Brands POST:', e)
+        res.status(500).json({ message: (e && e.message) || 'Internal server error' })
+      }
+    }
+    const adminBrandsPatchDelete = async (req, res, isPatch) => {
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      const client = getBrandsDbClient()
+      if (!client) return res.status(500).json({ message: 'Database unavailable' })
+      try {
+        await client.connect()
+        if (isPatch) {
+          const body = req.body || {}
+          const name = (body.name || '').trim()
+          const handle = (body.handle || '').trim()
+          const logo_image = (body.logo_image || body.logo || '').trim()
+          const address = (body.address || '').trim()
+          const updates = []
+          const params = []
+          let n = 1
+          if (name) { updates.push('name = $' + n); params.push(name); n++ }
+          if (handle) { updates.push('handle = $' + n); params.push(handle); n++ }
+          if (logo_image !== undefined) { updates.push('logo_image = $' + n); params.push(logo_image || null); n++ }
+          if (address !== undefined) { updates.push('address = $' + n); params.push(address || null); n++ }
+          if (updates.length === 0) {
+            const r = await client.query('SELECT id, name, handle, logo_image, address, created_at FROM admin_hub_brands WHERE id = $1', [id])
+            await client.end()
+            if (!r.rows || !r.rows[0]) return res.status(404).json({ message: 'Brand not found' })
+            return res.json({ brand: r.rows[0] })
+          }
+          updates.push('updated_at = now()')
+          params.push(id)
+          const r = await client.query('UPDATE admin_hub_brands SET ' + updates.join(', ') + ' WHERE id = $' + n + ' RETURNING id, name, handle, logo_image, address, created_at', params)
+          await client.end()
+          if (!r.rows || !r.rows[0]) return res.status(404).json({ message: 'Brand not found' })
+          res.json({ brand: r.rows[0] })
+        } else {
+          const r = await client.query('DELETE FROM admin_hub_brands WHERE id = $1 RETURNING id', [id])
+          await client.end()
+          if (!r.rows || !r.rows[0]) return res.status(404).json({ message: 'Brand not found' })
+          res.status(200).json({ deleted: true })
+        }
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        console.error('Brands PATCH/DELETE:', e)
+        res.status(500).json({ message: (e && e.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin-hub/brands', adminBrandsGET)
+    httpApp.post('/admin-hub/brands', adminBrandsPOST)
+    httpApp.patch('/admin-hub/brands/:id', (req, res) => adminBrandsPatchDelete(req, res, true))
+    httpApp.delete('/admin-hub/brands/:id', (req, res) => adminBrandsPatchDelete(req, res, false))
+    console.log('Admin route: GET/POST /admin-hub/brands, PATCH/DELETE /admin-hub/brands/:id')
 
     // --- Admin Hub Menus ---
     const resolveMenuService = () => {
@@ -978,16 +1167,26 @@ async function start() {
         return []
       }
     }
+    const BULLET_POINT_MAX_LEN = 120
+    const normalizeProductMetadata = (meta) => {
+      if (!meta || typeof meta !== 'object') return meta
+      const out = { ...meta }
+      if (Array.isArray(out.bullet_points)) {
+        out.bullet_points = out.bullet_points.map((b) => String(b || '').slice(0, BULLET_POINT_MAX_LEN))
+      }
+      return out
+    }
     const createAdminHubProductDb = async (body) => {
       const client = getProductsDbClient()
       if (!client) return null
       try {
         await client.connect()
         const title = (body.title || '').trim() || 'Untitled'
-        const handle = (body.handle || body.slug || title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'product-' + Date.now()).trim()
+        const handle = (body.handle || body.slug || slugifyTitle(title) || 'product-' + Date.now()).trim()
         const price = typeof body.price === 'number' ? Math.round(body.price * 100) : parseInt(body.price, 10) || 0
         const inventory = parseInt(body.inventory, 10) || 0
-        const metadata = body.metadata && typeof body.metadata === 'object' ? JSON.stringify(body.metadata) : null
+        const metaObj = body.metadata && typeof body.metadata === 'object' ? normalizeProductMetadata(body.metadata) : null
+        const metadata = metaObj ? JSON.stringify(metaObj) : null
         const variants = body.variants && Array.isArray(body.variants) ? JSON.stringify(body.variants) : null
         const res = await client.query(
           `INSERT INTO admin_hub_products (title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants)
@@ -1132,7 +1331,7 @@ async function start() {
         const inventory = body.inventory !== undefined ? parseInt(body.inventory, 10) || 0 : (existing.inventory ?? 0)
         let metadataObj = existing.metadata && typeof existing.metadata === 'object' ? { ...existing.metadata } : {}
         if (body.metadata !== undefined && body.metadata && typeof body.metadata === 'object') {
-          metadataObj = { ...metadataObj, ...body.metadata }
+          metadataObj = normalizeProductMetadata({ ...metadataObj, ...body.metadata })
         }
         const metadata = Object.keys(metadataObj).length ? JSON.stringify(metadataObj) : null
         const variants = body.variants !== undefined ? (Array.isArray(body.variants) ? JSON.stringify(body.variants) : null) : (existing.variants ? JSON.stringify(existing.variants) : null)
@@ -1186,13 +1385,111 @@ async function start() {
     httpApp.delete('/admin-hub/products/:id', adminHubProductByIdDELETE)
     console.log('Admin Hub routes: GET/POST /admin-hub/products, GET/PUT/DELETE /admin-hub/products/:id')
 
-    // Store API: list/detail from Admin Hub so shop shows image, price, EAN
+    // Seller settings (store name) – persisted in DB so shop shows correct Verkäufer
+    const getSellerStoreName = async (sellerId) => {
+      const id = (sellerId || 'default').toString().trim() || 'default'
+      const client = getProductsDbClient()
+      if (!client) return null
+      try {
+        await client.connect()
+        const res = await client.query('SELECT store_name FROM admin_hub_seller_settings WHERE seller_id = $1', [id])
+        await client.end()
+        const row = res.rows && res.rows[0]
+        const name = row && row.store_name != null && String(row.store_name).trim() !== '' ? String(row.store_name).trim() : null
+        return name
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        return null
+      }
+    }
+    const sellerSettingsGET = async (req, res) => {
+      try {
+        const sellerId = (req.query.seller_id || 'default').toString().trim() || 'default'
+        const client = getProductsDbClient()
+        if (!client) return res.json({ store_name: '' })
+        await client.connect()
+        const r = await client.query('SELECT store_name FROM admin_hub_seller_settings WHERE seller_id = $1', [sellerId])
+        await client.end()
+        const row = r.rows && r.rows[0]
+        const store_name = row && row.store_name != null ? String(row.store_name) : ''
+        res.json({ store_name })
+      } catch (err) {
+        console.error('sellerSettingsGET:', err)
+        res.json({ store_name: '' })
+      }
+    }
+    const sellerSettingsPATCH = async (req, res) => {
+      try {
+        const body = req.body || {}
+        const store_name = (body.store_name != null ? String(body.store_name) : '').trim()
+        const sellerId = (body.seller_id || req.query.seller_id || 'default').toString().trim() || 'default'
+        const client = getProductsDbClient()
+        if (!client) return res.status(500).json({ message: 'Database unavailable' })
+        await client.connect()
+        await client.query(
+          `INSERT INTO admin_hub_seller_settings (seller_id, store_name, updated_at) VALUES ($1, $2, now())
+           ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, updated_at = now()`,
+          [sellerId, store_name || null]
+        )
+        await client.end()
+        res.json({ store_name: store_name || '' })
+      } catch (err) {
+        console.error('sellerSettingsPATCH:', err)
+        res.status(500).json({ message: err && err.message })
+      }
+    }
+    httpApp.get('/admin-hub/seller-settings', sellerSettingsGET)
+    httpApp.patch('/admin-hub/seller-settings', sellerSettingsPATCH)
+    console.log('Admin Hub routes: GET/PATCH /admin-hub/seller-settings')
+
+    const getBrandById = async (brandId) => {
+      if (!brandId) return null
+      const client = getBrandsDbClient()
+      if (!client) return null
+      try {
+        await client.connect()
+        const r = await client.query('SELECT id, name, handle, logo_image FROM admin_hub_brands WHERE id = $1', [brandId])
+        await client.end()
+        return r.rows && r.rows[0] ? r.rows[0] : null
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        return null
+      }
+    }
+
+    // Store API: list/detail from Admin Hub so shop shows image, price, EAN, brand
     const mapAdminHubToStoreProduct = (p) => {
       const meta = p.metadata && typeof p.metadata === 'object' ? p.metadata : {}
       const media = meta.media
       const thumb = Array.isArray(media) && media[0] ? media[0] : (typeof media === 'string' && media ? media : null)
       const priceCents = p.price != null ? Math.round(Number(p.price) * 100) : 0
-      return {
+      const rawVariants = Array.isArray(p.variants) && p.variants.length > 0 ? p.variants : []
+      const variants = rawVariants.length > 0
+        ? rawVariants.map((v, i) => {
+            const vPriceCents = v.price_cents != null ? Number(v.price_cents) : (v.price != null ? Math.round(Number(v.price) * 100) : priceCents)
+            const vCompareCents = v.compare_at_price_cents != null ? Number(v.compare_at_price_cents) : null
+            return {
+              id: p.id + '-v-' + i,
+              product_id: p.id,
+              title: v.title || v.value || 'Option ' + (i + 1),
+              value: v.value,
+              sku: v.sku || null,
+              prices: [{ amount: vPriceCents, currency_code: 'eur' }],
+              compare_at_price_cents: vCompareCents,
+              inventory_quantity: v.inventory != null ? v.inventory : 0,
+              image_url: v.image_url || v.image || null,
+            }
+          })
+        : [{
+            id: p.id + '-variant',
+            product_id: p.id,
+            title: 'Standard',
+            prices: [{ amount: priceCents, currency_code: 'eur' }],
+            compare_at_price_cents: null,
+            inventory_quantity: p.inventory != null ? p.inventory : 0,
+            image_url: null,
+          }]
+      const out = {
         id: p.id,
         title: p.title,
         handle: p.handle,
@@ -1201,26 +1498,73 @@ async function start() {
         thumbnail: thumb || null,
         images: thumb ? [{ url: thumb, alt: p.title }] : [],
         metadata: meta,
-        variants: [{
-          id: p.id + '-variant',
-          product_id: p.id,
-          prices: [{ amount: priceCents, currency_code: 'eur' }],
-          inventory_quantity: p.inventory != null ? p.inventory : 0,
-        }],
+        variants,
       }
+      if (p.collection) {
+        out.collection = p.collection
+      }
+      return out
     }
     const storeProductsFromAdminHubGET = async (req, res) => {
       try {
-        let list = await listAdminHubProductsDb(req.query || {})
-        const collectionId = (req.query.collection_id || '').toString().trim()
+        const query = req.query || {}
+        const searchQ = (query.q || '').toString().trim().toLowerCase()
+        const limitForSearch = searchQ ? 8 : (parseInt(query.limit, 10) || 100)
+        let list = await listAdminHubProductsDb({ ...query, limit: searchQ ? 200 : (query.limit || 100) })
+        const collectionId = (query.collection_id || '').toString().trim()
         if (collectionId) {
           list = list.filter((p) => (p.collection_id || '') === collectionId || (p.handle || '') === collectionId)
         }
-        const products = list.map(mapAdminHubToStoreProduct)
+        if (searchQ) {
+          list = list.filter((p) => {
+            const t = (p.title || '').toLowerCase()
+            const d = (p.description || '').toLowerCase()
+            const h = (p.handle || '').toLowerCase()
+            return t.includes(searchQ) || d.includes(searchQ) || h.includes(searchQ)
+          }).slice(0, limitForSearch)
+        }
+        const sellerIds = [...new Set(list.map((p) => (p.seller_id || 'default').toString().trim() || 'default').filter(Boolean))]
+        const storeNamesBySeller = {}
+        await Promise.all(sellerIds.map(async (id) => { storeNamesBySeller[id] = await getSellerStoreName(id) }))
+        const brandIds = [...new Set(list.map((p) => (p.metadata && p.metadata.brand_id) || null).filter(Boolean))]
+        const brandsById = {}
+        await Promise.all(brandIds.map(async (bid) => { const b = await getBrandById(bid); if (b) brandsById[bid] = b }))
+        const products = list.map((p) => {
+          const mapped = mapAdminHubToStoreProduct(p)
+          const existingSeller = (mapped.metadata && (mapped.metadata.seller_name || mapped.metadata.shop_name)) || ''
+          if (!existingSeller && p.seller_id && storeNamesBySeller[(p.seller_id || 'default').toString().trim()]) {
+            const storeName = storeNamesBySeller[(p.seller_id || 'default').toString().trim()]
+            mapped.metadata = { ...(mapped.metadata || {}), seller_name: storeName, shop_name: storeName }
+          }
+          const brandId = mapped.metadata && mapped.metadata.brand_id
+          if (brandId && brandsById[brandId]) {
+            const b = brandsById[brandId]
+            mapped.metadata = { ...(mapped.metadata || {}), brand_name: b.name, brand_logo: b.logo_image || null }
+          }
+          return mapped
+        })
         res.json({ products, count: products.length })
       } catch (err) {
         console.error('Store products GET (admin hub):', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const getAdminHubCollectionById = async (collectionId) => {
+      if (!collectionId) return null
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('SELECT id, title, handle FROM admin_hub_collections WHERE id = $1', [collectionId])
+        const r = res.rows && res.rows[0]
+        return r ? { id: r.id, title: r.title, handle: r.handle } : null
+      } catch (e) {
+        return null
+      } finally {
+        try { if (client) await client.end() } catch (_) {}
       }
     }
     const storeProductByIdFromAdminHubGET = async (req, res) => {
@@ -1235,7 +1579,26 @@ async function start() {
           res.status(404).json({ message: 'Product not found' })
           return
         }
-        res.json({ product: mapAdminHubToStoreProduct(product) })
+        if (product.collection_id) {
+          const collection = await getAdminHubCollectionById(product.collection_id)
+          if (collection) product.collection = collection
+        }
+        const mapped = mapAdminHubToStoreProduct(product)
+        const existingSeller = (mapped.metadata && (mapped.metadata.seller_name || mapped.metadata.shop_name)) || ''
+        if (!existingSeller && product.seller_id) {
+          const storeName = await getSellerStoreName(product.seller_id)
+          if (storeName) {
+            mapped.metadata = { ...(mapped.metadata || {}), seller_name: storeName, shop_name: storeName }
+          }
+        }
+        const brandId = mapped.metadata && mapped.metadata.brand_id
+        if (brandId) {
+          const brand = await getBrandById(brandId)
+          if (brand) {
+            mapped.metadata = { ...(mapped.metadata || {}), brand_name: brand.name, brand_logo: brand.logo_image || null }
+          }
+        }
+        res.json({ product: mapped })
       } catch (err) {
         console.error('Store product by id GET (admin hub):', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
@@ -1245,7 +1608,254 @@ async function start() {
     httpApp.get('/store/products/:idOrHandle', storeProductByIdFromAdminHubGET)
     console.log('Store routes: GET /store/products, GET /store/products/:idOrHandle (from Admin Hub)')
 
+    // --- Store Carts (session cart: create, get, add/update/remove line-items) ---
+    const productIdFromVariantId = (variantId) => {
+      if (!variantId || typeof variantId !== 'string') return null
+      if (variantId.endsWith('-variant')) return variantId.slice(0, -'-variant'.length)
+      const idx = variantId.indexOf('-v-')
+      return idx > 0 ? variantId.slice(0, idx) : variantId
+    }
+    const getCartWithItems = async (client, cartId) => {
+      const cartRes = await client.query('SELECT id, created_at, updated_at FROM store_carts WHERE id = $1', [cartId])
+      const cartRow = cartRes.rows && cartRes.rows[0]
+      if (!cartRow) return null
+      const itemsRes = await client.query(
+        'SELECT id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle FROM store_cart_items WHERE cart_id = $1 ORDER BY created_at',
+        [cartId]
+      )
+      const items = (itemsRes.rows || []).map((r) => ({
+        id: r.id,
+        variant_id: r.variant_id,
+        product_id: r.product_id,
+        quantity: r.quantity,
+        unit_price_cents: r.unit_price_cents,
+        title: r.title,
+        thumbnail: r.thumbnail,
+        product_handle: r.product_handle,
+      }))
+      return { id: cartRow.id, created_at: cartRow.created_at, updated_at: cartRow.updated_at, items }
+    }
+    const storeCartsPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('INSERT INTO store_carts DEFAULT VALUES RETURNING id, created_at, updated_at')
+        const row = r.rows && r.rows[0]
+        if (!row) { await client.end(); return res.status(500).json({ message: 'Failed to create cart' }) }
+        const cart = await getCartWithItems(client, row.id)
+        await client.end()
+        res.status(201).json({ cart })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store carts POST:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const storeCartGET = async (req, res) => {
+      const cartId = (req.params.id || req.params.cartId || '').toString().trim()
+      if (!cartId) return res.status(400).json({ message: 'Cart id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const cart = await getCartWithItems(client, cartId)
+        await client.end()
+        if (!cart) return res.status(404).json({ message: 'Cart not found' })
+        res.json({ cart })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store cart GET:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const storeCartLineItemsPOST = async (req, res) => {
+      const cartId = (req.params.id || req.params.cartId || '').toString().trim()
+      if (!cartId) return res.status(400).json({ message: 'Cart id required' })
+      const body = req.body || {}
+      const variantId = (body.variant_id || body.variantId || '').toString().trim()
+      const quantity = Math.max(1, parseInt(body.quantity, 10) || 1)
+      if (!variantId) return res.status(400).json({ message: 'variant_id required' })
+      const productId = productIdFromVariantId(variantId)
+      if (!productId) return res.status(400).json({ message: 'Invalid variant_id' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const product = await getAdminHubProductByIdOrHandleDb(productId)
+        if (!product) { await client.end(); return res.status(404).json({ message: 'Product not found' }) }
+        const meta = product.metadata && typeof product.metadata === 'object' ? product.metadata : {}
+        const media = meta.media
+        const thumb = Array.isArray(media) && media[0] ? (typeof media[0] === 'string' ? media[0] : media[0].url) : (typeof media === 'string' ? media : null)
+        const priceCents = product.price_cents != null ? Number(product.price_cents) : Math.round(Number(product.price || 0) * 100)
+        const rawVariants = Array.isArray(product.variants) && product.variants.length > 0 ? product.variants : []
+        let unitPriceCents = priceCents
+        const variantIndex = variantId.includes('-v-') ? parseInt(variantId.split('-v-')[1], 10) : null
+        if (rawVariants.length && variantIndex >= 0 && rawVariants[variantIndex]) {
+          const v = rawVariants[variantIndex]
+          if (v.price_cents != null) unitPriceCents = Number(v.price_cents)
+          else if (v.price != null) unitPriceCents = Math.round(Number(v.price) * 100)
+        }
+        const title = product.title || 'Product'
+        const handle = product.handle || product.id
+        const cartExists = await client.query('SELECT id FROM store_carts WHERE id = $1', [cartId])
+        if (!cartExists.rows || !cartExists.rows[0]) { await client.end(); return res.status(404).json({ message: 'Cart not found' }) }
+        const existing = await client.query('SELECT id, quantity FROM store_cart_items WHERE cart_id = $1 AND variant_id = $2', [cartId, variantId])
+        if (existing.rows && existing.rows[0]) {
+          const newQty = (existing.rows[0].quantity || 0) + quantity
+          await client.query('UPDATE store_cart_items SET quantity = $1, updated_at = now() WHERE id = $2', [newQty, existing.rows[0].id])
+        } else {
+          await client.query(
+            'INSERT INTO store_cart_items (cart_id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [cartId, variantId, productId, quantity, unitPriceCents, title, thumb, handle]
+          )
+        }
+        const cart = await getCartWithItems(client, cartId)
+        await client.end()
+        res.json({ cart })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store cart line-items POST:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const storeCartLineItemPATCH = async (req, res) => {
+      const cartId = (req.params.id || req.params.cartId || '').toString().trim()
+      const lineId = (req.params.lineId || req.params.line_id || '').toString().trim()
+      if (!cartId || !lineId) return res.status(400).json({ message: 'Cart id and line item id required' })
+      const quantity = Math.max(0, parseInt((req.body || {}).quantity, 10))
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        if (quantity === 0) {
+          await client.query('DELETE FROM store_cart_items WHERE cart_id = $1 AND id = $2', [cartId, lineId])
+        } else {
+          const up = await client.query('UPDATE store_cart_items SET quantity = $1, updated_at = now() WHERE cart_id = $2 AND id = $3 RETURNING id', [quantity, cartId, lineId])
+          if (!up.rows || !up.rows[0]) { await client.end(); return res.status(404).json({ message: 'Line item not found' }) }
+        }
+        const cart = await getCartWithItems(client, cartId)
+        await client.end()
+        res.json({ cart })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store cart line-item PATCH:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    const storeCartLineItemDELETE = async (req, res) => {
+      const cartId = (req.params.id || req.params.cartId || '').toString().trim()
+      const lineId = (req.params.lineId || req.params.line_id || '').toString().trim()
+      if (!cartId || !lineId) return res.status(400).json({ message: 'Cart id and line item id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const del = await client.query('DELETE FROM store_cart_items WHERE cart_id = $1 AND id = $2 RETURNING id', [cartId, lineId])
+        if (!del.rows || !del.rows[0]) { await client.end(); return res.status(404).json({ message: 'Line item not found' }) }
+        const cart = await getCartWithItems(client, cartId)
+        await client.end()
+        res.json({ cart })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store cart line-item DELETE:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.post('/store/carts', storeCartsPOST)
+    httpApp.get('/store/carts/:id', storeCartGET)
+    httpApp.post('/store/carts/:id/line-items', storeCartLineItemsPOST)
+    httpApp.patch('/store/carts/:id/line-items/:lineId', storeCartLineItemPATCH)
+    httpApp.delete('/store/carts/:id/line-items/:lineId', storeCartLineItemDELETE)
+    console.log('Store routes: POST/GET /store/carts, POST/PATCH/DELETE line-items')
+
+    const storeCollectionsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.json({ collections: [] })
+      const handleQuery = (req.query.handle || req.query.slug || '').toString().trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        if (handleQuery) {
+          const r = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE LOWER(handle) = LOWER($1)', [handleQuery])
+          const row = r.rows && r.rows[0]
+          if (!row) {
+            try { await client.end() } catch (_) {}
+            return res.status(404).json({ message: 'Collection not found' })
+          }
+          const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+          const collection = {
+            id: row.id,
+            title: row.title,
+            handle: row.handle,
+            banner: meta.banner_image_url || meta.image_url || null,
+            description: meta.richtext || meta.description_html || null,
+          }
+          try { await client.end() } catch (_) {}
+          return res.json({ collection })
+        }
+        const r = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections ORDER BY title')
+        const collections = (r.rows || []).map((row) => {
+          const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+          return {
+            id: row.id,
+            title: row.title,
+            handle: row.handle,
+            banner: meta.banner_image_url || meta.image_url || null,
+            description: meta.richtext || meta.description_html || null,
+          }
+        })
+        res.json({ collections })
+      } catch (e) {
+        if (handleQuery) return res.status(500).json({ message: (e && e.message) || 'Internal server error' })
+        res.json({ collections: [] })
+      } finally {
+        try { if (client) await client.end() } catch (_) {}
+      }
+    }
+    httpApp.get('/store/collections', storeCollectionsGET)
+    console.log('Store route: GET /store/collections')
+
     // GET /store/menus – Public menüler (Shop). Her menü SADECE kendi menu_id’sine ait item’ları alır (raw DB).
+    const storeCategoriesGET = async (req, res) => {
+      const adminHubService = resolveAdminHub()
+      if (!adminHubService) return res.status(200).json({ categories: [], tree: [], count: 0 })
+      try {
+        const slug = (req.query.slug || '').toString().trim()
+        if (slug) {
+          const category = await adminHubService.getCategoryBySlug(slug)
+          if (!category) return res.status(404).json({ message: 'Category not found' })
+          const cat = { id: category.id, name: category.name, slug: category.slug, title: category.name, handle: category.slug }
+          return res.json({ category: cat, categories: [cat], count: 1 })
+        }
+        const tree = await adminHubService.getCategoryTree({ is_visible: true })
+        const categories = (tree || []).map((c) => ({ id: c.id, name: c.name, slug: c.slug, title: c.name, handle: c.slug }))
+        res.json({ categories, tree, count: categories.length })
+      } catch (err) {
+        console.error('Store categories GET error:', err)
+        res.status(200).json({ categories: [], tree: [], count: 0 })
+      }
+    }
+    httpApp.get('/store/categories', storeCategoriesGET)
+    console.log('Store route: GET /store/categories')
+
     const getStoreMenusFromDb = async () => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       if (!dbUrl || !dbUrl.startsWith('postgres')) return null

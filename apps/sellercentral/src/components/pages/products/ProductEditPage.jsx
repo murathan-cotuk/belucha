@@ -19,9 +19,12 @@ import {
   DropZone,
   SkeletonBodyText,
   SkeletonDisplayText,
+  Popover,
+  ActionList,
 } from "@shopify/polaris";
-import { ProductIcon, SearchIcon } from "@shopify/polaris-icons";
+import { ProductIcon, SearchIcon, MenuHorizontalIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { titleToHandle } from "@/lib/slugify";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -85,8 +88,10 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const [categories, setCategories] = useState([]);
   const [collections, setCollections] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
   const [collectionSearch, setCollectionSearch] = useState("");
   const [collectionPopoverOpen, setCollectionPopoverOpen] = useState(false);
@@ -114,6 +119,9 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
   useEffect(() => {
     client.getMedusaCollections({ adminHub: true }).then((r) => setCollections(r.collections || [])).catch(() => setCollections([]));
+  }, [client]);
+  useEffect(() => {
+    client.getBrands().then((r) => setBrands(r.brands || [])).catch(() => setBrands([]));
   }, [client]);
 
   useEffect(() => {
@@ -167,10 +175,16 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     const descriptionToSave = descriptionMode === "visual" && descEditorRef.current
       ? (descEditorRef.current.innerHTML || "")
       : (product.description || "");
-    const handle = (product.handle || "").trim() || (product.title || "product").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/gi, "");
+    const handle = (product.handle || "").trim() || titleToHandle(product.title || "product");
     try {
       setSaving(true);
       setMessage({ type: "", text: "" });
+      const metadata = { ...(product.metadata || {}) };
+      const storeName = (typeof window !== "undefined" ? (localStorage.getItem("storeName") || "").trim() : "") || "";
+      if (storeName) {
+        metadata.seller_name = storeName;
+        metadata.shop_name = storeName;
+      }
       const payload = {
         title: product.title || "Untitled",
         handle,
@@ -179,7 +193,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         status: product.status || "draft",
         price: product.price ?? 0,
         inventory: product.inventory ?? 0,
-        metadata: product.metadata || {},
+        metadata,
         variants: product.variants || [],
       };
       if (isNew) {
@@ -204,6 +218,12 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     if (!product) return;
     try {
       setSaving(true);
+      const metadata = { ...(product.metadata || {}) };
+      const storeName = (typeof window !== "undefined" ? (localStorage.getItem("storeName") || "").trim() : "") || "";
+      if (storeName) {
+        metadata.seller_name = storeName;
+        metadata.shop_name = storeName;
+      }
       const created = await client.createAdminHubProduct({
         title: (product.title || "") + " (Copy)",
         handle: (product.handle || "") + "-kopie-" + Date.now(),
@@ -212,7 +232,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         status: "draft",
         price: product.price,
         inventory: product.inventory ?? 0,
-        metadata: product.metadata,
+        metadata,
         variants: product.variants,
       });
       if (created?.id) router.push(`/products/${created.handle || created.id}`);
@@ -265,20 +285,30 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       const value = item.value ?? (Array.isArray(item.options) ? item.options.map((o) => (o && o.value) || o).filter(Boolean).join(", ") : "");
       const sku = String(item.sku ?? item.sku_number ?? "").trim();
       const inventory = item.inventory != null ? String(item.inventory) : "";
+      const price = item.price != null ? String(item.price) : "";
+      const compare_at_price = item.compare_at_price != null ? String(item.compare_at_price) : (item.compare_at_price_cents != null ? String((item.compare_at_price_cents / 100).toFixed(2)) : "");
+      const image_url = String(item.image_url ?? item.image ?? "").trim();
       if (!byTitle.has(title)) byTitle.set(title, { name: title, options: [] });
-      byTitle.get(title).options.push({ value: String(value), sku, inventory });
+      byTitle.get(title).options.push({ value: String(value), sku, inventory, price, compare_at_price, image_url });
     }
     return Array.from(byTitle.values());
   })();
 
   const setVariantGroups = (next) => {
     const flat = next.flatMap((g) =>
-      (g.options || []).map((o) => ({
-        title: (g.name || "Variant").trim() || "Variant",
-        value: (o.value ?? "").toString().trim(),
-        sku: (o.sku ?? "").toString().trim(),
-        inventory: o.inventory !== "" && o.inventory != null ? parseInt(String(o.inventory), 10) : 0,
-      }))
+      (g.options || []).map((o) => {
+        const priceNum = o.price !== "" && o.price != null && !Number.isNaN(parseFloat(o.price)) ? parseFloat(o.price) : null;
+        const compareNum = o.compare_at_price !== "" && o.compare_at_price != null && !Number.isNaN(parseFloat(o.compare_at_price)) ? parseFloat(o.compare_at_price) : null;
+        return {
+          title: (g.name || "Variant").trim() || "Variant",
+          value: (o.value ?? "").toString().trim(),
+          sku: (o.sku ?? "").toString().trim(),
+          inventory: o.inventory !== "" && o.inventory != null ? parseInt(String(o.inventory), 10) : 0,
+          ...(priceNum != null && { price_cents: Math.round(priceNum * 100) }),
+          ...(compareNum != null && { compare_at_price_cents: Math.round(compareNum * 100) }),
+          image_url: (o.image_url ?? "").toString().trim() || undefined,
+        };
+      })
     );
     update({ variants: flat });
   };
@@ -310,7 +340,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     setVariantGroups(next);
   };
   const addVariantGroup = () => {
-    setVariantGroups([...variantGroups, { name: "", options: [{ value: "", sku: "", inventory: "" }] }]);
+    setVariantGroups([...variantGroups, { name: "", options: [{ value: "", sku: "", inventory: "", price: "", compare_at_price: "", image_url: "" }] }]);
   };
   const removeVariantGroup = (groupIndex) => {
     setVariantGroups(variantGroups.filter((_, i) => i !== groupIndex));
@@ -430,10 +460,14 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         </Link>
         <span style={{ flex: 1 }} />
         {!isNew && (
-          <InlineStack gap="200">
-            <Button variant="secondary" size="slim" onClick={duplicateProduct} loading={saving}>Duplicate</Button>
-            <Button variant="primary" tone="critical" size="slim" onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>
-          </InlineStack>
+          <Popover active={moreActionsOpen} onClose={() => setMoreActionsOpen(false)} activator={<Button size="slim" icon={MenuHorizontalIcon} onClick={() => setMoreActionsOpen(true)} accessibilityLabel="More actions" style={{ background: "#1f2937", color: "#fff", border: "none" }}>More actions</Button>} autofocusTarget="first-node">
+            <ActionList
+              items={[
+                { content: "Duplicate", onAction: () => { setMoreActionsOpen(false); duplicateProduct(); } },
+                { content: "Delete", destructive: true, onAction: () => { setMoreActionsOpen(false); setDeleteConfirmOpen(true); } },
+              ]}
+            />
+          </Popover>
         )}
       </div>
 
@@ -468,7 +502,13 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                   />
                 </Box>
                 <Box minWidth="280px" flex="1">
-                  <TextField label="Brand" labelHidden value={getMeta(product, "brand")} onChange={(v) => updateMeta("brand", v)} placeholder="Brand" autoComplete="off" />
+                  <Select
+                    label="Brand"
+                    labelHidden
+                    options={[{ label: "— None —", value: "" }, ...(brands || []).map((b) => ({ label: b.name, value: b.id }))]}
+                    value={getMeta(product, "brand_id") || ""}
+                    onChange={(v) => updateMeta("brand_id", v || undefined)}
+                  />
                 </Box>
               </InlineStack>
 
@@ -562,11 +602,21 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               <InlineStack gap="300" wrap>
                 <Box minWidth="120px">
                   <div className="product-edit-label">UVP (MSRP)</div>
-                  <TextField type="number" value={uvp != null ? String(uvp) : ""} onChange={(v) => updateMeta("uvp_cents", v === "" ? "" : Math.round(parseFloat(v) * 100))} placeholder="0.00" prefix="€" />
+                  <TextField type="number" value={uvp != null ? String(uvp) : ""} onChange={(v) => updateMeta("uvp_cents", v === "" ? undefined : Math.round(parseFloat(v) * 100))} placeholder="Optional — leer lassen möglich" prefix="€" />
                 </Box>
                 <Box minWidth="120px">
-                  <div className="product-edit-label">Price</div>
-                  <TextField type="number" value={product.price != null ? String(product.price) : ""} onChange={(v) => update({ price: v === "" ? 0 : parseFloat(v) })} placeholder="0.00" prefix="€" />
+                  <div className="product-edit-label">Gross price (€, inkl. 19 % MwSt.)</div>
+                  <TextField
+                    type="number"
+                    step="0.01"
+                    value={product.price != null ? String(product.price) : ""}
+                    onChange={(v) => {
+                      const num = v === "" ? 0 : parseFloat(v);
+                      if (!Number.isNaN(num)) update({ price: num });
+                    }}
+                    placeholder="0.00"
+                    prefix="€"
+                  />
                 </Box>
                 <Box minWidth="120px">
                   <div className="product-edit-label">Sale price</div>
@@ -575,9 +625,41 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               </InlineStack>
               {hasDiscount && (
                 <Text as="p" variant="bodySm" tone="subdued">
-                  Display: <span className="product-price-strike">€{price.toFixed(2)}</span> → €{displayPrice.toFixed(2)}
+                  Display: <span className="product-price-strike">€{(price != null ? Number(price).toFixed(2).replace(".", ",") : "0,00")}</span> → €{(displayPrice != null ? Number(displayPrice).toFixed(2).replace(".", ",") : "0,00")}
                 </Text>
               )}
+
+              <Divider />
+              <Text as="h2" variant="bodyMd" fontWeight="regular">Bullet points (max 5, je max. 120 Zeichen)</Text>
+              <Text as="p" variant="bodySm" tone="subdued">Short selling points shown on the product page.</Text>
+              {[0, 1, 2, 3, 4].map((i) => {
+                const arr = Array.isArray(meta.bullet_points) ? meta.bullet_points : [];
+                const val = arr[i] ?? "";
+                const len = String(val).length;
+                const overLimit = len > 120;
+                return (
+                  <Box key={i}>
+                    <TextField
+                      label={`Bullet ${i + 1}`}
+                      labelHidden
+                      value={val}
+                      maxLength={120}
+                      onChange={(v) => {
+                        const trimmed = String(v).slice(0, 120);
+                        const next = [...(Array.isArray(meta.bullet_points) ? meta.bullet_points : []).slice(0, 5)];
+                        while (next.length <= i) next.push("");
+                        next[i] = trimmed;
+                        updateMeta("bullet_points", next.filter((x, j) => j < 5));
+                      }}
+                      placeholder={i === 0 ? "e.g. Premium quality" : ""}
+                      autoComplete="off"
+                    />
+                    <Text as="p" variant="bodySm" tone="subdued" style={{ marginTop: 4, color: overLimit ? "var(--p-color-text-critical)" : undefined }}>
+                      {len} / 120
+                    </Text>
+                  </Box>
+                );
+              })}
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Inventory</Text>
@@ -599,18 +681,29 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                   </InlineStack>
                   <Box paddingBlockStart="200">
                     {(group.options || []).map((opt, oi) => (
-                      <InlineStack key={oi} gap="200" wrap blockAlign="center" paddingBlockStart="100">
-                        <Box minWidth="120px">
-                          <TextField label="Value" labelHidden value={opt.value} onChange={(val) => updateVariantGroupOption(gi, oi, "value", val)} placeholder="e.g. Red, S" autoComplete="off" />
-                        </Box>
-                        <Box minWidth="100px">
-                          <TextField label="SKU" labelHidden value={opt.sku} onChange={(val) => updateVariantGroupOption(gi, oi, "sku", val)} placeholder="SKU" autoComplete="off" />
-                        </Box>
-                        <Box minWidth="80px">
-                          <TextField label="Qty" labelHidden type="number" min={0} value={opt.inventory} onChange={(val) => updateVariantGroupOption(gi, oi, "inventory", val)} placeholder="0" />
-                        </Box>
-                        <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroupOption(gi, oi)} aria-label="Remove option">×</Button>
-                      </InlineStack>
+                      <BlockStack key={oi} gap="200" paddingBlockStart="200">
+                        <InlineStack gap="200" wrap blockAlign="center">
+                          <Box minWidth="120px">
+                            <TextField label="Value" labelHidden value={opt.value} onChange={(val) => updateVariantGroupOption(gi, oi, "value", val)} placeholder="e.g. Red, S" autoComplete="off" />
+                          </Box>
+                          <Box minWidth="100px">
+                            <TextField label="SKU" labelHidden value={opt.sku} onChange={(val) => updateVariantGroupOption(gi, oi, "sku", val)} placeholder="SKU" autoComplete="off" />
+                          </Box>
+                          <Box minWidth="80px">
+                            <TextField label="Qty" labelHidden type="number" min={0} value={opt.inventory} onChange={(val) => updateVariantGroupOption(gi, oi, "inventory", val)} placeholder="0" />
+                          </Box>
+                          <Box minWidth="90px">
+                            <TextField label="Price (€ gross)" labelHidden type="number" step="0.01" value={opt.price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "price", val)} placeholder="—" />
+                          </Box>
+                          <Box minWidth="90px">
+                            <TextField label="Compare (UVP €)" labelHidden type="number" step="0.01" value={opt.compare_at_price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "compare_at_price", val)} placeholder="—" />
+                          </Box>
+                          <Box minWidth="140px">
+                            <TextField label="Image URL" labelHidden value={opt.image_url ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "image_url", val)} placeholder="https://…" autoComplete="off" />
+                          </Box>
+                          <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroupOption(gi, oi)} aria-label="Remove option">×</Button>
+                        </InlineStack>
+                      </BlockStack>
                     ))}
                     <Button size="slim" variant="plain" onClick={() => addVariantGroupOption(gi)}>+ Option</Button>
                   </Box>
@@ -630,6 +723,12 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 ))
               ) : null}
               <Button variant="secondary" size="slim" onClick={() => updateMeta("metafields", [...metafieldsList, { key: "", value: "" }])}>+ Metafield</Button>
+
+              <Divider />
+              <Text as="h2" variant="bodyMd" fontWeight="regular">Produktsicherheitsinformationen (GPSR, optional)</Text>
+              <TextField label="Hersteller" value={meta.hersteller ?? ""} onChange={(v) => updateMeta("hersteller", v || undefined)} placeholder="Hersteller" autoComplete="off" />
+              <TextField label="Hersteller-Informationen" value={meta.hersteller_information ?? ""} onChange={(v) => updateMeta("hersteller_information", v || undefined)} placeholder="Hersteller-Informationen" multiline={2} />
+              <TextField label="Verantwortliche Person (EU)" value={meta.verantwortliche_person_information ?? ""} onChange={(v) => updateMeta("verantwortliche_person_information", v || undefined)} placeholder="Verantwortliche Person Information" multiline={2} />
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">SEO</Text>

@@ -3,6 +3,7 @@
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
 import { ProductGrid } from "@/components/ProductGrid";
+import Breadcrumbs from "@/components/Breadcrumbs";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { getMedusaClient } from "@/lib/medusa-client";
@@ -69,9 +70,10 @@ export default function CollectionPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-white">
       <ShopHeader />
-      <main className="flex-grow container mx-auto px-4 py-8">
+      <main className="flex-grow container mx-auto px-4 py-8 bg-white">
+        <Breadcrumbs title={category.name} />
         <h1 className="text-4xl font-bold mb-4">{category.name}</h1>
         {category.description && (
           <p className="text-gray-600 mb-8">{category.description}</p>

@@ -16,6 +16,7 @@ import {
   DropZone,
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { titleToHandle } from "@/lib/slugify";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -34,8 +35,7 @@ const META_TITLE_MAX = 60;
 const META_DESC_MAX = 160;
 
 function slugFromTitle(title) {
-  if (!title || typeof title !== "string") return "";
-  return title.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  return titleToHandle(title || "");
 }
 
 function buildTree(flatList) {
@@ -187,9 +187,28 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
           title,
           handle: handle || slugFromTitle(title),
           ...(form.category_id !== undefined && { category_id: form.category_id || undefined }),
+          display_title: form.display_title,
+          meta_title: form.meta_title,
+          meta_description: form.meta_description,
+          keywords: form.keywords,
+          richtext: form.richtext,
+          image_url: form.image_url,
+          banner_image_url: form.banner_image_url,
         });
         const updated = await client.getCollection(collection.id);
-        if (updated) setCollection(updated);
+        if (updated) {
+          setCollection(updated);
+          setForm((prev) => ({
+            ...prev,
+            display_title: updated.display_title ?? prev.display_title,
+            meta_title: updated.meta_title ?? prev.meta_title,
+            meta_description: updated.meta_description ?? prev.meta_description,
+            keywords: updated.keywords ?? prev.keywords,
+            richtext: updated.richtext ?? updated.description_html ?? prev.richtext,
+            image_url: updated.image_url ?? prev.image_url,
+            banner_image_url: updated.banner_image_url ?? prev.banner_image_url,
+          }));
+        }
         onReload?.();
       }
     } catch (err) {

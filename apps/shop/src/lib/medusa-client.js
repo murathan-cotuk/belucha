@@ -53,23 +53,18 @@ class MedusaClient {
         } catch (_) {
           // ignore parse errors, use statusText
         }
-        const err = new Error(message || `HTTP error! status: ${response.status}`)
-        err.status = response.status
-        throw err
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[MedusaClient] ${response.status} ${endpoint}:`, message)
+        }
+        return { __error: true, status: response.status, message }
       }
 
       return await response.json()
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.error(`Medusa API Error (${endpoint}):`, error)
+        console.warn(`[MedusaClient] ${endpoint}:`, error?.message || error)
       }
-      const isFetchFailure = error.name === 'TypeError' || (error.message && String(error.message).includes('Failed to fetch'))
-      if (isFetchFailure) {
-        const err = new Error('Medusa backend is not reachable. Ensure it is running and NEXT_PUBLIC_MEDUSA_BACKEND_URL is correct.')
-        err.cause = error
-        throw err
-      }
-      throw error
+      return { __error: true, status: 0, message: error?.message || 'Network error' }
     }
   }
 
@@ -78,77 +73,99 @@ class MedusaClient {
    */
   async getProducts(params = {}) {
     const queryParams = new URLSearchParams(params).toString()
-    try {
-      return await this.request(`/store/products${queryParams ? `?${queryParams}` : ''}`)
-    } catch (e) {
-      if (e.status === 404 || e.status >= 500) {
-        return { products: [], count: 0 }
-      }
-      throw e
-    }
+    const res = await this.request(`/store/products${queryParams ? `?${queryParams}` : ''}`)
+    if (res?.__error) return { products: [], count: 0 }
+    return res
   }
 
   async getProduct(id) {
-    try {
-      return await this.request(`/store/products/${id}`)
-    } catch (e) {
-      if (e.status === 404) {
-        return { product: null }
-      }
-      throw e
-    }
+    const res = await this.request(`/store/products/${id}`)
+    if (res?.__error) return { product: null }
+    return res
   }
 
   /**
    * Cart
    */
   async createCart() {
-    return this.request('/store/carts', {
+    const res = await this.request('/store/carts', {
       method: 'POST',
       body: JSON.stringify({}),
     })
+    if (res?.__error) return { cart: null }
+    return res
   }
 
   async getCart(cartId) {
-    return this.request(`/store/carts/${cartId}`)
+    if (!cartId) return { cart: null }
+    const res = await this.request(`/store/carts/${cartId}`)
+    if (res?.__error) return { cart: null }
+    return res
   }
 
   async addToCart(cartId, variantId, quantity = 1) {
-    return this.request(`/store/carts/${cartId}/line-items`, {
+    const res = await this.request(`/store/carts/${cartId}/line-items`, {
       method: 'POST',
       body: JSON.stringify({
         variant_id: variantId,
         quantity,
       }),
     })
+    if (res?.__error) return { cart: null }
+    return res
+  }
+
+  async updateLineItem(cartId, lineId, quantity) {
+    const res = await this.request(`/store/carts/${cartId}/line-items/${lineId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ quantity }),
+    })
+    if (res?.__error) return { cart: null }
+    return res
+  }
+
+  async removeLineItem(cartId, lineId) {
+    const res = await this.request(`/store/carts/${cartId}/line-items/${lineId}`, {
+      method: 'DELETE',
+    })
+    if (res?.__error) return { cart: null }
+    return res
   }
 
   async updateCart(cartId, data) {
-    return this.request(`/store/carts/${cartId}`, {
+    const res = await this.request(`/store/carts/${cartId}`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
+    if (res?.__error) return { cart: null }
+    return res
   }
 
   /**
    * Orders
    */
   async createOrder(cartId, email) {
-    return this.request(`/store/carts/${cartId}/complete`, {
+    const res = await this.request(`/store/carts/${cartId}/complete`, {
       method: 'POST',
       body: JSON.stringify({ email }),
     })
+    if (res?.__error) return { order: null }
+    return res
   }
 
   async getOrder(id) {
-    return this.request(`/store/orders/${id}`)
+    const res = await this.request(`/store/orders/${id}`)
+    if (res?.__error) return null
+    return res
   }
 
   /**
    * Regions (for shipping)
    */
   async getRegions() {
-    return this.request('/store/regions')
+    const res = await this.request('/store/regions')
+    if (res?.__error) return { regions: [] }
+    return res
   }
 
   /**
@@ -158,7 +175,25 @@ class MedusaClient {
     const params = new URLSearchParams()
     if (options.location) params.set('location', options.location)
     const qs = params.toString()
-    return this.request(`/store/menus${qs ? `?${qs}` : ''}`).catch(() => ({ menus: [], count: 0 }))
+    const res = await this.request(`/store/menus${qs ? `?${qs}` : ''}`)
+    if (res?.__error) return { menus: [], count: 0 }
+    return res
+  }
+
+  async getCollections() {
+    const res = await this.request('/store/collections')
+    if (res?.__error) return { collections: [] }
+    return res
+  }
+
+  /**
+   * Single collection by handle (for collection page). 404 if not found.
+   */
+  async getCollectionByHandle(handle) {
+    if (!handle) return { collection: null }
+    const res = await this.request(`/store/collections?handle=${encodeURIComponent(handle)}`)
+    if (res?.__error) return { collection: null }
+    return res
   }
 
   /**
@@ -169,7 +204,9 @@ class MedusaClient {
     if (options.tree === true) params.set('tree', 'true')
     if (options.is_visible !== undefined) params.set('is_visible', String(options.is_visible))
     const qs = params.toString()
-    return this.request(`/store/categories${qs ? `?${qs}` : ''}`).catch(() => ({ categories: [], tree: [] }))
+    const res = await this.request(`/store/categories${qs ? `?${qs}` : ''}`)
+    if (res?.__error) return { categories: [], tree: [] }
+    return res
   }
 
   /**
@@ -178,6 +215,7 @@ class MedusaClient {
   async getCategoryBySlug(slug) {
     if (!slug) return null
     const data = await this.request(`/store/categories?slug=${encodeURIComponent(slug)}`)
+    if (data?.__error) return null
     return data.category || (data.categories && data.categories[0]) || null
   }
 
@@ -185,7 +223,7 @@ class MedusaClient {
    * Customers
    */
   async registerCustomer(email, password, firstName, lastName) {
-    return this.request('/store/customers', {
+    const res = await this.request('/store/customers', {
       method: 'POST',
       body: JSON.stringify({
         email,
@@ -194,36 +232,46 @@ class MedusaClient {
         last_name: lastName,
       }),
     })
+    if (res?.__error) return { customer: null }
+    return res
   }
 
   async loginCustomer(email, password) {
-    return this.request('/store/auth/token', {
+    const res = await this.request('/store/auth/token', {
       method: 'POST',
       body: JSON.stringify({
         email,
         password,
       }),
     })
+    if (res?.__error) return { token: null }
+    return res
   }
 
   async getCustomer(token) {
-    return this.request('/store/customers/me', {
+    const res = await this.request('/store/customers/me', {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     })
+    if (res?.__error) return null
+    return res
   }
 
   /**
    * Store pages (CMS, published only)
    */
   async getPages() {
-    return this.request('/store/pages').catch(() => ({ pages: [], count: 0 }))
+    const res = await this.request('/store/pages')
+    if (res?.__error) return { pages: [], count: 0 }
+    return res
   }
 
   async getPageBySlug(slug) {
     if (!slug) return null
-    return this.request(`/store/pages/${encodeURIComponent(slug)}`)
+    const res = await this.request(`/store/pages/${encodeURIComponent(slug)}`)
+    if (res?.__error) return null
+    return res
   }
 
   /**

@@ -1,39 +1,64 @@
-'use client'
+"use client";
 
-import ShopHeader from '@/components/ShopHeader'
-import Footer from '@/components/Footer'
-import Hero from '@/components/Hero'
-import { ProductGrid } from '@/components/ProductGrid'
-import { useMedusaProducts } from '@/hooks/useMedusa'
+import React, { useState, useEffect } from "react";
+import ShopHeader from "@/components/ShopHeader";
+import Footer from "@/components/Footer";
+import {
+  HeroSection,
+  CategoryShowcase,
+  FlashSaleSection,
+  FeaturedCollections,
+  SellerHighlight,
+  TrustBar,
+  RecommendCarousel,
+} from "@/components/landing";
+import { getMedusaClient } from "@/lib/medusa-client";
+import { useMedusaProducts } from "@/hooks/useMedusa";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
 export default function Home() {
-  const { products, loading, error } = useMedusaProducts()
+  const { products, loading, error } = useMedusaProducts();
+  const [collections, setCollections] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    const client = getMedusaClient();
+    client.getCollections().then((r) => setCollections(r.collections || []));
+    client.getCategories().then((r) => setCategories(r.categories || []));
+  }, []);
+
+  const saleProducts = (products || []).filter(
+    (p) => p.metadata?.rabattpreis_cents != null || p.metadata?.sale
+  );
+  const recommendProducts = products || [];
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-white">
       <ShopHeader />
-      <main className="flex-grow">
-        <Hero />
+      <main className="flex-grow bg-white">
+        <HeroSection collections={collections} />
+        <CategoryShowcase
+          categories={categories.length ? categories : collections}
+        />
+        <FlashSaleSection
+          products={saleProducts.length ? saleProducts : products || []}
+          endDate={null}
+        />
+        <FeaturedCollections collections={collections} />
+        <SellerHighlight sellers={[]} />
+        <TrustBar />
+        <RecommendCarousel products={recommendProducts} />
         <div className="container mx-auto px-4 py-8">
-          <h2 className="text-3xl font-bold mb-6">Products</h2>
-          {loading && <p>Loading products from Medusa...</p>}
+          <Breadcrumbs />
+          {loading && <p className="text-dark-600 text-small py-4">Laden…</p>}
           {error && (
-            <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-              <p>⚠️ Products temporarily unavailable</p>
-              <p className="text-sm mt-2">
-                {typeof window !== 'undefined' && window.location.hostname === 'localhost'
-                  ? 'Start the backend from the repo root: npm run dev --workspace=medusa-backend (or cd apps/medusa-backend && npm run dev). Ensure apps/shop/.env.local has NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000.'
-                  : 'The product catalog is being set up. Please check back soon.'}
-              </p>
+            <div className="bg-state-warning/10 border border-state-warning text-dark-800 px-4 py-3 rounded-card mb-4 text-small">
+              Produkte derzeit nicht verfügbar.
             </div>
           )}
-          {!loading && !error && products.length === 0 && (
-            <p>No products found. Please add products in Medusa admin panel.</p>
-          )}
-          <ProductGrid products={products || []} />
         </div>
       </main>
       <Footer />
     </div>
-  )
+  );
 }

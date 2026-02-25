@@ -8,9 +8,9 @@ import { getMedusaClient } from "@/lib/medusa-client";
 function menuItemHref(item) {
   if (!item) return "#";
   if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/collections/${item.link_value}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/kollektion/${item.link_value}`;
   if (item.link_type === "page" && item.link_value) return `/pages/${item.link_value}`;
-  if (item.link_type === "product" && item.link_value) return `/product/${item.link_value}`;
+  if (item.link_type === "product" && item.link_value) return `/produkt/${item.link_value}`;
   return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
 }
 

@@ -18,6 +18,7 @@ import {
   Divider,
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { formatDecimal } from "@/lib/format";
 
 export default function InventoryPage() {
   const router = useRouter();
@@ -156,7 +157,7 @@ export default function InventoryPage() {
                                     · Qty: {inv}
                                   </Text>
                                   <Text as="span" variant="bodySm" tone="subdued">
-                                    · €{price.toFixed(2)}
+                                    · €{formatDecimal(price)}
                                   </Text>
                                   <Text as="span" variant="bodySm" tone="subdued">
                                     · {product.status || "draft"}

@@ -144,7 +144,6 @@ export default function PolarisLayout({ children }) {
   const userMenuActions = [
     {
       items: [
-        { content: "Profile", url: "/profile" },
         { content: "Settings", url: "/settings" },
         { content: "Logout", destructive: true, onAction: handleLogout },
       ],

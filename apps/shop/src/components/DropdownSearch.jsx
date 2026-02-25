@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { liteClient as algoliasearch } from "algoliasearch/lite";
 import { InstantSearch, useSearchBox, useHits, useInstantSearch, Configure } from "react-instantsearch";
 import styled from "styled-components";
+import { getMedusaClient } from "@/lib/medusa-client";
+import { stripHtmlForSearch } from "@/lib/format";
+import { tokens } from "@/design-system/tokens";
 
 const Wrap = styled.div`
   position: relative;
@@ -20,35 +24,36 @@ const SearchIcon = styled.span`
   left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #6b7280;
+  color: ${tokens.dark[500]};
   pointer-events: none;
 `;
 
 const Input = styled.input`
   width: 100%;
   padding: 12px 16px 12px 48px;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: all 0.2s ease;
+  border: 1px solid ${tokens.border.light};
+  border-radius: ${tokens.radius.input};
+  font-size: ${tokens.fontSize.body};
+  font-family: ${tokens.fontFamily.sans};
+  transition: border-color ${tokens.transition.base}, box-shadow ${tokens.transition.base};
 
   &:focus {
     outline: none;
-    border-color: #0ea5e9;
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+    border-color: ${tokens.primary.DEFAULT};
+    box-shadow: 0 0 0 2px ${tokens.primary.light};
   }
 `;
 
 const Dropdown = styled.div`
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + ${tokens.spacing.sm});
   left: 0;
   right: 0;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  max-height: ${(p) => p.$maxHeight || "300px"};
+  background: ${tokens.background.card};
+  border: 1px solid ${tokens.border.light};
+  border-radius: ${tokens.radius.button};
+  box-shadow: ${tokens.shadow.card};
+  max-height: ${(p) => p.$maxHeight || tokens.search.dropdownMaxHeight};
   overflow-y: auto;
   z-index: 1000;
 `;
@@ -58,14 +63,14 @@ const HitLink = styled(Link)`
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  color: #374151;
+  color: ${tokens.dark[700]};
   text-decoration: none;
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid #f3f4f6;
+  transition: background ${tokens.transition.base}, color ${tokens.transition.base};
+  border-bottom: 1px solid ${tokens.border.light};
 
   &:hover {
-    background-color: #f3f4f6;
-    color: #0ea5e9;
+    background: ${tokens.background.soft};
+    color: ${tokens.primary.DEFAULT};
   }
 
   &:last-child {
@@ -88,27 +93,156 @@ const HitText = styled.div`
 
 const Primary = styled.div`
   font-weight: 600;
-  font-size: 14px;
+  font-size: ${tokens.fontSize.small};
+  font-family: ${tokens.fontFamily.sans};
 `;
 
 const Secondary = styled.div`
-  font-size: 12px;
-  color: #6b7280;
+  font-size: ${tokens.fontSize.micro};
+  color: ${tokens.dark[500]};
   margin-top: 2px;
+  font-family: ${tokens.fontFamily.sans};
 `;
 
 const Tertiary = styled.div`
   font-size: 11px;
-  color: #9ca3af;
+  color: ${tokens.dark[500]};
   margin-top: 2px;
+  font-family: ${tokens.fontFamily.sans};
 `;
 
 const Empty = styled.div`
   padding: 24px 16px;
-  color: #6b7280;
-  font-size: 14px;
+  color: ${tokens.dark[500]};
+  font-size: ${tokens.fontSize.small};
+  font-family: ${tokens.fontFamily.sans};
   text-align: center;
 `;
+
+const DEBOUNCE_MS = 300;
+const MAX_HITS = 8;
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function HighlightText({ text = "", query = "" }) {
+  if (!query.trim()) return <>{text}</>;
+  const re = new RegExp(`(${escapeRegex(query.trim())})`, "gi");
+  const parts = String(text).split(re);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
+function formatPriceCents(cents) {
+  if (cents == null) return "";
+  const v = Number(cents) / 100;
+  return v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
+
+function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px" }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  const fetchProducts = useCallback(async (query) => {
+    if (!(query && query.trim().length >= 2)) {
+      setHits([]);
+      setOpen(!!(query && query.trim()));
+      return;
+    }
+    setLoading(true);
+    try {
+      const client = getMedusaClient();
+      const { products = [] } = await client.getProducts({ q: query.trim(), limit: MAX_HITS });
+      setHits(products);
+      setOpen(true);
+    } catch (_) {
+      setHits([]);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const query = (q || "").trim();
+    if (!query) {
+      setHits([]);
+      setOpen(false);
+      return;
+    }
+    debounceRef.current = setTimeout(() => fetchProducts(q), DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [q, fetchProducts]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const query = (q || "").trim();
+    if (query) router.push(`/search?q=${encodeURIComponent(query)}`);
+  };
+
+  const showDropdown = open && (q || "").trim().length >= 2;
+
+  return (
+    <Wrap ref={wrapRef} as="form" onSubmit={handleSubmit}>
+      <InputWrap>
+        <SearchIcon aria-hidden>🔍</SearchIcon>
+        <Input
+          type="search"
+          placeholder={placeholder}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Suche"
+          aria-expanded={showDropdown}
+        />
+      </InputWrap>
+      {showDropdown && (
+        <Dropdown $maxHeight={maxHeight} role="listbox">
+          {loading && hits.length === 0 && <Empty>Suche...</Empty>}
+          {!loading && hits.length === 0 && <Empty>Keine Ergebnisse für &quot;{q.trim()}&quot;</Empty>}
+          {hits.map((product, i) => {
+            const priceCents = product.variants?.[0]?.prices?.[0]?.amount ?? product.metadata?.price_cents ?? null;
+            return (
+              <HitLink
+                key={product.id || product.handle || i}
+                href={product.handle ? `/produkt/${product.handle}` : "#"}
+                onClick={() => setOpen(false)}
+              >
+                {product.thumbnail && <HitImage src={product.thumbnail} alt="" />}
+                <HitText>
+                  <Primary><HighlightText text={product.title || "(No title)"} query={q.trim()} /></Primary>
+                  {product.description && <Secondary>{stripHtmlForSearch(product.description, 120)}</Secondary>}
+                  {priceCents != null && <Tertiary>{formatPriceCents(priceCents)}</Tertiary>}
+                </HitText>
+              </HitLink>
+            );
+          })}
+        </Dropdown>
+      )}
+    </Wrap>
+  );
+}
 
 function getByPath(obj, path) {
   if (!path || !obj) return undefined;
@@ -161,7 +295,7 @@ function SearchInputWithDropdown({
       e.preventDefault();
       const hit = hits[focusedIndex];
       const urlPath = getByPath(hit, attributes.url || "url");
-      if (urlPath) window.location.href = typeof urlPath === "string" ? (urlPath.startsWith("/") ? urlPath : `/product/${urlPath}`) : "#";
+      if (urlPath) window.location.href = typeof urlPath === "string" ? (urlPath.startsWith("/") ? urlPath : `/produkt/${urlPath}`) : "#";
     }
   };
 
@@ -192,7 +326,7 @@ function SearchInputWithDropdown({
           {!loading && hits.length === 0 && <Empty>No results for &quot;{query}&quot;</Empty>}
           {hits.map((hit, i) => {
             const url = getByPath(hit, urlKey);
-            const link = url && (String(url).startsWith("/") ? url : `/product/${url}`);
+            const link = url && (String(url).startsWith("/") ? url : `/produkt/${url}`);
             return (
               <HitLink
                 key={hit.objectID || i}
@@ -208,7 +342,7 @@ function SearchInputWithDropdown({
                 <HitText>
                   <Primary>{getByPath(hit, primaryKey) || "(No title)"}</Primary>
                   {secondaryKey && getByPath(hit, secondaryKey) && (
-                    <Secondary>{getByPath(hit, secondaryKey)}</Secondary>
+                    <Secondary>{stripHtmlForSearch(String(getByPath(hit, secondaryKey)), 120)}</Secondary>
                   )}
                   {tertiaryKey && getByPath(hit, tertiaryKey) && (
                     <Tertiary>{getByPath(hit, tertiaryKey)}</Tertiary>
@@ -238,14 +372,7 @@ export default function DropdownSearch({
   const index = indexName || process.env.NEXT_PUBLIC_ALGOLIA_INDEX_PRODUCTS;
 
   if (!appId || !key || !index) {
-    return (
-      <Wrap>
-        <InputWrap>
-          <SearchIcon aria-hidden>🔍</SearchIcon>
-          <Input type="search" placeholder={placeholder} disabled />
-        </InputWrap>
-      </Wrap>
-    );
+    return <SearchBarFallback placeholder={placeholder} maxHeight={maxHeight} />;
   }
 
   const searchClient = algoliasearch(appId, key);
