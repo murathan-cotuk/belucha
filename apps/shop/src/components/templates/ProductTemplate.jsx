@@ -103,6 +103,45 @@ const PriceBlock = styled.div`
   flex-wrap: wrap;
 `;
 
+const VariantSection = styled.div`
+  margin-top: 4px;
+`;
+
+const VariantGroupLabel = styled.div`
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+`;
+
+const VariantOptions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+`;
+
+const VariantBox = styled.button`
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: ${(p) => (p.$selected ? "#fff" : "#374151")};
+  background: ${(p) => (p.$selected ? "#0ea5e9" : "#f3f4f6")};
+  border: 2px solid ${(p) => (p.$selected ? "#0ea5e9" : "#e5e7eb")};
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  &:hover {
+    background: ${(p) => (p.$selected ? "#0c8ac7" : "#e5e7eb")};
+    border-color: ${(p) => (p.$selected ? "#0c8ac7" : "#d1d5db")};
+  }
+`;
+
 const Price = styled.span`
   font-size: 1.5rem;
   font-weight: 700;
@@ -215,6 +254,21 @@ const META_HIDDEN_KEYS = [
   "brand_id", "hersteller", "seo_keywords", "seo_meta_title", "seo_meta_description",
   "hersteller_information", "verantwortliche_person_information", "brand_name", "brand_logo",
 ];
+
+function groupVariantsByTitle(variants) {
+  if (!Array.isArray(variants) || variants.length === 0) return [];
+  const groups = [];
+  const byTitle = new Map();
+  variants.forEach((v, index) => {
+    const title = (v.title || v.value || "Option").toString().trim() || "Option";
+    if (!byTitle.has(title)) {
+      byTitle.set(title, []);
+      groups.push({ title, options: byTitle.get(title) });
+    }
+    byTitle.get(title).push({ variant: v, index });
+  });
+  return groups.map((g) => ({ title: g.title, options: g.options }));
+}
 
 function buildMetaRows(meta) {
   if (!meta || typeof meta !== "object") return [];
@@ -417,6 +471,33 @@ export default function ProductTemplate() {
               </span>
             </div>
           </PriceBlock>
+
+          {(() => {
+            const variantGroups = groupVariantsByTitle(variants);
+            if (variantGroups.length === 0) return null;
+            return (
+              <VariantSection>
+                {variantGroups.map((group) => (
+                  <div key={group.title}>
+                    <VariantGroupLabel>{group.title}</VariantGroupLabel>
+                    <VariantOptions>
+                      {group.options.map(({ variant: v, index: idx }) => (
+                        <VariantBox
+                          key={idx}
+                          type="button"
+                          $selected={selectedVariantIndex === idx}
+                          onClick={() => setSelectedVariantIndex(idx)}
+                        >
+                          {v.value || v.title || `Option ${idx + 1}`}
+                        </VariantBox>
+                      ))}
+                    </VariantOptions>
+                  </div>
+                ))}
+              </VariantSection>
+            );
+          })()}
+
           {bulletPoints.length > 0 && (
             <BulletList>
               {bulletPoints.map((text, i) => (
@@ -448,20 +529,6 @@ export default function ProductTemplate() {
             </StockBadge>
           </Card>
           <Card>
-            {variants.length > 0 && (
-              <div className="mb-3">
-                <label className="text-xs text-gray-500 block mb-1">Variante</label>
-                <select
-                  value={selectedVariantIndex}
-                  onChange={(e) => setSelectedVariantIndex(Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                >
-                  {variants.map((v, i) => (
-                    <option key={i} value={i}>{v.title || v.value || `Option ${i + 1}`}</option>
-                  ))}
-                </select>
-              </div>
-            )}
             <div className="mb-3">
               <label className="text-xs text-gray-500 block mb-1">Anzahl</label>
               <select
