@@ -97,6 +97,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [mediaUploading, setMediaUploading] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaLibraryList, setMediaLibraryList] = useState([]);
+  const [mediaPickerSelected, setMediaPickerSelected] = useState(() => new Set());
   const [collectionSearch, setCollectionSearch] = useState("");
   const [collectionPopoverOpen, setCollectionPopoverOpen] = useState(false);
   const [descriptionMode, setDescriptionMode] = useState("visual");
@@ -352,39 +353,65 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     setVariantGroups(variantGroups.filter((_, i) => i !== groupIndex));
   };
 
-  const handleMediaDrop = useCallback(
-    (files) => {
-      setMediaUploading(true);
-      Promise.all(
-        (Array.isArray(files) ? files : [files]).map((file) => {
-          const fd = new FormData();
-          fd.append("file", file);
-          return client.uploadMedia(fd).then((r) => (r.url ? `${baseUrl}${r.url}` : null));
-        })
-      )
-        .then((urls) => {
-          const newUrls = urls.filter(Boolean);
-          if (newUrls.length) updateMeta("media", [...mediaUrls, ...newUrls].slice(0, 6));
-        })
-        .catch((err) => setMessage({ type: "error", text: err?.message || "Upload failed" }))
-        .finally(() => setMediaUploading(false));
-    },
-    [mediaUrls, baseUrl, client, updateMeta]
-  );
   const removeMedia = (index) => {
     const next = mediaUrls.filter((_, i) => i !== index);
     updateMeta("media", next);
   };
+  const resolveMediaUrl = (url) => {
+    if (!url) return "";
+    return url.startsWith("http") || url.startsWith("data:") ? url : `${baseUrl.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+  };
   const openMediaPicker = () => {
+    setMediaPickerSelected(new Set());
     setMediaPickerOpen(true);
     client.getMedia({ limit: 100 }).then((r) => setMediaLibraryList(r.media || [])).catch(() => setMediaLibraryList([]));
   };
-  const pickMediaUrl = (url) => {
+  const toggleMediaPickerSelection = (item) => {
+    const url = item?.url ? resolveMediaUrl(item.url) : "";
     if (!url) return;
-    const resolved = url.startsWith("http") ? url : `${baseUrl.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
-    if (mediaUrls.length < 6) updateMeta("media", [...mediaUrls, resolved]);
-    setMediaPickerOpen(false);
+    setMediaPickerSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
   };
+  const addSelectedMediaToProduct = () => {
+    const toAdd = Array.from(mediaPickerSelected).slice(0, Math.max(0, 6 - mediaUrls.length));
+    if (toAdd.length) updateMeta("media", [...mediaUrls, ...toAdd].slice(0, 6));
+    setMediaPickerOpen(false);
+    setMediaPickerSelected(new Set());
+  };
+  const uploadMediaInPicker = useCallback(
+    (files) => {
+      setMediaUploading(true);
+      const fileList = Array.isArray(files) ? files : [files];
+      Promise.all(
+        fileList.map((file) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          return client.uploadMedia(fd).then((r) => (r.url ? resolveMediaUrl(r.url) : null));
+        })
+      )
+        .then((urls) => {
+          const newUrls = urls.filter(Boolean);
+          if (newUrls.length) {
+            setMediaLibraryList((prev) => {
+              const added = newUrls.map((u) => ({ id: `uploaded-${Date.now()}-${Math.random().toString(36).slice(2)}`, url: u }));
+              return [...added, ...prev];
+            });
+            setMediaPickerSelected((prev) => {
+              const next = new Set(prev);
+              newUrls.forEach((u) => next.add(u));
+              return next;
+            });
+          }
+        })
+        .catch((err) => setMessage({ type: "error", text: err?.message || "Upload failed" }))
+        .finally(() => setMediaUploading(false));
+    },
+    [client, baseUrl]
+  );
 
   return (
     <Page title="">
@@ -405,6 +432,19 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         .product-media-add:hover { border-color: var(--p-color-border-hover); background: var(--p-color-bg-fill-secondary-hover, rgba(0,0,0,0.03)); }
         .product-media-add svg { width: 24px; height: 24px; }
         @media (max-width: 480px) { .product-media-grid { grid-template-columns: repeat(3, 1fr); max-width: none; } }
+        .product-media-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; max-height: 480px; overflow-y: auto; padding: 4px 0; }
+        .product-media-picker-add { aspect-ratio: 1; border-radius: 12px; border: 2px dashed var(--p-color-border); background: var(--p-color-bg-fill-secondary); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; color: var(--p-color-icon); transition: border-color 0.2s, background 0.2s; min-height: 140px; }
+        .product-media-picker-add:hover { border-color: var(--p-color-border-hover); background: var(--p-color-bg-fill-secondary-hover, rgba(0,0,0,0.03)); }
+        .product-media-picker-add svg { width: 32px; height: 32px; }
+        .product-media-picker-add-label { font-size: 12px; font-weight: 500; color: var(--p-color-text-subdued); }
+        .product-media-picker-item { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--p-color-bg-surface-secondary); border: 2px solid transparent; cursor: pointer; padding: 0; transition: border-color 0.2s, box-shadow 0.2s; min-height: 140px; }
+        .product-media-picker-item:hover { border-color: var(--p-color-border-hover); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .product-media-picker-item.selected { border-color: var(--p-color-border-info); box-shadow: 0 0 0 2px var(--p-color-bg-fill-info); }
+        .product-media-picker-item-img { width: 100%; height: 100%; display: block; }
+        .product-media-picker-item-img .Polaris-Thumbnail { width: 100%; height: 100%; }
+        .product-media-picker-item-img .Polaris-Thumbnail__Image { width: 100%; height: 100%; object-fit: cover; }
+        .product-media-picker-tick { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; background: var(--p-color-bg-fill-brand); color: #fff; display: inline-flex; align-items: center; justify-content: center; pointer-events: none; }
+        .product-media-picker-tick svg { width: 16px; height: 16px; }
         .collection-dropdown-wrap { position: relative; }
         .collection-dropdown-panel { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--p-color-bg-surface); border: 1px solid var(--p-color-border); border-radius: 8px; box-shadow: var(--p-shadow-400); max-height: 280px; overflow-y: auto; z-index: 10002; opacity: 0; transform: translateY(-8px); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; }
         .collection-dropdown-panel.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
@@ -604,32 +644,51 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                   </div>
                 ))}
                 {mediaUrls.length < 6 && (
-                  <DropZone accept="image/*" type="image" onDropAccepted={handleMediaDrop} allowMultiple>
-                    <div className="product-media-add" role="button" tabIndex={0} title="Upload from computer">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5z" /></svg>
-                    </div>
-                  </DropZone>
+                  <div className="product-media-add" role="button" tabIndex={0} title="Select from media library" onClick={openMediaPicker}>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5z" /></svg>
+                  </div>
                 )}
               </div>
-              {mediaUrls.length < 6 && (
-                <Box paddingBlockStart="200">
-                  <Button size="slim" variant="secondary" onClick={openMediaPicker}>Mevcut medyadan seç</Button>
-                </Box>
-              )}
               {mediaUploading && <Text as="p" variant="bodySm" tone="subdued">Uploading…</Text>}
-              <Modal open={mediaPickerOpen} onClose={() => setMediaPickerOpen(false)} title="Mevcut medyadan seç">
+              <Modal
+                open={mediaPickerOpen}
+                onClose={() => { setMediaPickerOpen(false); setMediaPickerSelected(new Set()); }}
+                title="Select media"
+                size="large"
+                primaryAction={{ content: "Add", onAction: addSelectedMediaToProduct, disabled: mediaPickerSelected.size === 0 || mediaUrls.length >= 6 }}
+              >
                 <Modal.Section>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 12, maxHeight: 360, overflowY: "auto" }}>
+                  <div className="product-media-picker-grid">
+                    <DropZone accept="image/*" type="image" onDropAccepted={uploadMediaInPicker} allowMultiple>
+                      <div className="product-media-picker-add" role="button" tabIndex={0} title="Upload from computer">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5z" /></svg>
+                        <span className="product-media-picker-add-label">Upload</span>
+                      </div>
+                    </DropZone>
                     {mediaLibraryList.map((item) => {
-                      const url = item.url && (item.url.startsWith("http") ? item.url : `${baseUrl.replace(/\/$/, "")}${item.url}`);
-                      return url ? (
-                        <button key={item.id} type="button" onClick={() => pickMediaUrl(item.url)} style={{ padding: 0, border: "2px solid transparent", borderRadius: 8, overflow: "hidden", background: "var(--p-color-bg-surface-secondary)", cursor: "pointer" }}>
-                          <Thumbnail source={url} alt={item.alt || item.filename || ""} size="large" />
+                      const url = item.url ? resolveMediaUrl(item.url) : "";
+                      if (!url) return null;
+                      const selected = mediaPickerSelected.has(url);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`product-media-picker-item ${selected ? "selected" : ""}`}
+                          onClick={() => toggleMediaPickerSelection(item)}
+                        >
+                          <div className="product-media-picker-item-img">
+                            <Thumbnail source={url} alt={item.alt || item.filename || ""} size="large" />
+                          </div>
+                          {selected && (
+                            <span className="product-media-picker-tick" aria-hidden>
+                              <svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0Z" /></svg>
+                            </span>
+                          )}
                         </button>
-                      ) : null;
+                      );
                     })}
                   </div>
-                  {mediaLibraryList.length === 0 && <Text as="p" tone="subdued">Henüz medya yok. Önce yükleyin (Content → Media).</Text>}
+                  {mediaLibraryList.length === 0 && !mediaUploading && <Text as="p" tone="subdued">No media yet. Drop an image on the + square above or upload in Content → Media.</Text>}
                 </Modal.Section>
               </Modal>
 

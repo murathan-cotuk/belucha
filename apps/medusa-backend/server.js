@@ -254,8 +254,33 @@ async function start() {
           );
         `)
         await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_menus_slug ON admin_hub_menus(slug);')
+        try {
+          await client.query('ALTER TABLE admin_hub_menus ADD COLUMN IF NOT EXISTS location varchar(50) DEFAULT \'main\';')
+        } catch (e) {
+          if (e.code !== '42701') throw e
+        }
+        await client.query('CREATE INDEX IF NOT EXISTS idx_admin_hub_menus_location ON admin_hub_menus(location);')
         await client.query('CREATE INDEX IF NOT EXISTS idx_admin_hub_menu_items_menu_id ON admin_hub_menu_items(menu_id);')
         await client.query('CREATE INDEX IF NOT EXISTS idx_admin_hub_menu_items_parent_id ON admin_hub_menu_items(parent_id);')
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS admin_hub_menu_locations (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            slug varchar(50) NOT NULL UNIQUE,
+            label varchar(255) NOT NULL,
+            html_id varchar(50),
+            sort_order integer DEFAULT 0
+          );
+        `)
+        await client.query(`
+          INSERT INTO admin_hub_menu_locations (slug, label, html_id, sort_order) VALUES
+            ('main', 'Main menu (dropdown)', NULL, 0),
+            ('second', 'Second menu (navbar bar)', 'subnav', 1),
+            ('footer1', 'Footer column 1', NULL, 10),
+            ('footer2', 'Footer column 2', NULL, 11),
+            ('footer3', 'Footer column 3', NULL, 12),
+            ('footer4', 'Footer column 4', NULL, 13)
+          ON CONFLICT (slug) DO NOTHING;
+        `)
         await client.query(`
           CREATE TABLE IF NOT EXISTS admin_hub_media (
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -338,7 +363,7 @@ async function start() {
         `)
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_cart_items_cart_id ON store_cart_items(cart_id);')
         await client.end()
-        console.log('Admin Hub: admin_hub_menus, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
+        console.log('Admin Hub: admin_hub_menus, admin_hub_menu_locations, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
       } catch (migErr) {
         console.warn('Admin Hub migration (menus) skipped or failed:', migErr && migErr.message)
       }
@@ -1134,7 +1159,45 @@ async function start() {
     httpApp.post('/admin-hub/menus/:menuId/items', menuItemsPOST)
     httpApp.put('/admin-hub/menus/:menuId/items/:itemId', menuItemByIdPUT)
     httpApp.delete('/admin-hub/menus/:menuId/items/:itemId', menuItemByIdDELETE)
-    console.log('Admin Hub routes: /admin-hub/menus (+ :id, :menuId/items, :itemId)')
+    const getMenuLocationsFromDb = async () => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('SELECT id, slug, label, html_id, sort_order FROM admin_hub_menu_locations ORDER BY sort_order ASC, slug ASC')
+        const list = (res.rows || []).map((r) => ({ id: r.id, slug: r.slug, label: r.label, html_id: r.html_id || null, sort_order: r.sort_order ?? 0 }))
+        await client.end()
+        return list
+      } catch (e) {
+        console.warn('Menu locations from DB:', e && e.message)
+        return null
+      }
+    }
+    const menuLocationsGET = async (req, res) => {
+      try {
+        let list = await getMenuLocationsFromDb()
+        if (!list || list.length === 0) {
+          list = [
+            { id: 'main', slug: 'main', label: 'Main menu (dropdown)', html_id: null, sort_order: 0 },
+            { id: 'second', slug: 'second', label: 'Second menu (navbar bar)', html_id: 'subnav', sort_order: 1 },
+            { id: 'footer1', slug: 'footer1', label: 'Footer column 1', html_id: null, sort_order: 10 },
+            { id: 'footer2', slug: 'footer2', label: 'Footer column 2', html_id: null, sort_order: 11 },
+            { id: 'footer3', slug: 'footer3', label: 'Footer column 3', html_id: null, sort_order: 12 },
+            { id: 'footer4', slug: 'footer4', label: 'Footer column 4', html_id: null, sort_order: 13 },
+          ]
+        }
+        res.json({ locations: list })
+      } catch (err) {
+        console.error('Menu locations GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+    httpApp.get('/admin-hub/menu-locations', menuLocationsGET)
+    httpApp.get('/store/menu-locations', menuLocationsGET)
+    console.log('Admin Hub routes: /admin-hub/menus (+ :id, :menuId/items, :itemId), /admin-hub/menu-locations, /store/menu-locations')
 
     // --- Admin Hub Products (DB: admin_hub_products, collections/menus gibi) ---
     const getProductsDbClient = () => {
@@ -1891,7 +1954,7 @@ async function start() {
           id: r.id,
           name: r.name,
           slug: r.slug,
-          location: r.location || 'main',
+          location: String(r.location || 'main').trim().toLowerCase() || 'main',
         }))
         const menusWithItems = []
         for (const menu of menus) {

@@ -169,6 +169,15 @@ class MedusaClient {
   }
 
   /**
+   * Store menu locations (where menus appear: main, subnav, footer). Used to resolve which menu shows in subnav (html_id=subnav).
+   */
+  async getMenuLocations() {
+    const res = await this.request('/store/menu-locations')
+    if (res?.__error) return { locations: [] }
+    return { locations: res.locations || [] }
+  }
+
+  /**
    * Store menüler (Navbar). GET /store/menus. Options: { location: 'main' }
    */
   async getMenus(options = {}) {

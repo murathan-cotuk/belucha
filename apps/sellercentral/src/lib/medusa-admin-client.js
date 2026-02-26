@@ -343,6 +343,14 @@ class MedusaAdminClient {
   }
 
   /**
+   * Menu locations (where menus can appear: main, subnav, footer columns). Used for Location dropdown.
+   */
+  async getMenuLocations() {
+    const data = await this.request('/admin-hub/menu-locations')
+    return { locations: data.locations || [] }
+  }
+
+  /**
    * Admin Hub Menus
    */
   async getMenus() {

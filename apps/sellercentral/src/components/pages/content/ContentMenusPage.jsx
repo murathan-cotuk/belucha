@@ -182,6 +182,8 @@ function MenuEditorPanel(props) {
     setExpandedIds,
     router,
     onOpenImportCsv,
+    onMenuSaved,
+    locationOptions = [],
   } = props;
   const tree = buildMenuTree(items);
   const openInlineAdd = (parentId) => {
@@ -240,7 +242,6 @@ function MenuEditorPanel(props) {
       setSaving(true);
       setError(null);
       const location = localMenuLocation || "main";
-      const menuIdToRefresh = panelMenuId ?? selectedMenuId;
       if (isNew) {
         const created = await client.createMenu({ name, slug, location });
         await fetchMenus();
@@ -250,8 +251,7 @@ function MenuEditorPanel(props) {
       if (panelMenuId) {
         await client.updateMenu(panelMenuId, { name, slug, location });
         await fetchMenus();
-        currentMenuIdRef.current = panelMenuId;
-        await fetchItems(panelMenuId);
+        if (onMenuSaved) await onMenuSaved(panelMenuId);
       }
     } catch (err) {
       setError(err?.message || "Failed to save menu");
@@ -314,14 +314,7 @@ function MenuEditorPanel(props) {
               <Select
                 label="Location"
                 labelHidden
-                options={[
-                  { label: "Main menu (dropdown by search)", value: "main" },
-                  { label: "Second menu (navbar bar)", value: "second" },
-                  { label: "Footer column 1", value: "footer-menu1" },
-                  { label: "Footer column 2", value: "footer-menu2" },
-                  { label: "Footer column 3", value: "footer-menu3" },
-                  { label: "Footer column 4", value: "footer-menu4" },
-                ]}
+                options={locationOptions}
                 value={localMenuLocation || "main"}
                 onChange={setLocalMenuLocation}
               />
@@ -643,12 +636,24 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const [importCsvFile, setImportCsvFile] = useState(null);
   const [importUnderParentId, setImportUnderParentId] = useState("");
   const [importProgress, setImportProgress] = useState(null); // { total, done, error } | null
+  const [menuLocations, setMenuLocations] = useState([]);
   const dragJustEndedRef = useRef(false);
   const lastDropTimeRef = useRef(0);
   const hasInitializedExpandedRef = useRef(false);
   const client = getMedusaAdminClient();
   const showPanel = panelMode === "new" || (panelMode === "edit" && panelMenuId);
   const panelMenu = panelMode === "edit" && panelMenuId ? menus.find((m) => m.id === panelMenuId) : null;
+
+  const locationOptions = menuLocations.length > 0
+    ? menuLocations.map((loc) => ({ label: loc.label, value: loc.slug }))
+    : [
+        { label: "Main menu (dropdown by search)", value: "main" },
+        { label: "Second menu (navbar bar)", value: "second" },
+        { label: "Footer column 1", value: "footer1" },
+        { label: "Footer column 2", value: "footer2" },
+        { label: "Footer column 3", value: "footer3" },
+        { label: "Footer column 4", value: "footer4" },
+      ];
 
   const fetchMenus = async () => {
     try {
@@ -684,9 +689,17 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const currentMenuIdRef = useRef(selectedMenuId);
   currentMenuIdRef.current = selectedMenuId;
 
+  const onMenuSaved = useCallback(async (menuId) => {
+    currentMenuIdRef.current = menuId;
+    await fetchItems(menuId);
+  }, [fetchItems]);
+
   useEffect(() => {
     fetchMenus();
   }, []);
+  useEffect(() => {
+    client.getMenuLocations().then((data) => setMenuLocations(data.locations || [])).catch(() => setMenuLocations([]));
+  }, [client]);
 
   const effectiveMenuId = showPanel ? (panelMode === "edit" && panelMenuId ? panelMenuId : null) : selectedMenuId;
   useEffect(() => {
@@ -1175,6 +1188,8 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     setExpandedIds={setExpandedIds}
     router={router}
     onOpenImportCsv={() => setImportCsvOpen(true)}
+    onMenuSaved={onMenuSaved}
+    locationOptions={locationOptions}
   />
               </Card>
             </Layout.Section>
@@ -1351,17 +1366,10 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
             />
             <Select
               label="Location"
-              options={[
-                { label: "Main menu (dropdown by search)", value: "main" },
-                { label: "Second menu (navbar bar)", value: "second" },
-                { label: "Footer column 1", value: "footer-menu1" },
-                { label: "Footer column 2", value: "footer-menu2" },
-                { label: "Footer column 3", value: "footer-menu3" },
-                { label: "Footer column 4", value: "footer-menu4" },
-              ]}
+              options={locationOptions || []}
               value={menuForm.location || "main"}
               onChange={(value) => setMenuForm((prev) => ({ ...prev, location: value }))}
-              helpText="Where this menu appears: main = dropdown by search, second = navbar bar, footer 1–4 = footer columns."
+              helpText="Where this menu appears. Locations are defined in the database and linked to the store (e.g. subnav bar)."
             />
           </BlockStack>
         </Modal.Section>

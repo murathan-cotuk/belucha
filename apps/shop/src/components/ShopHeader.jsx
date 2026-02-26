@@ -11,7 +11,6 @@ import Link from "next/link";
 import styled from "styled-components";
 import { motion } from "framer-motion";
 import { useCustomerAuth as useAuth } from "@belucha/lib";
-import { getMedusaClient } from "@/lib/medusa-client";
 import { useCart } from "@/context/CartContext";
 import DropdownSearch from "@/components/DropdownSearch";
 import TopBar from "@/components/TopBar";
@@ -272,13 +271,16 @@ const UserDropdownBtn = styled.button`
 
 const SubNavWrap = styled.div`
   width: 100%;
+  min-height: ${(p) => (p.$hide ? "0" : "48px")};
+  max-height: ${(p) => (p.$hide ? "0" : "48px")};
   background: ${tokens.background.soft};
+  border-top: 1px solid ${tokens.border.light};
   border-bottom: 1px solid ${tokens.border.light};
   overflow: hidden;
-  max-height: ${(p) => (p.$hide ? "0" : "48px")};
   opacity: ${(p) => (p.$hide ? 0 : 1)};
-  transition: max-height ${tokens.transition.base}, opacity ${tokens.transition.base};
+  transition: max-height ${tokens.transition.base}, min-height ${tokens.transition.base}, opacity ${tokens.transition.base};
   box-shadow: none;
+  display: block;
 `;
 
 const SecondMenuRowInner = styled.div`
@@ -327,14 +329,23 @@ export default function ShopHeader() {
   const { openCartSidebar, itemCount } = useCart();
 
   useEffect(() => {
-    const client = getMedusaClient();
-    client.getMenus().then((data) => {
-      const menus = data.menus || [];
-      const main = menus.find((m) => (m.location || "").toLowerCase() === "main") || menus[0];
-      const second = menus.find((m) => (m.location || "").toLowerCase() === "second");
-      setMainMenuItems(main?.items?.filter((i) => !i.parent_id) || []);
-      setSecondMenuItems(second?.items?.filter((i) => !i.parent_id) || []);
-    }).catch(() => {});
+    const norm = (s) => String(s || "").toLowerCase().trim();
+    Promise.all([
+      fetch("/api/store-menu-locations").then((r) => r.json()).catch(() => ({ locations: [] })),
+      fetch("/api/store-menus").then((r) => r.json()).catch(() => ({ menus: [] })),
+    ]).then(([locData, menuData]) => {
+      const locs = locData.locations || [];
+      const menus = Array.isArray(menuData?.menus) ? menuData.menus : [];
+      const subnavLoc = locs.find((l) => norm(l.html_id) === "subnav");
+      const subnavSlug = norm(subnavLoc?.slug || "second");
+      const main = menus.find((m) => norm(m.location) === "main") || menus[0];
+      const second =
+        menus.find((m) => norm(m.location) === subnavSlug) ||
+        menus.find((m) => norm(m.slug) === "second-menu");
+      const rootItems = (arr) => (arr || []).filter((i) => !i.parent_id);
+      setMainMenuItems(main ? rootItems(main.items) : []);
+      setSecondMenuItems(second ? rootItems(second.items) : []);
+    });
   }, []);
 
   useEffect(() => {
@@ -378,7 +389,7 @@ export default function ShopHeader() {
 
   const atTop = scrollY <= SCROLL_THRESHOLD;
   const showFullHeader = visible && atTop;
-  const showSubNav = showFullHeader && secondMenuItems.length > 0;
+  const showSubNav = showFullHeader;
 
   const algoliaAttributes = {
     primaryText: "title",
@@ -462,7 +473,7 @@ export default function ShopHeader() {
             </Right>
           </NavRow>
         </nav>
-        <SubNavWrap $hide={!showSubNav}>
+        <SubNavWrap id="subnav" $hide={!showSubNav}>
           <SecondMenuRowInner>
             {secondMenuItems.map((item) => (
               <SecondLink key={item.id} href={menuItemHref(item)}>{item.label}</SecondLink>
