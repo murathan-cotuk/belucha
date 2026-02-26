@@ -21,6 +21,8 @@ import {
   SkeletonDisplayText,
   Popover,
   ActionList,
+  Modal,
+  Thumbnail,
 } from "@shopify/polaris";
 import { ProductIcon, SearchIcon, MenuHorizontalIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
@@ -93,6 +95,8 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [collections, setCollections] = useState([]);
   const [brands, setBrands] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaLibraryList, setMediaLibraryList] = useState([]);
   const [collectionSearch, setCollectionSearch] = useState("");
   const [collectionPopoverOpen, setCollectionPopoverOpen] = useState(false);
   const [descriptionMode, setDescriptionMode] = useState("visual");
@@ -284,12 +288,13 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       const title = String(item.title ?? item.name ?? "Variant").trim() || "Variant";
       const value = item.value ?? (Array.isArray(item.options) ? item.options.map((o) => (o && o.value) || o).filter(Boolean).join(", ") : "");
       const sku = String(item.sku ?? item.sku_number ?? "").trim();
+      const ean = String(item.ean ?? "").trim();
       const inventory = item.inventory != null ? String(item.inventory) : "";
       const price = item.price != null ? String(item.price) : "";
       const compare_at_price = item.compare_at_price != null ? String(item.compare_at_price) : (item.compare_at_price_cents != null ? String((item.compare_at_price_cents / 100).toFixed(2)) : "");
       const image_url = String(item.image_url ?? item.image ?? "").trim();
       if (!byTitle.has(title)) byTitle.set(title, { name: title, options: [] });
-      byTitle.get(title).options.push({ value: String(value), sku, inventory, price, compare_at_price, image_url });
+      byTitle.get(title).options.push({ value: String(value), sku, ean, inventory, price, compare_at_price, image_url });
     }
     return Array.from(byTitle.values());
   })();
@@ -303,6 +308,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
           title: (g.name || "Variant").trim() || "Variant",
           value: (o.value ?? "").toString().trim(),
           sku: (o.sku ?? "").toString().trim(),
+          ean: (o.ean ?? "").toString().trim() || undefined,
           inventory: o.inventory !== "" && o.inventory != null ? parseInt(String(o.inventory), 10) : 0,
           ...(priceNum != null && { price_cents: Math.round(priceNum * 100) }),
           ...(compareNum != null && { compare_at_price_cents: Math.round(compareNum * 100) }),
@@ -328,7 +334,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     setVariantGroups(next);
   };
   const addVariantGroupOption = (groupIndex) => {
-    const next = variantGroups.map((g, i) => (i === groupIndex ? { ...g, options: [...(g.options || []), { value: "", sku: "", inventory: "" }] } : g));
+    const next = variantGroups.map((g, i) => (i === groupIndex ? { ...g, options: [...(g.options || []), { value: "", sku: "", ean: "", inventory: "", price: "", compare_at_price: "", image_url: "" }] } : g));
     setVariantGroups(next);
   };
   const removeVariantGroupOption = (groupIndex, optionIndex) => {
@@ -340,7 +346,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     setVariantGroups(next);
   };
   const addVariantGroup = () => {
-    setVariantGroups([...variantGroups, { name: "", options: [{ value: "", sku: "", inventory: "", price: "", compare_at_price: "", image_url: "" }] }]);
+    setVariantGroups([...variantGroups, { name: "", options: [{ value: "", sku: "", ean: "", inventory: "", price: "", compare_at_price: "", image_url: "" }] }]);
   };
   const removeVariantGroup = (groupIndex) => {
     setVariantGroups(variantGroups.filter((_, i) => i !== groupIndex));
@@ -368,6 +374,16 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const removeMedia = (index) => {
     const next = mediaUrls.filter((_, i) => i !== index);
     updateMeta("media", next);
+  };
+  const openMediaPicker = () => {
+    setMediaPickerOpen(true);
+    client.getMedia({ limit: 100 }).then((r) => setMediaLibraryList(r.media || [])).catch(() => setMediaLibraryList([]));
+  };
+  const pickMediaUrl = (url) => {
+    if (!url) return;
+    const resolved = url.startsWith("http") ? url : `${baseUrl.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+    if (mediaUrls.length < 6) updateMeta("media", [...mediaUrls, resolved]);
+    setMediaPickerOpen(false);
   };
 
   return (
@@ -589,13 +605,33 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 ))}
                 {mediaUrls.length < 6 && (
                   <DropZone accept="image/*" type="image" onDropAccepted={handleMediaDrop} allowMultiple>
-                    <div className="product-media-add" role="button" tabIndex={0}>
+                    <div className="product-media-add" role="button" tabIndex={0} title="Upload from computer">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5z" /></svg>
                     </div>
                   </DropZone>
                 )}
               </div>
+              {mediaUrls.length < 6 && (
+                <Box paddingBlockStart="200">
+                  <Button size="slim" variant="secondary" onClick={openMediaPicker}>Mevcut medyadan seç</Button>
+                </Box>
+              )}
               {mediaUploading && <Text as="p" variant="bodySm" tone="subdued">Uploading…</Text>}
+              <Modal open={mediaPickerOpen} onClose={() => setMediaPickerOpen(false)} title="Mevcut medyadan seç">
+                <Modal.Section>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 12, maxHeight: 360, overflowY: "auto" }}>
+                    {mediaLibraryList.map((item) => {
+                      const url = item.url && (item.url.startsWith("http") ? item.url : `${baseUrl.replace(/\/$/, "")}${item.url}`);
+                      return url ? (
+                        <button key={item.id} type="button" onClick={() => pickMediaUrl(item.url)} style={{ padding: 0, border: "2px solid transparent", borderRadius: 8, overflow: "hidden", background: "var(--p-color-bg-surface-secondary)", cursor: "pointer" }}>
+                          <Thumbnail source={url} alt={item.alt || item.filename || ""} size="large" />
+                        </button>
+                      ) : null;
+                    })}
+                  </div>
+                  {mediaLibraryList.length === 0 && <Text as="p" tone="subdued">Henüz medya yok. Önce yükleyin (Content → Media).</Text>}
+                </Modal.Section>
+              </Modal>
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Pricing</Text>
@@ -670,46 +706,56 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Variants</Text>
-              <Text as="p" variant="bodySm" tone="subdued">Add a variant group (e.g. Color, Size), then add option rows under it. Click &quot;Add variant&quot; for each new group.</Text>
+              <Text as="p" variant="bodySm" tone="subdued">Variant group (e.g. Color) and rows: Görsel, Değer, SKU, EAN, Stok, Fiyat, UVP.</Text>
               {variantGroups.map((group, gi) => (
                 <Box key={gi} padding="300" background="bg-surface-secondary" borderRadius="200" borderWidth="025" borderColor="border">
-                  <InlineStack gap="200" wrap blockAlign="center">
+                  <InlineStack gap="200" wrap blockAlign="center" paddingBlockEnd="200">
                     <Box minWidth="140px">
                       <TextField label="Variant group name" labelHidden value={group.name} onChange={(val) => updateVariantGroupName(gi, val)} placeholder="e.g. Color, Size" autoComplete="off" />
                     </Box>
                     <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroup(gi)} aria-label="Remove group">Remove group</Button>
+                    <Button size="slim" variant="plain" onClick={() => addVariantGroupOption(gi)}>+ Row</Button>
                   </InlineStack>
-                  <Box paddingBlockStart="200">
-                    {(group.options || []).map((opt, oi) => (
-                      <BlockStack key={oi} gap="200" paddingBlockStart="200">
-                        <InlineStack gap="200" wrap blockAlign="center">
-                          <Box minWidth="120px">
-                            <TextField label="Value" labelHidden value={opt.value} onChange={(val) => updateVariantGroupOption(gi, oi, "value", val)} placeholder="e.g. Red, S" autoComplete="off" />
-                          </Box>
-                          <Box minWidth="100px">
-                            <TextField label="SKU" labelHidden value={opt.sku} onChange={(val) => updateVariantGroupOption(gi, oi, "sku", val)} placeholder="SKU" autoComplete="off" />
-                          </Box>
-                          <Box minWidth="80px">
-                            <TextField label="Qty" labelHidden type="number" min={0} value={opt.inventory} onChange={(val) => updateVariantGroupOption(gi, oi, "inventory", val)} placeholder="0" />
-                          </Box>
-                          <Box minWidth="90px">
-                            <TextField label="Price (€ gross)" labelHidden type="number" step="0.01" value={opt.price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "price", val)} placeholder="—" />
-                          </Box>
-                          <Box minWidth="90px">
-                            <TextField label="Compare (UVP €)" labelHidden type="number" step="0.01" value={opt.compare_at_price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "compare_at_price", val)} placeholder="—" />
-                          </Box>
-                          <Box minWidth="140px">
-                            <TextField label="Image URL" labelHidden value={opt.image_url ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "image_url", val)} placeholder="https://…" autoComplete="off" />
-                          </Box>
-                          <Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroupOption(gi, oi)} aria-label="Remove option">×</Button>
-                        </InlineStack>
-                      </BlockStack>
-                    ))}
-                    <Button size="slim" variant="plain" onClick={() => addVariantGroupOption(gi)}>+ Option</Button>
-                  </Box>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontSize: 14 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid var(--p-color-border)" }}>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>Görsel</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>Renk / Değer</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>SKU</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>EAN</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>Stok</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>Fiyat (€)</th>
+                          <th style={{ textAlign: "left", padding: "8px", fontWeight: 600, color: "var(--p-color-text-subdued)" }}>UVP (€)</th>
+                          <th style={{ width: 40 }} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(group.options || []).map((opt, oi) => (
+                          <tr key={oi} style={{ borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                            <td style={{ padding: "6px 8px", verticalAlign: "middle" }}>
+                              <InlineStack gap="200" blockAlign="center">
+                                <div style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 8, overflow: "hidden", background: "var(--p-color-bg-fill-secondary)" }}>
+                                  {opt.image_url ? <img src={opt.image_url.startsWith("http") || opt.image_url.startsWith("data:") ? opt.image_url : `${baseUrl}${opt.image_url}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 10, color: "var(--p-color-text-subdued)", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>—</span>}
+                                </div>
+                                <Box minWidth="120px"><TextField label="" labelHidden value={opt.image_url ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "image_url", val)} placeholder="Görsel URL" autoComplete="off" /></Box>
+                              </InlineStack>
+                            </td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden value={opt.value} onChange={(val) => updateVariantGroupOption(gi, oi, "value", val)} placeholder="z.B. Rot" autoComplete="off" /></td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden value={opt.sku} onChange={(val) => updateVariantGroupOption(gi, oi, "sku", val)} placeholder="SKU" autoComplete="off" /></td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden value={opt.ean ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "ean", val)} placeholder="EAN" autoComplete="off" /></td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden type="number" min={0} value={opt.inventory} onChange={(val) => updateVariantGroupOption(gi, oi, "inventory", val)} placeholder="0" /></td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden type="number" step="0.01" value={opt.price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "price", val)} placeholder="—" /></td>
+                            <td style={{ padding: "6px 8px" }}><TextField label="" labelHidden type="number" step="0.01" value={opt.compare_at_price ?? ""} onChange={(val) => updateVariantGroupOption(gi, oi, "compare_at_price", val)} placeholder="—" /></td>
+                            <td style={{ padding: "6px 8px" }}><Button size="slim" variant="plain" tone="critical" onClick={() => removeVariantGroupOption(gi, oi)} aria-label="Remove">×</Button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </Box>
               ))}
-              <Button variant="secondary" size="slim" onClick={addVariantGroup}>Add variant</Button>
+              <Button variant="secondary" size="slim" onClick={addVariantGroup}>Add variant group</Button>
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Metafields (catalog)</Text>

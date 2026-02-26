@@ -816,7 +816,21 @@ async function start() {
         if (b.richtext !== undefined) metadata.richtext = b.richtext
         if (b.image_url !== undefined) metadata.image_url = b.image_url
         if (b.banner_image_url !== undefined) metadata.banner_image_url = b.banner_image_url
-        const updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
+        let collectionId = id
+        let updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
+        if (!updated) {
+          const adminHub = resolveAdminHub()
+          if (adminHub) {
+            try {
+              const category = await adminHub.getCategoryById(id)
+              const linkedId = category?.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+              if (linkedId) {
+                updated = await updateAdminHubCollectionDb(linkedId, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
+                if (updated) collectionId = linkedId
+              }
+            } catch (_) {}
+          }
+        }
         if (!updated) return res.status(404).json({ message: 'Collection not found (only standalone collections can be updated here)' })
         if (categoryId) {
           try {
@@ -827,7 +841,7 @@ async function start() {
         const meta = (updated.metadata && typeof updated.metadata === 'object') ? updated.metadata : {}
         res.json({
           collection: {
-            id: updated.id,
+            id: id,
             title: updated.title,
             handle: updated.handle,
             display_title: meta.display_title,
@@ -867,13 +881,20 @@ async function start() {
       try {
         const id = req.params.id
         if (!id) return res.status(400).json({ message: 'id is required' })
-        const row = await getAdminHubCollectionByIdDb(id)
+        let row = await getAdminHubCollectionByIdDb(id)
         if (row) return res.json({ collection: { ...row, _standalone: true } })
         const adminHub = resolveAdminHub()
         if (adminHub) {
           try {
             const category = await adminHub.getCategoryById(id)
-            if (category && category.has_collection) return res.json({ collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true } })
+            if (category && category.has_collection) {
+              const linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+              if (linkedId) {
+                row = await getAdminHubCollectionByIdDb(linkedId)
+                if (row) return res.json({ collection: { ...row, id, title: row.title || category.name, handle: row.handle || category.slug, _fromCategory: true } })
+              }
+              return res.json({ collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true } })
+            }
           } catch (_) {}
         }
         return res.status(404).json({ message: 'Collection not found' })
@@ -1474,6 +1495,7 @@ async function start() {
               title: v.title || v.value || 'Option ' + (i + 1),
               value: v.value,
               sku: v.sku || null,
+              ean: v.ean || null,
               prices: [{ amount: vPriceCents, currency_code: 'eur' }],
               compare_at_price_cents: vCompareCents,
               inventory_quantity: v.inventory != null ? v.inventory : 0,

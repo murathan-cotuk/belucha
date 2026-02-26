@@ -23,6 +23,7 @@ const ThreeCol = styled.div`
   grid-template-columns: 1fr 1fr 340px;
   gap: 32px;
   margin-bottom: 48px;
+  align-items: start;
   @media (max-width: 1024px) {
     grid-template-columns: 1fr 1fr;
   }
@@ -35,6 +36,11 @@ const GalleryCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: sticky;
+  top: 24px;
+  @media (max-width: 1024px) {
+    position: static;
+  }
 `;
 
 const MainImageWrap = styled.div`
@@ -75,6 +81,7 @@ const CenterCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 200px;
 `;
 
 const Title = styled.h1`
@@ -129,8 +136,11 @@ const RightCol = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: sticky;
+  top: 24px;
   @media (max-width: 1024px) {
     grid-column: 1 / -1;
+    position: static;
   }
 `;
 
@@ -196,12 +206,14 @@ function sanitizeHtml(html) {
 // Metadata keys to show as attributes (Eigenschaften) – exclude internal ones
 const META_ATTR_KEYS = ["material", "farbe", "colour", "color", "size", "gewicht", "dimensions", "cart", "curt", "stoff", "typ"];
 
-// Internal keys that must never be shown on the product page
+// Internal keys that must never be shown on the product page (no IDs, no SEO/backend fields)
 const META_HIDDEN_KEYS = [
   "category_id", "admin_category_id", "collection_id", "collection_ids",
   "seller_id", "product_id", "media", "bullet_points", "uvp_cents", "rabattpreis_cents",
   "ean", "brand", "seller_name", "shop_name", "return_days", "return_cost", "return_kostenlos",
   "review_count", "review_avg", "sold_last_month", "metafields",
+  "brand_id", "hersteller", "seo_keywords", "seo_meta_title", "seo_meta_description",
+  "hersteller_information", "verantwortliche_person_information", "brand_name", "brand_logo",
 ];
 
 function buildMetaRows(meta) {
@@ -436,7 +448,7 @@ export default function ProductTemplate() {
             </StockBadge>
           </Card>
           <Card>
-            {variants.length > 1 && (
+            {variants.length > 0 && (
               <div className="mb-3">
                 <label className="text-xs text-gray-500 block mb-1">Variante</label>
                 <select
