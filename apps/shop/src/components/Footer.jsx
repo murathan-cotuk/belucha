@@ -88,7 +88,7 @@ const Copyright = styled.p`
   font-size: 14px;
 `;
 
-const FOOTER_LOCATIONS = ["footer-menu1", "footer-menu2", "footer-menu3", "footer-menu4"];
+const FOOTER_LOCATIONS = ["footer1", "footer2", "footer3", "footer4"];
 
 export default function Footer() {
   const [footerColumns, setFooterColumns] = useState([]);
@@ -98,11 +98,11 @@ export default function Footer() {
     client.getMenus().then((data) => {
       const menus = data.menus || [];
       const columns = FOOTER_LOCATIONS.map((loc) => {
-        const menu = menus.find((m) => (m.location || "").toLowerCase() === loc.toLowerCase());
-        if (!menu) return null;
+        const menu = menus.find((m) => (m.location || "").toLowerCase().trim() === loc.toLowerCase());
+        if (!menu) return { location: loc, menu: null, items: [] };
         const items = (menu.items || []).filter((i) => !i.parent_id);
         return { location: loc, menu, items };
-      }).filter(Boolean);
+      });
       setFooterColumns(columns);
     }).catch(() => setFooterColumns([]));
   }, []);
@@ -111,16 +111,16 @@ export default function Footer() {
     <FooterContainer>
       <Container>
         {footerColumns.length > 0 && (
-          <Grid $columns={footerColumns.length}>
+          <Grid $columns={4}>
             {footerColumns.map(({ location, menu, items }) => (
               <Column key={location}>
-                <Title>{menu.name || "Menü"}</Title>
+                <Title>{menu?.name || " "}</Title>
                 {items.length > 0 ? (
                   items.map((item) => (
                     <FooterLink key={item.id} href={menuItemHref(item)}>{item.label}</FooterLink>
                   ))
                 ) : (
-                  <Placeholder>Keine Einträge</Placeholder>
+                  menu ? <Placeholder>Keine Einträge</Placeholder> : null
                 )}
               </Column>
             ))}
