@@ -663,8 +663,13 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       setLoading(true);
       setError(null);
       const data = await client.getMenus();
-      setMenus(data.menus || []);
-      if (!selectedMenuId && (data.menus || []).length > 0) setSelectedMenuId(data.menus[0].id);
+      const list = data.menus || [];
+      setMenus(list);
+      const isOnDetailPage = panelMode === "edit" && panelMenuId;
+      if (!selectedMenuId && list.length > 0 && !isOnDetailPage) {
+        const secondMenu = list.find((m) => (m.location || "").toLowerCase() === "second");
+        setSelectedMenuId(secondMenu ? secondMenu.id : list[0].id);
+      }
     } catch (err) {
       setError(err?.message || "Failed to load menus");
       setMenus([]);
@@ -681,11 +686,10 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     try {
       const data = await client.getMenuItems(menuId);
       setItems((prev) => {
-        // Only apply if this is still the menu we asked for (avoid race when switching menus)
         return (currentMenuIdRef.current === menuId ? (data.items || []) : prev);
       });
     } catch {
-      setItems((prev) => (currentMenuIdRef.current === menuId ? [] : prev));
+      // Don't clear items on fetch error so saved items don't disappear
     }
   }, []);
 
@@ -931,12 +935,15 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
           parent_id: itemForm.parent_id || null,
         });
       } else {
-        await client.createMenuItem(menuId, {
+        const created = await client.createMenuItem(menuId, {
           label: itemForm.label,
           link_type: itemForm.link_type || "url",
           link_value: link_value || null,
           parent_id: itemForm.parent_id != null && itemForm.parent_id !== "" ? String(itemForm.parent_id) : null,
         });
+        if (created && currentMenuIdRef.current === menuId) {
+          setItems((prev) => [...prev, { ...created, sort_order: created.sort_order ?? prev.length }]);
+        }
       }
       setItemModalOpen(false);
       setEditingItemId(null);
