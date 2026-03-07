@@ -394,7 +394,7 @@ export default function ProductTemplate() {
 
   const breadcrumbItems = [
     { label: "Home", href: "/" },
-    ...(product.collection ? [{ label: product.collection.title, href: `/kollektion/${product.collection.handle}` }] : []),
+    ...(product.collection ? [{ label: product.collection.title, href: `/${product.collection.handle}` }] : []),
     { label: product.title, href: null },
   ];
 

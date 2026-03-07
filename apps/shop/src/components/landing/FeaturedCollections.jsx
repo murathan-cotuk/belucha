@@ -62,7 +62,7 @@ export default function FeaturedCollections({
         {(collections || []).slice(0, 4).map((col, i) => (
           <Banner
             key={col.id || i}
-            href={col.handle ? `/kollektion/${col.handle}` : "#"}
+            href={col.handle ? `/${col.handle}` : "#"}
             initial={{ opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}

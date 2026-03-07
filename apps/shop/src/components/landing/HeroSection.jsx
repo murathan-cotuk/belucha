@@ -149,7 +149,7 @@ export default function HeroSection({
           {collections.slice(0, 6).map((col, i) => (
             <CollectionCard
               key={col.id || i}
-              href={col.handle ? `/kollektion/${col.handle}` : "#"}
+              href={col.handle ? `/${col.handle}` : "#"}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 + i * 0.05 }}

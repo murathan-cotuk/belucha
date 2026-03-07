@@ -15,6 +15,7 @@ import {
   Banner,
   Select,
   DropZone,
+  Button,
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import { titleToHandle } from "@/lib/slugify";
@@ -91,6 +92,8 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
     banner_image_url: "",
   });
   const [collectionProducts, setCollectionProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [addingProductId, setAddingProductId] = useState(null);
 
   useEffect(() => {
     if (initialCollection) {
@@ -163,6 +166,30 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
     }
     client.getAdminHubProducts({ collection_id: collection.id }).then((r) => setCollectionProducts(r.products || [])).catch(() => setCollectionProducts([]));
   }, [collection?.id, client]);
+
+  useEffect(() => {
+    if (!collection?.id) return;
+    client.getAdminHubProducts({ limit: 200 }).then((r) => setAllProducts(r.products || [])).catch(() => setAllProducts([]));
+  }, [collection?.id, client]);
+
+  const addProductToCollection = async (productId) => {
+    if (!collection?.id) return;
+    setAddingProductId(productId);
+    try {
+      await client.updateAdminHubProduct(productId, { collection_id: collection.id });
+      const r = await client.getAdminHubProducts({ collection_id: collection.id });
+      setCollectionProducts(r.products || []);
+      const all = await client.getAdminHubProducts({ limit: 200 });
+      setAllProducts(all.products || []);
+    } catch (e) {
+      setError(e?.message || "Failed to add product to collection");
+    } finally {
+      setAddingProductId(null);
+    }
+  };
+
+  const inCollectionIds = new Set((collectionProducts || []).map((p) => p.id));
+  const productsNotInCollection = (allProducts || []).filter((p) => !inCollectionIds.has(p.id));
 
   const handleTitleChange = (value) => {
     setForm((prev) => ({
@@ -297,7 +324,7 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
                   Products assigned to this collection (image, SKU, name, price, quantity).
                 </p>
                 {collectionProducts.length === 0 ? (
-                  <Text as="p" tone="subdued">No products in this collection. Assign products to this collection from the product edit page.</Text>
+                  <Text as="p" tone="subdued">No products in this collection. Add products below or assign from the product edit page.</Text>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -338,6 +365,23 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
                     </table>
                   </div>
                 )}
+                <BlockStack gap="300">
+                  <Text as="h3" variant="headingSm">Add products to this collection</Text>
+                  <Text as="p" variant="bodySm" tone="subdued">Select a product below to add it to this collection. It will be removed from its current collection.</Text>
+                  {productsNotInCollection.length === 0 ? (
+                    <Text as="p" tone="subdued">All products are already in this collection or there are no other products.</Text>
+                  ) : (
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {productsNotInCollection.slice(0, 50).map((p) => (
+                        <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                          <Link href={`/products/${p.id}`} style={{ flex: 1, fontWeight: 500, color: "inherit" }}>{p.title || p.handle || p.sku || p.id}</Link>
+                          <Button size="slim" onClick={() => addProductToCollection(p.id)} loading={addingProductId === p.id}>Add</Button>
+                        </li>
+                      ))}
+                      {productsNotInCollection.length > 50 && <Text as="p" tone="subdued">Showing first 50. Assign more from the product edit page.</Text>}
+                    </ul>
+                  )}
+                </BlockStack>
               </BlockStack>
             </Card>
           </Layout.Section>

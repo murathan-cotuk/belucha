@@ -2021,6 +2021,7 @@ async function start() {
             id: row.id,
             title: row.title,
             handle: row.handle,
+            display_title: meta.display_title || row.title,
             banner: meta.banner_image_url || meta.image_url || null,
             description: meta.richtext || meta.description_html || null,
           }
@@ -2034,6 +2035,7 @@ async function start() {
             id: row.id,
             title: row.title,
             handle: row.handle,
+            display_title: meta.display_title || row.title,
             banner: meta.banner_image_url || meta.image_url || null,
             description: meta.richtext || meta.description_html || null,
           }
