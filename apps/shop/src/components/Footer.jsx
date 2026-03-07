@@ -7,11 +7,21 @@ import { getMedusaClient } from "@/lib/medusa-client";
 
 function menuItemHref(item) {
   if (!item) return "#";
-  if (item.link_type === "url" && item.link_value) return item.link_value.startsWith("http") ? item.link_value : `/${item.link_value.replace(/^\//, "")}`;
-  if ((item.link_type === "category" || item.link_type === "collection") && item.link_value) return `/kollektion/${item.link_value}`;
-  if (item.link_type === "page" && item.link_value) return `/pages/${item.link_value}`;
-  if (item.link_type === "product" && item.link_value) return `/produkt/${item.link_value}`;
-  return item.link_value ? `/${String(item.link_value).replace(/^\//, "")}` : "#";
+  const raw = item.link_value;
+  let value = raw;
+  if (typeof raw === "string" && raw.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.handle) value = parsed.handle;
+      else if (parsed.slug) value = parsed.slug;
+      else if (parsed.id) value = parsed.id;
+    } catch (_) {}
+  }
+  if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
+  if ((item.link_type === "category" || item.link_type === "collection") && value) return `/kollektion/${value}`;
+  if (item.link_type === "page" && value) return `/pages/${value}`;
+  if (item.link_type === "product" && value) return `/produkt/${value}`;
+  return value ? `/${String(value).replace(/^\//, "")}` : "#";
 }
 
 const FooterContainer = styled.footer`
