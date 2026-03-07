@@ -190,6 +190,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         metadata.seller_name = storeName;
         metadata.shop_name = storeName;
       }
+      const collectionId = (metadata.collection_ids && metadata.collection_ids[0]) || product.collection_id || null;
       const payload = {
         title: product.title || "Untitled",
         handle,
@@ -200,6 +201,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         inventory: product.inventory ?? 0,
         metadata,
         variants: product.variants || [],
+        ...(collectionId !== undefined && { collection_id: collectionId }),
       };
       if (isNew) {
         const created = await client.createAdminHubProduct(payload);
@@ -277,7 +279,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     if (m != null && String(m).trim() !== "") return [String(m)];
     return [];
   })();
-  const collectionIds = Array.isArray(meta.collection_ids) ? meta.collection_ids : (meta.collection_id != null ? [meta.collection_id] : []);
+  const collectionIds = Array.isArray(meta.collection_ids) ? meta.collection_ids : (meta.collection_id != null ? [meta.collection_id] : (product?.collection_id != null ? [product.collection_id] : []));
 
   // Variant groups: each group has a name (e.g. Color, Size) and options (value, sku, inventory). No auto-append.
   const variantGroups = (() => {
@@ -912,7 +914,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                                 color: "var(--p-color-text-subdued)",
                               }}
                             >
-                              {label}
+                              {label || "—"}
                               <button type="button" onClick={() => updateMeta("collection_ids", collectionIds.filter((x) => x !== id))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "inherit" }} aria-label="Remove">×</button>
                             </span>
                           );
