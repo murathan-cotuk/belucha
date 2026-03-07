@@ -1390,6 +1390,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       </Modal>
 
       <Modal
+        key={`item-modal-${editingItemId ?? "new"}`}
         open={itemModalOpen}
         onClose={() => !saving && (setItemModalOpen(false), setAddUnderParentId(null))}
         title={editingItemId ? "Edit menu item" : addUnderParentId ? "Add submenu item" : "Add menu item"}

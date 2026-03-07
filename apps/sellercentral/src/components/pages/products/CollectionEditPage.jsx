@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Page,
   Layout,
@@ -89,6 +90,7 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
     image_url: "",
     banner_image_url: "",
   });
+  const [collectionProducts, setCollectionProducts] = useState([]);
 
   useEffect(() => {
     if (initialCollection) {
@@ -153,6 +155,14 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
   useEffect(() => {
     client.getAdminHubCategories({ all: true }).then((r) => setCategories(r.categories || [])).catch(() => setCategories([]));
   }, []);
+
+  useEffect(() => {
+    if (!collection?.id) {
+      setCollectionProducts([]);
+      return;
+    }
+    client.getAdminHubProducts({ collection_id: collection.id }).then((r) => setCollectionProducts(r.products || [])).catch(() => setCollectionProducts([]));
+  }, [collection?.id, client]);
 
   const handleTitleChange = (value) => {
     setForm((prev) => ({
@@ -278,6 +288,60 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
             </BlockStack>
           </Card>
         </Layout.Section>
+        {!isNew && collection?.id && (
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingSm">Products in this collection</Text>
+                <p style={{ margin: 0, fontSize: 14, color: "var(--p-color-text-subdued)" }}>
+                  Products assigned to this collection (image, SKU, name, price, quantity).
+                </p>
+                {collectionProducts.length === 0 ? (
+                  <Text as="p" tone="subdued">No products in this collection. Assign products to this collection from the product edit page.</Text>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--p-color-border)", textAlign: "left" }}>
+                          <th style={{ padding: "8px 12px", fontWeight: 600 }}>Image</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600 }}>SKU</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600 }}>Name</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600 }}>Price</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600 }}>Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {collectionProducts.map((p) => {
+                          const media = (p.metadata && p.metadata.media) ? (Array.isArray(p.metadata.media) ? p.metadata.media[0] : p.metadata.media) : null;
+                          const imgUrl = typeof media === "string" ? media : (media && media.url) ? media.url : null;
+                          const price = p.price != null ? p.price : (p.price_cents != null ? p.price_cents / 100 : 0);
+                          const qty = p.inventory != null ? p.inventory : 0;
+                          return (
+                            <tr key={p.id} style={{ borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                              <td style={{ padding: "8px 12px", verticalAlign: "middle" }}>
+                                {imgUrl ? (
+                                  <img src={imgUrl.startsWith("http") || imgUrl.startsWith("data:") ? imgUrl : `${baseUrl}${imgUrl}`} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8 }} />
+                                ) : (
+                                  <div style={{ width: 48, height: 48, background: "var(--p-color-bg-fill-secondary)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--p-color-text-subdued)", fontSize: 12 }}>—</div>
+                                )}
+                              </td>
+                              <td style={{ padding: "8px 12px" }}>{p.sku || "—"}</td>
+                              <td style={{ padding: "8px 12px" }}>
+                                <Link href={`/products/${p.id}`} style={{ fontWeight: 500, color: "inherit" }}>{p.title || p.handle || p.id}</Link>
+                              </td>
+                              <td style={{ padding: "8px 12px" }}>{typeof price === "number" ? (price % 1 === 0 ? price : price.toFixed(2)) : price} €</td>
+                              <td style={{ padding: "8px 12px" }}>{qty}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        )}
         <Layout.Section>
           <Card>
             <BlockStack gap="400">

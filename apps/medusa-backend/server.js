@@ -1345,11 +1345,13 @@ async function start() {
         const offset = parseInt(query.offset, 10) || 0
         const sellerId = (query.seller_id || query.seller || '').trim()
         const status = (query.status || '').trim()
+        const collectionId = (query.collection_id || '').toString().trim()
         let sql = 'SELECT id, title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants, created_at, updated_at FROM admin_hub_products'
         const params = []
         const where = []
         if (sellerId) { where.push('seller_id = $' + (params.length + 1)); params.push(sellerId) }
         if (status) { where.push('status = $' + (params.length + 1)); params.push(status) }
+        if (collectionId) { where.push('collection_id = $' + (params.length + 1)); params.push(collectionId) }
         if (where.length) sql += ' WHERE ' + where.join(' AND ')
         sql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2)
         params.push(limit, offset)
