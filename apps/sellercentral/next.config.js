@@ -1,7 +1,7 @@
 const path = require('path');
 const createNextIntlPlugin = require("next-intl/plugin");
 
-const withNextIntl = createNextIntlPlugin(path.resolve(__dirname, "./src/i18n/request.js"));
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.js");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -22,7 +22,12 @@ const nextConfig = {
       },
     ],
   },
-  // Turbopack root configuration removed - Next.js 16 handles this automatically
+  // Explicitly set turbopack resolveAlias for next-intl (Next.js 16 default bundler)
+  turbopack: {
+    resolveAlias: {
+      'next-intl/config': './src/i18n/request.js',
+    },
+  },
 };
 
 module.exports = withNextIntl(nextConfig);
