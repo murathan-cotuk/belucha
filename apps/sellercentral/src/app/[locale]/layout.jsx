@@ -1,5 +1,5 @@
 import { NextIntlClientProvider } from "next-intl";
-import { getMessages, setRequestLocale } from "next-intl/server";
+import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import StyledComponentsRegistry from "../registry";
@@ -20,13 +20,9 @@ export default async function LocaleLayout({ children, params }) {
 
   let messages;
   try {
-    messages = await getMessages();
+    messages = (await import(`../../messages/${locale}.json`)).default;
   } catch {
-    try {
-      messages = (await import(`../../messages/${locale}.json`)).default;
-    } catch {
-      messages = (await import(`../../messages/${routing.defaultLocale}.json`)).default;
-    }
+    messages = (await import(`../../messages/${routing.defaultLocale}.json`)).default;
   }
   if (!messages || typeof messages !== "object") messages = {};
 

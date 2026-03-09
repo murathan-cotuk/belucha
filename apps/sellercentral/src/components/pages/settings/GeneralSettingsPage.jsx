@@ -42,6 +42,9 @@ export default function GeneralSettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 8000);
     const load = async () => {
       try {
         const data = await client.getSellerSettings();
@@ -61,11 +64,14 @@ export default function GeneralSettingsPage() {
           }));
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          clearTimeout(timeout);
+          setLoading(false);
+        }
       }
     };
     load();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(timeout); };
   }, []);
 
   const handleSubmit = async (e) => {

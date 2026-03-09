@@ -1,0 +1,3 @@
+category banner cok uzun duruyor biraz kisalt ve header a yapisik degil yapisik olsun. breadcrumbu sola alabilirsin arada kalmasin. banner altindaki h1 cok tek kalmis. o kadar gap olmasin altiyla ve üstüyle. yakin olsunlar birbirlerine. category sayfalarida solda filter bar falan göremiyorum. filtre bar olmasi gerekiyordu ekranin en solunda boylu boyunca. sayfa icerikleri onun saginda hizalanmaliydi. filtre bar sabit kalacak.
+
+09.03

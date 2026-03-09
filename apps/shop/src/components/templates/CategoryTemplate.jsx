@@ -45,9 +45,25 @@ const LongContent = styled.div`
   margin: 0 auto 48px;
   color: #4b5563;
   line-height: 1.6;
-  & p { margin-bottom: 1em; }
-  & h2, & h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
-  & ul, & ol { margin-left: 1.5em; }
+  font-size: 1rem;
+
+  & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
+  & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
+  & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: #1f2937; line-height: 1.35; }
+  & h4, & h5, & h6 { font-size: 1.125rem; font-weight: 600; margin: 0.85em 0 0.35em; color: #374151; line-height: 1.4; }
+  & h1:first-child, & h2:first-child, & h3:first-child { margin-top: 0; }
+  & p { margin: 0 0 1em; }
+  & p:last-child { margin-bottom: 0; }
+  & ul, & ol { margin: 0.5em 0 1em 1.5em; padding-left: 1.5em; }
+  & ul { list-style-type: disc; }
+  & ol { list-style-type: decimal; }
+  & li { margin-bottom: 0.35em; }
+  & strong { font-weight: 600; color: #374151; }
+  & em { font-style: italic; }
+  & a { color: #0ea5e9; text-decoration: underline; }
+  & a:hover { text-decoration: none; }
+  & blockquote { margin: 1em 0; padding-left: 1em; border-left: 4px solid #e5e7eb; color: #6b7280; }
+  & hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.25em 0; }
 `;
 
 function sanitizeHtml(html) {

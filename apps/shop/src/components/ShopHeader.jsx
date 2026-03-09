@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Navbar — Premium marketplace: sticky only on scroll UP.
- * Scroll down → header hides. Scroll up → header shows (compact 60px).
- * Backdrop blur, Framer Motion, hover underline, shadow when compact.
+ * Navbar — At top: full header. Scrolled down: header hides, minimal bar (logo + search + actions) visible.
+ * No scroll-direction logic to avoid trembling; position-only (atTop) with tween transition.
  */
 
 import React, { useState, useEffect } from "react";
@@ -20,7 +19,8 @@ import TopBar from "@/components/TopBar";
 import { tokens } from "@/design-system/tokens";
 import { routing } from "@/i18n/routing";
 
-const SCROLL_THRESHOLD = 80;
+const SCROLL_THRESHOLD = 60;
+const MINIMAL_BAR_HEIGHT = 56;
 
 function menuItemHref(item) {
   if (!item) return "#";
@@ -51,12 +51,59 @@ const HeaderWrap = styled(motion.header)`
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: ${tokens.navbar.borderBottom};
-  box-shadow: ${(p) => (p.$compact ? tokens.shadow.hover : "0 1px 0 " + tokens.border.light)};
-  transition: box-shadow ${tokens.transition.base};
+  box-shadow: 0 1px 0 ${tokens.border.light};
+  transition: transform 0.25s ease-out, box-shadow ${tokens.transition.base};
+`;
+
+const MinimalBarWrap = styled(motion.header)`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 199;
+  height: ${MINIMAL_BAR_HEIGHT}px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid ${tokens.border.light};
+  box-shadow: ${tokens.shadow.hover};
+  display: flex;
+  align-items: center;
+  padding: 0 ${tokens.containerPadding};
+  max-width: 1280px;
+  margin: 0 auto;
+  gap: ${tokens.spacing.md};
+`;
+
+const MinimalBarLogo = styled(Link)`
+  font-size: 16px;
+  font-weight: 700;
+  color: ${tokens.dark[900]};
+  font-family: ${tokens.fontFamily.sans};
+  text-decoration: none;
+  flex-shrink: 0;
+  &:hover {
+    color: ${tokens.primary.DEFAULT};
+    text-decoration: underline;
+  }
+`;
+
+const MinimalBarSearch = styled.div`
+  flex: 1;
+  min-width: 0;
+  max-width: 500px;
+  margin: 0 auto;
+`;
+
+const MinimalBarRight = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${tokens.spacing.sm};
+  flex-shrink: 0;
 `;
 
 const NavRow = styled.div`
-  height: ${(p) => (p.$compact ? tokens.navbar.heightCompact : tokens.navbar.height)};
+  height: ${tokens.navbar.height};
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 ${tokens.containerPadding};
@@ -64,16 +111,15 @@ const NavRow = styled.div`
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: ${tokens.spacing.lg};
-  transition: height ${tokens.transition.base};
 `;
 
 const Logo = styled(Link)`
-  font-size: ${(p) => (p.$compact ? "18px" : tokens.fontSize.h4)};
+  font-size: ${tokens.fontSize.h4};
   font-weight: 700;
   color: ${tokens.dark[900]};
   font-family: ${tokens.fontFamily.sans};
   text-decoration: none;
-  transition: color ${tokens.transition.base}, font-size ${tokens.transition.base};
+  transition: color ${tokens.transition.base};
 
   &:hover {
     color: ${tokens.primary.DEFAULT};
@@ -311,12 +357,8 @@ const SecondLink = styled(Link)`
 `;
 
 const HeaderSpacer = styled.div`
-  height: ${(p) => {
-    if (!p.$visible) return "0px";
-    if (p.$showFull) return "160px";
-    return p.$compact ? "60px" : "72px";
-  }};
-  transition: height 0.3s ease-out;
+  height: ${(p) => (p.$atTop ? "160px" : `${MINIMAL_BAR_HEIGHT}px`)};
+  transition: height 0.25s ease-out;
   flex-shrink: 0;
 `;
 
@@ -384,9 +426,6 @@ export default function ShopHeader() {
   const pathname = usePathname() || "/";
   const nextRouter = useNextRouter();
   const [scrollY, setScrollY] = useState(0);
-  const [lastScrollY, setLastScrollY] = useState(0);
-  const [visible, setVisible] = useState(true);
-  const [compact, setCompact] = useState(false);
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [localeDropdownOpen, setLocaleDropdownOpen] = useState(false);
@@ -435,20 +474,7 @@ export default function ShopHeader() {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        const y = window.scrollY ?? window.pageYOffset ?? 0;
-        setScrollY(y);
-        setLastScrollY((prev) => {
-          if (y <= SCROLL_THRESHOLD) {
-            setVisible(true);
-            setCompact(false);
-          } else if (y > prev) {
-            setVisible(false);
-          } else {
-            setVisible(true);
-            setCompact(true);
-          }
-          return y;
-        });
+        setScrollY(window.scrollY ?? window.pageYOffset ?? 0);
         ticking = false;
       });
     };
@@ -470,8 +496,7 @@ export default function ShopHeader() {
   }, []);
 
   const atTop = scrollY <= SCROLL_THRESHOLD;
-  const showFullHeader = visible && atTop;
-  const showSubNav = showFullHeader;
+  const showSubNav = atTop;
 
   const algoliaAttributes = {
     primaryText: "title",
@@ -484,15 +509,14 @@ export default function ShopHeader() {
   return (
     <>
       <HeaderWrap
-        $compact={compact && !showFullHeader}
         initial={false}
-        animate={{ y: visible ? 0 : "-100%" }}
-        transition={{ type: "spring", stiffness: 320, damping: 34 }}
+        animate={{ y: atTop ? 0 : "-100%" }}
+        transition={{ type: "tween", duration: 0.25, ease: "easeOut" }}
       >
-        {showFullHeader && <TopBar />}
+        {atTop && <TopBar />}
         <nav>
-          <NavRow $compact={compact}>
-            <Logo href="/" $compact={compact}>Belucha</Logo>
+          <NavRow>
+            <Logo href="/">Belucha</Logo>
             <Center>
               <CategoriesDropdown data-categories-dropdown>
                 <CategoriesButton type="button" onClick={() => setMainMenuOpen((v) => !v)}>
@@ -584,7 +608,81 @@ export default function ShopHeader() {
           </SecondMenuRowInner>
         </SubNavWrap>
       </HeaderWrap>
-      <HeaderSpacer $visible={visible} $showFull={showFullHeader} $compact={compact} />
+
+      <MinimalBarWrap
+        initial={false}
+        animate={{ y: atTop ? "-100%" : 0 }}
+        transition={{ type: "tween", duration: 0.25, ease: "easeOut" }}
+        style={{ pointerEvents: atTop ? "none" : "auto" }}
+      >
+        <MinimalBarLogo href="/">Belucha</MinimalBarLogo>
+        <MinimalBarSearch>
+          <DropdownSearch
+            placeholder="Produkte suchen..."
+            hitsPerPage={5}
+            attributes={algoliaAttributes}
+            maxHeight={tokens.search.dropdownMaxHeight}
+          />
+        </MinimalBarSearch>
+        <MinimalBarRight>
+          <LocaleCurrencyWrap data-locale-dropdown>
+            <LocaleCurrencyBtn type="button" onClick={() => setLocaleDropdownOpen((v) => !v)} title={tLocale("label")} aria-haspopup="listbox" aria-expanded={localeDropdownOpen}>
+              <span style={{ textTransform: "uppercase", fontWeight: 600 }}>{locale}</span>
+              <i className="fas fa-chevron-down" style={{ fontSize: 10 }} />
+            </LocaleCurrencyBtn>
+            <LocaleDropdown $open={localeDropdownOpen} initial={false}>
+              {routing.locales.map((loc) => (
+                <LocaleOption
+                  key={loc}
+                  type="button"
+                  onClick={() => {
+                    setLocaleDropdownOpen(false);
+                    const base = pathname === "/" ? "" : pathname;
+                    nextRouter.push(`/${loc}${base}`);
+                  }}
+                >
+                  {tLocale(loc)}
+                </LocaleOption>
+              ))}
+            </LocaleDropdown>
+          </LocaleCurrencyWrap>
+          <UserMenu data-user-menu>
+            <UserBtn type="button" onClick={() => setUserMenuOpen((v) => !v)} title="Konto">
+              <i className="fas fa-user" style={{ fontSize: 18 }} />
+            </UserBtn>
+            <UserDropdown $open={userMenuOpen}>
+              {isAuthenticated ? (
+                <>
+                  {user && (
+                    <div style={{ padding: `${tokens.spacing.sm} ${tokens.spacing.md}`, fontSize: tokens.fontSize.small, fontWeight: 600, color: tokens.dark[800] }}>
+                      {user.firstName} {user.lastName}
+                    </div>
+                  )}
+                  <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Hesap bilgilerim</UserDropdownItem>
+                  <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Siparişler</UserDropdownItem>
+                  <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Yorumlar</UserDropdownItem>
+                  <UserDropdownItem href="/invoices" onClick={() => setUserMenuOpen(false)}>Faturalar</UserDropdownItem>
+                  <UserDropdownItem href="/favorites" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
+                  <UserDropdownItem href="/addresses" onClick={() => setUserMenuOpen(false)}>Adressen</UserDropdownItem>
+                  <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Meine Bonuspunkte</UserDropdownItem>
+                  <UserDropdownBtn onClick={() => { logout(); setUserMenuOpen(false); }}>Abmelden</UserDropdownBtn>
+                </>
+              ) : (
+                <>
+                  <UserDropdownItem href="/login" onClick={() => setUserMenuOpen(false)}>Anmelden</UserDropdownItem>
+                  <UserDropdownItem href="/register" onClick={() => setUserMenuOpen(false)}>Registrieren</UserDropdownItem>
+                </>
+              )}
+            </UserDropdown>
+          </UserMenu>
+          <CartBtn as="button" type="button" onClick={openCartSidebar} title="Warenkorb">
+            <i className="fas fa-shopping-cart" style={{ fontSize: 18 }} />
+            <CartBadge>{itemCount > 0 ? itemCount : 0}</CartBadge>
+          </CartBtn>
+        </MinimalBarRight>
+      </MinimalBarWrap>
+
+      <HeaderSpacer $atTop={atTop} />
     </>
   );
 }
