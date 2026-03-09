@@ -94,6 +94,8 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
   const [collectionProducts, setCollectionProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [addingProductId, setAddingProductId] = useState(null);
+  const [removingProductId, setRemovingProductId] = useState(null);
+  const [addProductSelectValue, setAddProductSelectValue] = useState("");
 
   useEffect(() => {
     if (initialCollection) {
@@ -173,7 +175,7 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
   }, [collection?.id, client]);
 
   const addProductToCollection = async (productId) => {
-    if (!collection?.id) return;
+    if (!collection?.id || !productId) return;
     setAddingProductId(productId);
     try {
       await client.updateAdminHubProduct(productId, { collection_id: collection.id });
@@ -181,10 +183,27 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
       setCollectionProducts(r.products || []);
       const all = await client.getAdminHubProducts({ limit: 200 });
       setAllProducts(all.products || []);
+      setAddProductSelectValue("");
     } catch (e) {
       setError(e?.message || "Failed to add product to collection");
     } finally {
       setAddingProductId(null);
+    }
+  };
+
+  const removeProductFromCollection = async (productId) => {
+    if (!productId) return;
+    setRemovingProductId(productId);
+    try {
+      await client.updateAdminHubProduct(productId, { collection_id: null });
+      const r = await client.getAdminHubProducts({ collection_id: collection?.id });
+      setCollectionProducts(r.products || []);
+      const all = await client.getAdminHubProducts({ limit: 200 });
+      setAllProducts(all.products || []);
+    } catch (e) {
+      setError(e?.message || "Failed to remove product from collection");
+    } finally {
+      setRemovingProductId(null);
     }
   };
 
@@ -335,6 +354,7 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
                           <th style={{ padding: "8px 12px", fontWeight: 600 }}>Name</th>
                           <th style={{ padding: "8px 12px", fontWeight: 600 }}>Price</th>
                           <th style={{ padding: "8px 12px", fontWeight: 600 }}>Qty</th>
+                          <th style={{ padding: "8px 12px", fontWeight: 600, width: 100 }}></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -358,6 +378,9 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
                               </td>
                               <td style={{ padding: "8px 12px" }}>{typeof price === "number" ? (price % 1 === 0 ? price : price.toFixed(2)) : price} €</td>
                               <td style={{ padding: "8px 12px" }}>{qty}</td>
+                              <td style={{ padding: "8px 12px" }}>
+                                <Button size="slim" tone="critical" variant="plain" onClick={() => removeProductFromCollection(p.id)} loading={removingProductId === p.id}>Remove</Button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -365,23 +388,21 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
                     </table>
                   </div>
                 )}
-                <BlockStack gap="300">
-                  <Text as="h3" variant="headingSm">Add products to this collection</Text>
-                  <Text as="p" variant="bodySm" tone="subdued">Select a product below to add it to this collection. It will be removed from its current collection.</Text>
-                  {productsNotInCollection.length === 0 ? (
-                    <Text as="p" tone="subdued">All products are already in this collection or there are no other products.</Text>
-                  ) : (
-                    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                      {productsNotInCollection.slice(0, 50).map((p) => (
-                        <li key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
-                          <Link href={`/products/${p.id}`} style={{ flex: 1, fontWeight: 500, color: "inherit" }}>{p.title || p.handle || p.sku || p.id}</Link>
-                          <Button size="slim" onClick={() => addProductToCollection(p.id)} loading={addingProductId === p.id}>Add</Button>
-                        </li>
-                      ))}
-                      {productsNotInCollection.length > 50 && <Text as="p" tone="subdued">Showing first 50. Assign more from the product edit page.</Text>}
-                    </ul>
-                  )}
-                </BlockStack>
+                <div style={{ marginTop: 16 }}>
+                  <Select
+                    label="Add product"
+                    labelHidden
+                    options={[
+                      { label: "— Select product to add —", value: "" },
+                      ...productsNotInCollection.map((p) => ({ label: p.title || p.handle || p.sku || p.id, value: p.id })),
+                    ]}
+                    value={addProductSelectValue}
+                    onChange={(value) => {
+                      setAddProductSelectValue(value);
+                      if (value) addProductToCollection(value);
+                    }}
+                  />
+                </div>
               </BlockStack>
             </Card>
           </Layout.Section>

@@ -1,8 +1,15 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Belucha - Your Marketplace",
+  title: {
+    default: "Belucha - Your Marketplace",
+    template: "%s | Belucha",
+  },
   description: "Discover amazing products from independent sellers",
+  openGraph: {
+    title: "Belucha - Your Marketplace",
+    description: "Discover amazing products from independent sellers",
+  },
 };
 
 export const viewport = {

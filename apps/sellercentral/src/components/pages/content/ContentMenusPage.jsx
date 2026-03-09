@@ -658,6 +658,21 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
         { label: "Footer column 4", value: "footer4" },
       ];
 
+  const assignMenuToLocation = async (locationSlug, menuId) => {
+    const prev = menus.find((m) => (m.location || "").toLowerCase() === String(locationSlug).toLowerCase());
+    try {
+      setError(null);
+      if (prev && prev.id !== menuId) await client.updateMenu(prev.id, { name: prev.name, slug: prev.slug, location: "" });
+      if (menuId) {
+        const menu = menus.find((m) => m.id === menuId);
+        if (menu) await client.updateMenu(menuId, { name: menu.name, slug: menu.slug, location: locationSlug });
+      }
+      await fetchMenus();
+    } catch (err) {
+      setError(err?.message || "Failed to update assignment");
+    }
+  };
+
   const fetchMenus = async () => {
     try {
       setLoading(true);
@@ -1342,6 +1357,46 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
                   ))}
                 </div>
               )}
+            </BlockStack>
+          </Card>
+
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd" fontWeight="bold">Where menus appear</Text>
+              <Text as="p" tone="subdued">Assign a menu to each location. Changing here updates the menu’s location; changing a menu’s location in the editor is reflected here.</Text>
+              <div style={{ border: "1px solid var(--p-color-border-subdued)", borderRadius: "12px", overflow: "hidden", background: "var(--p-color-bg-surface)" }}>
+                {locationOptions.map((loc) => {
+                  const assignedMenuId = menus.find((m) => (m.location || "").toLowerCase() === String(loc.value).toLowerCase())?.id ?? "";
+                  return (
+                    <div
+                      key={loc.value}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "12px 20px",
+                        borderBottom: "1px solid var(--p-color-border-subdued)",
+                        gap: "16px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Text as="span" variant="bodyMd" fontWeight="medium">{loc.label}</Text>
+                      <div style={{ minWidth: 220 }}>
+                        <Select
+                          label=""
+                          labelHidden
+                          options={[
+                            { label: "— None —", value: "" },
+                            ...menus.map((m) => ({ label: m.name, value: m.id })),
+                          ]}
+                          value={assignedMenuId}
+                          onChange={(value) => assignMenuToLocation(loc.value, value || null)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </BlockStack>
           </Card>
         </Layout.Section>

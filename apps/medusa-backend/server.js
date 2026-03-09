@@ -2029,6 +2029,8 @@ async function start() {
             title: row.title,
             handle: row.handle,
             display_title: meta.display_title || row.title,
+            meta_title: meta.meta_title || null,
+            meta_description: meta.meta_description || null,
             banner: meta.banner_image_url || meta.image_url || null,
             description: meta.richtext || meta.description_html || null,
           }
