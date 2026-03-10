@@ -8,6 +8,7 @@ import { Button } from "@belucha/ui";
 import { getMedusaClient } from "@/lib/medusa-client";
 import { CartContext } from "@/context/CartContext";
 import { formatPriceCents, getLocalizedProduct } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image-url";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { StarRating } from "@/components/ProductCard";
 import { ProductCard } from "@/components/ProductCard";
@@ -88,7 +89,7 @@ const CenterCol = styled.div`
 const Title = styled.h1`
   font-size: clamp(1.25rem, 2.5vw, 1.75rem);
   font-weight: 700;
-  color: #1f2937;
+  color: #c2410c;
   line-height: 1.3;
 `;
 
@@ -221,20 +222,25 @@ const CarouselScroll = styled.div`
   & > * { flex-shrink: 0; scroll-snap-align: start; }
 `;
 
+const HEADING_ORANGE = "#c2410c";
+
 const DescriptionSection = styled.section`
   margin-bottom: 48px;
   color: #4b5563;
   line-height: 1.7;
   font-size: 1rem;
 
-  & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
-  & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
-  & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: #1f2937; line-height: 1.35; }
-  & h4, & h5, & h6 { font-size: 1.125rem; font-weight: 600; margin: 0.85em 0 0.35em; color: #374151; line-height: 1.4; }
+  & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
+  & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
+  & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: ${HEADING_ORANGE}; line-height: 1.35; }
+  & h4, & h5, & h6 { font-size: 1.125rem; font-weight: 600; margin: 0.85em 0 0.35em; color: ${HEADING_ORANGE}; line-height: 1.4; }
   & h1:first-child, & h2:first-child, & h3:first-child { margin-top: 0; }
   & p { margin: 0 0 1em; }
-  & p:last-child { margin-bottom: 0; }
   & ul, & ol { margin: 0.5em 0 1em 1.5em; padding-left: 1.5em; }
+  & strong { font-weight: 600; }
+  & a { color: #0ea5e9; text-decoration: underline; }
+  & blockquote { margin: 1em 0; padding-left: 1em; border-left: 4px solid #e5e7eb; color: #6b7280; }
+  & p:last-child { margin-bottom: 0; }
   & ul { list-style-type: disc; }
   & ol { list-style-type: decimal; }
   & li { margin-bottom: 0.35em; }
@@ -317,19 +323,27 @@ export default function ProductTemplate() {
 
   useEffect(() => {
     const fetchProduct = async () => {
+      if (!slug) return;
       try {
         setLoading(true);
-        const client = getMedusaClient();
-        const result = await client.getProduct(slug);
-        setProduct(result.product);
+        setError(null);
+        const res = await fetch(`/api/store-products/${encodeURIComponent(slug)}`);
+        const data = await res.json();
+        if (res.status === 404 || !data?.product) {
+          setProduct(null);
+          setError(res.status === 404 ? "Produkt nicht gefunden." : "Produkt konnte nicht geladen werden.");
+          return;
+        }
+        setProduct(data.product);
       } catch (err) {
         console.error("Failed to fetch product:", err);
-        setError(err.message);
+        setError(err?.message || "Fehler beim Laden");
+        setProduct(null);
       } finally {
         setLoading(false);
       }
     };
-    if (slug) fetchProduct();
+    fetchProduct();
   }, [slug]);
 
   useEffect(() => {
@@ -360,18 +374,19 @@ export default function ProductTemplate() {
   if (!product) return <Container>Produkt nicht gefunden.</Container>;
 
   const { title: displayTitle, description: displayDescription } = getLocalizedProduct(product, locale);
-  const images = product.images?.length
+  const rawImages = product.images?.length
     ? product.images
     : product.thumbnail
       ? [{ url: product.thumbnail, alt: product.title }]
       : Array.isArray(product.metadata?.media) && product.metadata.media.length
         ? product.metadata.media.map((url) => ({ url: typeof url === "string" ? url : url?.url, alt: product.title }))
         : [];
+  const images = rawImages.map((img) => ({ ...img, url: resolveImageUrl(img?.url || img) || img?.url || img }));
   const meta = product.metadata || {};
   const variants = product.variants || [];
   const variant = variants[selectedVariantIndex] || variants[0];
-  const variantImageUrl = variant?.image_url || null;
-  const mainImage = variantImageUrl || images[selectedImage]?.url || product.thumbnail || "https://via.placeholder.com/600";
+  const variantImageUrl = variant?.image_url ? resolveImageUrl(variant.image_url) : null;
+  const mainImage = variantImageUrl || images[selectedImage]?.url || (product.thumbnail ? resolveImageUrl(product.thumbnail) : null) || "https://via.placeholder.com/600";
   const priceCents =
     variant?.prices?.[0]?.amount != null
       ? Number(variant.prices[0].amount)

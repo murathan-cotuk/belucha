@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, usePathname } from "next/navigation";
 import { Box, Banner, SkeletonBodyText, SkeletonDisplayText, Card, BlockStack, Button } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -10,6 +10,7 @@ import CollectionEditPage from "@/components/pages/products/CollectionEditPage";
 export default function CollectionDetailRoute() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
   const id = params?.id;
   const [collection, setCollection] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,13 +25,17 @@ export default function CollectionDetailRoute() {
       const data = await client.getCollection(id);
       setCollection(data || null);
       if (!data) setError("Collection not found. It may be managed by a category.");
+      else if (data.id != null && String(data.id) !== String(id) && pathname) {
+        const newPath = pathname.replace(/[^/]+$/, String(data.id));
+        if (newPath !== pathname) router.replace(newPath);
+      }
     } catch (err) {
       setError(err?.message || "Failed to load collection");
       setCollection(null);
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, pathname, router]);
 
   useEffect(() => {
     fetchCollection();

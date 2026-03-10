@@ -19,6 +19,7 @@ import {
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import { titleToHandle } from "@/lib/slugify";
+import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -96,12 +97,13 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
   const [addingProductId, setAddingProductId] = useState(null);
   const [removingProductId, setRemovingProductId] = useState(null);
   const [addProductSelectValue, setAddProductSelectValue] = useState("");
+  const initialFormRef = useRef(null);
+  const unsaved = useUnsavedChanges();
 
   useEffect(() => {
     if (initialCollection) {
       setCollection(initialCollection);
-      setForm((prev) => ({
-        ...prev,
+      const nextForm = {
         title: initialCollection.title ?? "",
         handle: initialCollection.handle ?? "",
         category_id: "",
@@ -112,9 +114,28 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
         richtext: initialCollection.richtext ?? initialCollection.description_html ?? "",
         image_url: initialCollection.image_url ?? "",
         banner_image_url: initialCollection.banner_image_url ?? "",
-      }));
+      };
+      setForm((prev) => ({ ...prev, ...nextForm }));
+      initialFormRef.current = nextForm;
+    } else if (isNew) {
+      const empty = { title: "", handle: "", category_id: "", display_title: "", meta_title: "", meta_description: "", keywords: "", richtext: "", image_url: "", banner_image_url: "" };
+      initialFormRef.current = empty;
     }
-  }, [initialCollection]);
+  }, [initialCollection, isNew]);
+
+  const isDirty = initialFormRef.current != null && JSON.stringify(form) !== JSON.stringify(initialFormRef.current);
+
+  const handleDiscard = useCallback(() => {
+    if (initialFormRef.current) setForm({ ...initialFormRef.current });
+    setCollection(initialCollection ?? null);
+    setError(null);
+    unsaved?.setDirty(false);
+  }, [initialCollection, unsaved]);
+
+  useEffect(() => {
+    if (!unsaved) return;
+    unsaved.setDirty(isDirty);
+  }, [isDirty, unsaved]);
 
   useEffect(() => {
     if (richtextMode === "visual" && richtextEditorRef.current) richtextEditorRef.current.innerHTML = form.richtext || "";
@@ -255,18 +276,23 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
         const updated = await client.getCollection(collection.id);
         if (updated) {
           setCollection(updated);
-          setForm((prev) => ({
-            ...prev,
-            display_title: updated.display_title ?? prev.display_title,
-            meta_title: updated.meta_title ?? prev.meta_title,
-            meta_description: updated.meta_description ?? prev.meta_description,
-            keywords: updated.keywords ?? prev.keywords,
-            richtext: updated.richtext ?? updated.description_html ?? prev.richtext,
-            image_url: updated.image_url ?? prev.image_url,
-            banner_image_url: updated.banner_image_url ?? prev.banner_image_url,
-          }));
+          const nextForm = {
+            title: form.title,
+            handle: form.handle,
+            category_id: form.category_id,
+            display_title: updated.display_title ?? form.display_title,
+            meta_title: updated.meta_title ?? form.meta_title,
+            meta_description: updated.meta_description ?? form.meta_description,
+            keywords: updated.keywords ?? form.keywords,
+            richtext: updated.richtext ?? updated.description_html ?? form.richtext,
+            image_url: updated.image_url ?? form.image_url,
+            banner_image_url: updated.banner_image_url ?? form.banner_image_url,
+          };
+          setForm((prev) => ({ ...prev, ...nextForm }));
+          initialFormRef.current = nextForm;
         }
         onReload?.();
+        unsaved?.setDirty(false);
       }
     } catch (err) {
       setError(err?.message || (isNew ? "Failed to create collection" : "Failed to update collection"));
@@ -274,6 +300,22 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
       setSaving(false);
     }
   };
+
+  const saveRef = useRef(handleSave);
+  const discardRef = useRef(handleDiscard);
+  saveRef.current = handleSave;
+  discardRef.current = handleDiscard;
+  useEffect(() => {
+    if (!unsaved) return;
+    unsaved.setHandlers({
+      onSave: () => saveRef.current?.(),
+      onDiscard: () => discardRef.current?.(),
+    });
+    return () => {
+      unsaved.clearHandlers();
+      unsaved.setDirty(false);
+    };
+  }, [unsaved]);
 
   const categoryOptions = [
     { label: "— None —", value: "" },

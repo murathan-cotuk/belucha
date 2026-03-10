@@ -8,7 +8,11 @@ import {
   Frame,
   Navigation,
   TopBar,
+  Button,
+  Modal,
+  Text,
 } from "@shopify/polaris";
+import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 import {
   HomeIcon,
   ProductIcon,
@@ -24,6 +28,12 @@ import {
 import dynamic from "next/dynamic";
 import en from "@shopify/polaris/locales/en.json";
 import "@shopify/polaris/build/esm/styles.css";
+
+const discardBtnStyles = `
+  .belucha-discard-topbar-btn,
+  .belucha-discard-topbar-btn *,
+  .belucha-discard-topbar-btn span { color: #ffffff !important; }
+`;
 
 const GroupedDropdownSearch = dynamic(
   () => import("./GroupedDropdownSearch").then((m) => m.default),
@@ -105,10 +115,26 @@ const NextLink = forwardRef(function NextLink({ url, children, ...rest }, ref) {
   );
 });
 
+const UnsavedAwareLink = forwardRef(function UnsavedAwareLink({ url, children, ...rest }, ref) {
+  const ctx = useUnsavedChanges();
+  const handleClick = (e) => {
+    if (ctx?.isDirty && (url || "").trim() && !(url || "").startsWith("#")) {
+      e.preventDefault();
+      ctx.startNavigate(url || "/");
+    }
+  };
+  return (
+    <Link ref={ref} href={url || "#"} onClick={handleClick} {...rest}>
+      {children}
+    </Link>
+  );
+});
+
 export default function PolarisLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useTranslations("nav");
+  const unsaved = useUnsavedChanges();
   const [showMobileNav, setShowMobileNav] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -188,7 +214,44 @@ export default function PolarisLayout({ children }) {
         />
       }
       searchField={
-        <GroupedDropdownSearch placeholder="Search products, orders, customers..." />
+        <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", maxWidth: 520 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <GroupedDropdownSearch placeholder="Search products, orders, customers..." />
+          </div>
+          {unsaved?.isDirty && (
+            <>
+              <style>{discardBtnStyles}</style>
+              <div className="belucha-discard-topbar-btn">
+                <Button
+                  size="slim"
+                  variant="tertiary"
+                  onClick={() => unsaved.runDiscard()}
+                  style={{
+                    background: "#4d4d4d",
+                    color: "#ffffff",
+                    border: "1px solid #5c5c5c",
+                  }}
+                >
+                  Discard
+                </Button>
+              </div>
+              <Button
+                size="medium"
+                variant="secondary"
+                onClick={() => unsaved.runSave()}
+                style={{
+                  background: "#fff",
+                  color: "#202223",
+                  border: "2px solid #202223",
+                  fontWeight: 600,
+                  minWidth: 80,
+                }}
+              >
+                Save
+              </Button>
+            </>
+          )}
+        </div>
       }
     />
   );
@@ -219,15 +282,38 @@ export default function PolarisLayout({ children }) {
     </Navigation>
   );
 
-  // Logo devre dışı: Polaris Frame bazen img src="" ürettiği için boş src uyarısı alınıyordu
+  const linkComponent = unsaved ? UnsavedAwareLink : NextLink;
+
   return (
-    <AppProvider i18n={en} linkComponent={NextLink}>
+    <AppProvider i18n={en} linkComponent={linkComponent}>
       <Frame
         navigation={navMarkup}
         topBar={topBarMarkup}
         showMobileNavigation={showMobileNav}
         onNavigationDismiss={() => setShowMobileNav(false)}
       >
+        {unsaved?.showNavigateConfirm && (
+          <Modal
+            open={true}
+            onClose={() => unsaved.setShowNavigateConfirm(false)}
+            title="Unsaved changes"
+            primaryAction={{
+              content: "Save",
+              onAction: () => unsaved.runSave(),
+            }}
+            secondaryActions={[
+              {
+                content: "Discard",
+                destructive: true,
+                onAction: () => unsaved.runDiscard(),
+              },
+            ]}
+          >
+            <Modal.Section>
+              <Text as="p">You have unsaved changes. Save or discard before leaving.</Text>
+            </Modal.Section>
+          </Modal>
+        )}
         <div className="belucha-scroll-wrapper">
           <div className="belucha-page-content belucha-page-content-transition">
             {children}

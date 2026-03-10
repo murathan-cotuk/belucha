@@ -692,7 +692,11 @@ async function start() {
         return null
       }
     }
+    const isUuid = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || '').trim())
     const updateAdminHubCollectionDb = async (id, title, handle, metadata) => {
+      const idStr = (id != null && id !== '') ? String(id).trim() : null
+      if (!idStr) return null
+      if (!isUuid(idStr)) return null
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       if (!dbUrl || !dbUrl.startsWith('postgres')) return null
       try {
@@ -700,10 +704,17 @@ async function start() {
         const isRender = dbUrl.includes('render.com')
         const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const metaJson = metadata != null && typeof metadata === 'object' ? JSON.stringify(metadata) : null
+        const idParam = idStr.toLowerCase()
+        let metaJson = null
+        if (metadata != null && typeof metadata === 'object' && Object.keys(metadata).length > 0) {
+          const existing = await client.query('SELECT metadata FROM admin_hub_collections WHERE id = $1::uuid', [idParam])
+          const existingMeta = (existing.rows && existing.rows[0] && existing.rows[0].metadata) || {}
+          const merged = { ...(typeof existingMeta === 'object' ? existingMeta : {}), ...metadata }
+          metaJson = JSON.stringify(merged)
+        }
         const res = await client.query(
-          'UPDATE admin_hub_collections SET title = COALESCE(NULLIF($2, \'\'), title), handle = COALESCE(NULLIF($3, \'\'), handle), metadata = COALESCE($4, metadata), updated_at = now() WHERE id = $1 RETURNING id, title, handle, metadata',
-          [id, title || '', handle || '', metaJson]
+          'UPDATE admin_hub_collections SET title = COALESCE(NULLIF($2, \'\'), title), handle = COALESCE(NULLIF($3, \'\'), handle), metadata = COALESCE($4, metadata), updated_at = now() WHERE id = $1::uuid RETURNING id, title, handle, metadata',
+          [idParam, title || '', handle || '', metaJson]
         )
         await client.end()
         return res.rows && res.rows[0] ? res.rows[0] : null
@@ -729,6 +740,8 @@ async function start() {
       }
     }
     const getAdminHubCollectionByIdDb = async (id) => {
+      const idStr = (id != null && id !== '') ? String(id).trim() : null
+      if (!idStr) return null
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       if (!dbUrl || !dbUrl.startsWith('postgres')) return null
       try {
@@ -736,7 +749,12 @@ async function start() {
         const isRender = dbUrl.includes('render.com')
         const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const res = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = $1', [id])
+        const res = await client.query(
+          isUuid(idStr)
+            ? 'SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = $1::uuid'
+            : 'SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id::text = $1',
+          [isUuid(idStr) ? idStr.toLowerCase() : idStr]
+        )
         await client.end()
         const r = res.rows && res.rows[0]
         if (!r) return null
@@ -754,6 +772,20 @@ async function start() {
           image_url: meta.image_url,
           banner_image_url: meta.banner_image_url,
         }
+      } catch (_) { return null }
+    }
+    const getAdminHubCollectionByHandleDb = async (handle) => {
+      if (!handle || typeof handle !== 'string') return null
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      try {
+        const { Client } = require('pg')
+        const isRender = dbUrl.includes('render.com')
+        const client = new Client({ connectionString: dbUrl, ssl: isRender ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const res = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE LOWER(handle) = LOWER($1)', [handle.trim()])
+        await client.end()
+        return res.rows && res.rows[0] ? res.rows[0] : null
       } catch (_) { return null }
     }
 
@@ -781,12 +813,20 @@ async function start() {
             if (adminHub) {
               const categories = await adminHub.listCategories({})
               const withCollection = (categories || []).filter(c => c.has_collection === true)
-              withCollection.forEach(c => {
-                if (c && c.id && !existingIds.has(c.id)) {
+              for (const c of withCollection) {
+                if (!c || !c.id) continue
+                const linkedId = c.metadata && typeof c.metadata === 'object' ? c.metadata.collection_id : null
+                if (linkedId && !existingIds.has(linkedId)) {
+                  const coll = await getAdminHubCollectionByIdDb(linkedId)
+                  if (coll) {
+                    existingIds.add(coll.id)
+                    list.push({ id: coll.id, title: coll.title, handle: coll.handle })
+                  }
+                } else if (!linkedId && !existingIds.has(c.id)) {
                   existingIds.add(c.id)
                   list.push({ id: c.id, title: c.name, handle: c.slug, _fromCategory: true })
                 }
-              })
+              }
             }
           } catch (_) {}
         }
@@ -816,7 +856,8 @@ async function start() {
                 if (adminHub) await adminHub.updateCategory(categoryId, { has_collection: true, metadata: { collection_id: row.id } })
               } catch (_) {}
             }
-            return res.status(201).json({ collection: { id: row.id, title: row.title, handle: row.handle } })
+            const idForClient = row.id != null ? String(row.id).trim() : row.id
+            return res.status(201).json({ collection: { id: idForClient, title: row.title, handle: row.handle } })
           }
           return res.status(500).json({ message: 'Failed to create standalone collection' })
         }
@@ -836,12 +877,17 @@ async function start() {
         const adminHub = resolveAdminHub()
         if (!adminHub) {
           const row = await createAdminHubCollectionDb(title, handle)
-          if (row) return res.status(201).json({ collection: { id: row.id, title: row.title, handle: row.handle } })
+          if (row) {
+            const idForClient = row.id != null ? String(row.id).trim() : row.id
+            return res.status(201).json({ collection: { id: idForClient, title: row.title, handle: row.handle } })
+          }
           return res.status(503).json({
             message: 'Collection service not available. Run: node apps/medusa-backend/scripts/run-admin-hub-sql.js',
             code: 'COLLECTION_SERVICE_UNAVAILABLE'
           })
         }
+        const row = await createAdminHubCollectionDb(title, handle)
+        if (!row) return res.status(500).json({ message: 'Failed to create collection' })
         const category = await adminHub.createCategory({
           name: title,
           slug: handle,
@@ -849,8 +895,12 @@ async function start() {
           active: true,
           is_visible: true
         })
+        try {
+          await adminHub.updateCategory(category.id, { has_collection: true, metadata: { collection_id: row.id } })
+        } catch (_) {}
+        const idForClient = row.id != null ? String(row.id).trim() : row.id
         res.status(201).json({
-          collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true }
+          collection: { id: idForClient, title: row.title, handle: row.handle }
         })
       } catch (err) {
         console.error('Admin collections POST error:', err)
@@ -860,8 +910,9 @@ async function start() {
     httpApp.post('/admin/collections', (req, res) => adminCollectionsPOST(req, res))
     const adminCollectionByIdPATCH = async (req, res) => {
       try {
-        const id = req.params.id
+        let id = (req.params.id || '').toString().trim().replace(/^\{|\}$/g, '')
         if (!id) return res.status(400).json({ message: 'id is required' })
+        const uuidLower = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id.toLowerCase() : id
         const b = req.body || {}
         const title = (b.title || '').trim()
         const handle = (b.handle || '').trim()
@@ -874,19 +925,86 @@ async function start() {
         if (b.richtext !== undefined) metadata.richtext = b.richtext
         if (b.image_url !== undefined) metadata.image_url = b.image_url
         if (b.banner_image_url !== undefined) metadata.banner_image_url = b.banner_image_url
+        const metaObj = Object.keys(metadata).length ? metadata : undefined
         let collectionId = id
-        let updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
+        let updated = isUuid(id) ? await updateAdminHubCollectionDb(uuidLower, title || undefined, handle || undefined, metaObj) : null
+        if (!updated && isUuid(id) && uuidLower !== id) updated = await updateAdminHubCollectionDb(id, title || undefined, handle || undefined, metaObj)
+        if (!updated && !isUuid(id)) {
+          const adminHub = resolveAdminHub()
+          if (adminHub) {
+            try {
+              const category = await adminHub.getCategoryById(id)
+              if (category && category.has_collection) {
+                let linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+                if (linkedId) {
+                  updated = await updateAdminHubCollectionDb(linkedId, title || undefined, handle || undefined, metaObj)
+                  if (updated) collectionId = linkedId != null ? String(linkedId) : collectionId
+                } else {
+                  const collTitle = title || category.name || ''
+                  const collHandle = handle || (category.slug || slugifyTitle(collTitle))
+                  const newRow = await createAdminHubCollectionDb(collTitle, collHandle)
+                  if (newRow) {
+                    try { await adminHub.updateCategory(category.id, { has_collection: true, metadata: { ...(category.metadata || {}), collection_id: newRow.id } }) } catch (_) {}
+                    updated = await updateAdminHubCollectionDb(newRow.id, collTitle || undefined, collHandle || undefined, metaObj)
+                    if (updated) collectionId = newRow.id != null ? String(newRow.id) : collectionId
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+          if (!updated && handle) {
+            const byHandle = await getAdminHubCollectionByHandleDb(handle)
+            if (byHandle) {
+              updated = await updateAdminHubCollectionDb(byHandle.id, title || undefined, handle || undefined, metaObj)
+              if (updated) collectionId = byHandle.id != null ? String(byHandle.id) : collectionId
+            }
+          }
+        }
+        if (!updated && isUuid(id)) {
+          const existingById = await getAdminHubCollectionByIdDb(uuidLower)
+          const existing = existingById || (id !== uuidLower ? await getAdminHubCollectionByIdDb(id) : null)
+          if (existing && existing.id != null) {
+            const dbId = String(existing.id).trim()
+            updated = await updateAdminHubCollectionDb(dbId, title || undefined, handle || undefined, metaObj)
+            if (updated) collectionId = dbId
+          }
+        }
+        if (!updated && handle) {
+          const byHandle = await getAdminHubCollectionByHandleDb(handle)
+          if (byHandle) {
+            updated = await updateAdminHubCollectionDb(byHandle.id, title || undefined, handle || undefined, metaObj)
+            if (updated) collectionId = byHandle.id != null ? String(byHandle.id) : collectionId
+          }
+        }
         if (!updated) {
           const adminHub = resolveAdminHub()
           if (adminHub) {
             try {
               const category = await adminHub.getCategoryById(id)
-              const linkedId = category?.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
-              if (linkedId) {
-                updated = await updateAdminHubCollectionDb(linkedId, title || undefined, handle || undefined, Object.keys(metadata).length ? metadata : undefined)
-                if (updated) collectionId = linkedId
+              if (category && category.has_collection) {
+                let linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+                if (linkedId) {
+                  updated = await updateAdminHubCollectionDb(linkedId, title || undefined, handle || undefined, metaObj)
+                  if (updated) collectionId = linkedId != null ? String(linkedId) : collectionId
+                } else {
+                  const collTitle = title || category.name || ''
+                  const collHandle = handle || (category.slug || slugifyTitle(collTitle))
+                  const newRow = await createAdminHubCollectionDb(collTitle, collHandle)
+                  if (newRow) {
+                    try { await adminHub.updateCategory(category.id, { has_collection: true, metadata: { ...(category.metadata || {}), collection_id: newRow.id } }) } catch (_) {}
+                    updated = await updateAdminHubCollectionDb(newRow.id, collTitle || undefined, collHandle || undefined, metaObj)
+                    if (updated) collectionId = newRow.id != null ? String(newRow.id) : collectionId
+                  }
+                }
               }
             } catch (_) {}
+          }
+        }
+        if (!updated && title && handle) {
+          const upserted = await createAdminHubCollectionDb(title, handle)
+          if (upserted) {
+            updated = await updateAdminHubCollectionDb(upserted.id, title, handle, metaObj) || upserted
+            if (updated && updated.id) collectionId = String(updated.id)
           }
         }
         if (!updated) return res.status(404).json({ message: 'Collection not found (only standalone collections can be updated here)' })
@@ -899,7 +1017,7 @@ async function start() {
         const meta = (updated.metadata && typeof updated.metadata === 'object') ? updated.metadata : {}
         res.json({
           collection: {
-            id: id,
+            id: collectionId,
             title: updated.title,
             handle: updated.handle,
             display_title: meta.display_title,
@@ -918,15 +1036,20 @@ async function start() {
     }
     const adminCollectionByIdDELETE = async (req, res) => {
       try {
-        const id = req.params.id
+        const id = (req.params.id || '').toString().trim()
         if (!id) return res.status(400).json({ message: 'id is required' })
         const deleted = await deleteAdminHubCollectionDb(id)
         if (deleted) return res.status(200).json({ deleted: true })
         try {
           const adminHub = resolveAdminHub()
           if (adminHub) {
-            await adminHub.updateCategory(id, { has_collection: false, metadata: {} })
-            return res.status(200).json({ deleted: true, unlinked: true })
+            const category = await adminHub.getCategoryById(id)
+            if (category && category.has_collection) {
+              const linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+              if (linkedId) await deleteAdminHubCollectionDb(linkedId)
+              await adminHub.updateCategory(id, { has_collection: false, metadata: {} })
+              return res.status(200).json({ deleted: true })
+            }
           }
         } catch (_) {}
         return res.status(404).json({ message: 'Collection not found' })
@@ -937,21 +1060,31 @@ async function start() {
     }
     const adminCollectionByIdGET = async (req, res) => {
       try {
-        const id = req.params.id
+        const id = (req.params.id || '').toString().trim().replace(/^\{|\}$/g, '')
         if (!id) return res.status(400).json({ message: 'id is required' })
         let row = await getAdminHubCollectionByIdDb(id)
-        if (row) return res.json({ collection: { ...row, _standalone: true } })
+        if (row) return res.json({ collection: { ...row } })
         const adminHub = resolveAdminHub()
         if (adminHub) {
           try {
             const category = await adminHub.getCategoryById(id)
             if (category && category.has_collection) {
-              const linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
+              let linkedId = category.metadata && typeof category.metadata === 'object' ? category.metadata.collection_id : null
               if (linkedId) {
                 row = await getAdminHubCollectionByIdDb(linkedId)
-                if (row) return res.json({ collection: { ...row, id, title: row.title || category.name, handle: row.handle || category.slug, _fromCategory: true } })
+                if (row) return res.json({ collection: { ...row } })
               }
-              return res.json({ collection: { id: category.id, title: category.name, handle: category.slug, _fromCategory: true } })
+              const handle = (category.slug || category.name || '').trim() || slugifyTitle(category.name || '')
+              const title = (category.name || '').trim() || handle
+              const newRow = await createAdminHubCollectionDb(title, handle)
+              if (newRow) {
+                try {
+                  await adminHub.updateCategory(category.id, { has_collection: true, metadata: { ...(category.metadata || {}), collection_id: newRow.id } })
+                } catch (_) {}
+                row = await getAdminHubCollectionByIdDb(newRow.id)
+                if (row) return res.json({ collection: { ...row } })
+              }
+              return res.json({ collection: { id: category.id, title: category.name, handle: category.slug, display_title: category.name, _fromCategory: true } })
             }
           } catch (_) {}
         }
@@ -1384,7 +1517,7 @@ async function start() {
         const where = []
         if (sellerId) { where.push('seller_id = $' + (params.length + 1)); params.push(sellerId) }
         if (status) { where.push('status = $' + (params.length + 1)); params.push(status) }
-        if (collectionId) { where.push('collection_id = $' + (params.length + 1)); params.push(collectionId) }
+        if (collectionId) { where.push('LOWER(COALESCE(collection_id::text, \'\')) = LOWER($' + (params.length + 1) + ')'); params.push(collectionId) }
         if (where.length) sql += ' WHERE ' + where.join(' AND ')
         sql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2)
         params.push(limit, offset)
@@ -1709,8 +1842,10 @@ async function start() {
     const mapAdminHubToStoreProduct = (p) => {
       const meta = p.metadata && typeof p.metadata === 'object' ? p.metadata : {}
       const media = meta.media
-      const rawThumb = Array.isArray(media) && media[0] ? media[0] : (typeof media === 'string' && media ? media : null)
-      const thumb = resolveUploadUrl(rawThumb)
+      let rawMediaList = Array.isArray(media) ? media : (typeof media === 'string' && media ? [media] : [])
+      if (rawMediaList.length === 0 && (meta.image_url || meta.image)) rawMediaList = [meta.image_url || meta.image]
+      const thumb = resolveUploadUrl(rawMediaList[0] || null)
+      const imagesResolved = rawMediaList.map((m) => resolveUploadUrl(typeof m === 'string' ? m : (m && m.url) || null)).filter(Boolean)
       const priceCents = p.price != null ? Math.round(Number(p.price) * 100) : 0
       const rawVariants = Array.isArray(p.variants) && p.variants.length > 0 ? p.variants : []
       const variants = rawVariants.length > 0
@@ -1727,7 +1862,7 @@ async function start() {
               prices: [{ amount: vPriceCents, currency_code: 'eur' }],
               compare_at_price_cents: vCompareCents,
               inventory_quantity: v.inventory != null ? v.inventory : 0,
-              image_url: v.image_url || v.image || null,
+              image_url: resolveUploadUrl(v.image_url || v.image || null) || null,
             }
           })
         : [{
@@ -1746,7 +1881,7 @@ async function start() {
         description: p.description,
         status: p.status,
         thumbnail: thumb || null,
-        images: thumb ? [{ url: thumb, alt: p.title || '' }] : [],
+        images: imagesResolved.length > 0 ? imagesResolved.map((url) => ({ url, alt: p.title || '' })) : (thumb ? [{ url: thumb, alt: p.title || '' }] : []),
         metadata: meta,
         variants,
       }
@@ -1755,15 +1890,46 @@ async function start() {
       }
       return out
     }
+    const getAdminHubCollectionIdByHandle = async (handle) => {
+      if (!handle || typeof handle !== 'string') return null
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return null
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('SELECT id FROM admin_hub_collections WHERE LOWER(handle) = LOWER($1)', [handle.trim()])
+        const id = r.rows && r.rows[0] ? r.rows[0].id : null
+        await client.end()
+        return id ? String(id) : null
+      } catch (e) {
+        try { if (client) await client.end() } catch (_) {}
+        return null
+      }
+    }
+    const isUuidLike = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim())
     const storeProductsFromAdminHubGET = async (req, res) => {
       try {
         const query = req.query || {}
         const searchQ = (query.q || '').toString().trim().toLowerCase()
         const limitForSearch = searchQ ? 8 : (parseInt(query.limit, 10) || 100)
-        let list = await listAdminHubProductsDb({ ...query, limit: searchQ ? 200 : (query.limit || 100) })
-        const collectionId = (query.collection_id || '').toString().trim()
+        let collectionId = (query.collection_id || '').toString().trim()
+        const collectionHandle = (query.collection_handle || query.collection || '').toString().trim()
+        if (collectionId && !isUuidLike(collectionId)) {
+          const resolvedId = await getAdminHubCollectionIdByHandle(collectionId)
+          if (resolvedId) collectionId = resolvedId
+        }
+        if (!collectionId && collectionHandle) {
+          const resolvedId = await getAdminHubCollectionIdByHandle(collectionHandle)
+          if (resolvedId) collectionId = resolvedId
+        }
+        const queryWithId = collectionId ? { ...query, collection_id: collectionId } : query
+        let list = await listAdminHubProductsDb({ ...queryWithId, limit: searchQ ? 200 : (query.limit || 100) })
         if (collectionId) {
-          list = list.filter((p) => (p.collection_id || '') === collectionId || (p.handle || '') === collectionId)
+          const norm = (s) => (s || '').toString().trim().toLowerCase()
+          const cidNorm = norm(collectionId)
+          list = list.filter((p) => norm(p.collection_id) === cidNorm)
         }
         if (searchQ) {
           list = list.filter((p) => {
@@ -2044,7 +2210,11 @@ async function start() {
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         if (handleQuery) {
-          const r = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE LOWER(handle) = LOWER($1)', [handleQuery])
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(handleQuery.trim())
+          let r = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE LOWER(handle) = LOWER($1)', [handleQuery])
+          if ((!r.rows || !r.rows[0]) && isUuid) {
+            r = await client.query('SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = $1::uuid', [handleQuery.trim().toLowerCase()])
+          }
           const row = r.rows && r.rows[0]
           if (!row) {
             try { await client.end() } catch (_) {}
@@ -2096,7 +2266,18 @@ async function start() {
         if (slug) {
           const category = await adminHubService.getCategoryBySlug(slug)
           if (!category) return res.status(404).json({ message: 'Category not found' })
-          const cat = { id: category.id, name: category.name, slug: category.slug, title: category.name, handle: category.slug }
+          const meta = category.metadata && typeof category.metadata === 'object' ? category.metadata : {}
+          const cat = {
+            id: category.id,
+            name: category.name,
+            slug: category.slug,
+            title: category.name,
+            handle: category.slug,
+            description: category.description || null,
+            long_content: category.long_content || null,
+            banner_image_url: resolveUploadUrl(category.banner_image_url || meta.banner_image_url || null) || null,
+            has_collection: category.has_collection,
+          }
           return res.json({ category: cat, categories: [cat], count: 1 })
         }
         const tree = await adminHubService.getCategoryTree({ is_visible: true })
@@ -2126,12 +2307,31 @@ async function start() {
           location: String(r.location || 'main').trim().toLowerCase() || 'main',
         }))
         const menusWithItems = []
+        const collectionKeys = new Set() // handle or id from link_value
+        const collectionIds = new Set()
         for (const menu of menus) {
           const itemsRes = await client.query(
             'SELECT id, menu_id, label, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE menu_id = $1 ORDER BY sort_order ASC, label ASC',
             [menu.id]
           )
-          const items = (itemsRes.rows || []).map((r) => ({
+          const rows = itemsRes.rows || []
+          for (const r of rows) {
+            const lt = (r.link_type || 'url').toLowerCase()
+            if (lt === 'collection' && r.link_value) {
+              let h = (r.link_value || '').toString().trim()
+              let parsedId = null
+              if (h.startsWith('{')) {
+                try {
+                  const p = JSON.parse(h)
+                  h = p.handle || p.slug || p.id || h
+                  if (p.id) parsedId = String(p.id).trim()
+                } catch (_) {}
+              }
+              if (h) collectionKeys.add(h)
+              if (parsedId) collectionIds.add(parsedId)
+            }
+          }
+          const items = rows.map((r) => ({
             id: r.id,
             menu_id: r.menu_id,
             label: r.label,
@@ -2140,7 +2340,60 @@ async function start() {
             parent_id: r.parent_id,
             sort_order: r.sort_order != null ? r.sort_order : 0,
           }))
-          menusWithItems.push({ ...menu, items })
+          menusWithItems.push({ ...menu, items, _rows: rows })
+        }
+        const handleToBanner = {}
+        const idToCollection = {}
+        const handlesList = Array.from(collectionKeys).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(k))
+        const idsList = Array.from(collectionIds)
+        if (handlesList.length > 0) {
+          const collRes = await client.query(
+            'SELECT id, title, handle, metadata FROM admin_hub_collections WHERE LOWER(handle) = ANY($1)',
+            [handlesList.map((h) => h.toLowerCase())]
+          )
+          for (const row of collRes.rows || []) {
+            const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+            const url = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
+            if (url) handleToBanner[(row.handle || '').toLowerCase()] = url
+            idToCollection[String(row.id)] = { id: row.id, title: row.title, handle: row.handle }
+          }
+        }
+        if (idsList.length > 0) {
+          const byIdRes = await client.query(
+            'SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = ANY($1)',
+            [idsList]
+          )
+          for (const row of byIdRes.rows || []) {
+            const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+            const url = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
+            if (url) handleToBanner[(row.handle || '').toLowerCase()] = url
+            idToCollection[String(row.id)] = { id: row.id, title: row.title, handle: row.handle }
+          }
+        }
+        for (const m of menusWithItems) {
+          const rows = m._rows || []
+          delete m._rows
+          m.items = m.items.map((it, idx) => {
+            const r = rows[idx]
+            if (!r) return it
+            const lt = (r.link_type || 'url').toLowerCase()
+            if (lt !== 'collection' || !r.link_value) return it
+            let h = (r.link_value || '').toString().trim()
+            let parsed = null
+            if (h.startsWith('{')) {
+              try {
+                parsed = JSON.parse(h)
+                h = parsed.handle || parsed.slug || parsed.id || h
+              } catch (_) {}
+            }
+            const resolved = (parsed && parsed.id && idToCollection[String(parsed.id)]) ? idToCollection[String(parsed.id)] : null
+            const resolvedHandle = resolved ? resolved.handle : (h && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(h) ? h : null)
+            const banner_url = resolvedHandle ? (handleToBanner[resolvedHandle.toLowerCase()] || null) : null
+            const linkValueForShop = resolvedHandle
+              ? JSON.stringify({ id: resolved?.id || parsed?.id, title: resolved?.title || parsed?.title, handle: resolvedHandle })
+              : it.link_value
+            return { ...it, ...(linkValueForShop !== it.link_value ? { link_value: linkValueForShop } : {}), ...(banner_url ? { banner_url } : {}) }
+          })
         }
         await client.end()
         return menusWithItems

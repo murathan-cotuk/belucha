@@ -27,6 +27,7 @@ import {
 import { ProductIcon, SearchIcon, MenuHorizontalIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import { titleToHandle } from "@/lib/slugify";
+import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -171,12 +172,31 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     };
   }
   const isDirty = product && initialSnapshotRef.current != null && JSON.stringify(normalizeForCompare(product)) !== initialSnapshotRef.current;
+  const unsaved = useUnsavedChanges();
 
-  const handleDiscard = () => {
+  const handleDiscard = useCallback(() => {
     setProduct(initialProduct ?? (isNew ? getEmptyProduct() : null));
     if (initialProduct) initialSnapshotRef.current = JSON.stringify(normalizeForCompare(initialProduct));
     else if (isNew) initialSnapshotRef.current = JSON.stringify(normalizeForCompare(getEmptyProduct()));
-  };
+    unsaved?.setDirty(false);
+  }, [initialProduct, isNew, unsaved]);
+
+  useEffect(() => {
+    if (!unsaved) return;
+    unsaved.setDirty(isDirty);
+  }, [isDirty, unsaved]);
+
+  useEffect(() => {
+    if (!unsaved) return;
+    unsaved.setHandlers({
+      onSave: () => saveRef.current?.(),
+      onDiscard: () => discardRef.current?.(),
+    });
+    return () => {
+      unsaved.clearHandlers();
+      unsaved.setDirty(false);
+    };
+  }, [unsaved]);
 
   const meta = product?.metadata && typeof product.metadata === "object" ? product.metadata : {};
   const uvp = meta.uvp_cents != null ? Number(meta.uvp_cents) / 100 : null;
@@ -244,6 +264,11 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       setSaving(false);
     }
   };
+
+  const saveRef = useRef(save);
+  const discardRef = useRef(handleDiscard);
+  saveRef.current = save;
+  discardRef.current = handleDiscard;
 
   const duplicateProduct = async () => {
     if (!product) return;

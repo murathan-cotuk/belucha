@@ -5,6 +5,7 @@ import { Link } from "@/i18n/navigation";
 import { useLocale } from "next-intl";
 import { CartContext } from "@/context/CartContext";
 import { formatPriceCents, htmlToText, getLocalizedProduct } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image-url";
 
 export function StarRating({ average = 0, count = 0 }) {
   const full = Math.floor(average);
@@ -89,7 +90,7 @@ export function ProductCard({ product, compact = false }) {
         <div className="aspect-square bg-background-soft flex items-center justify-center min-w-0 overflow-hidden">
           {image ? (
             <img
-              src={image}
+              src={image || ""}
               alt={product.title}
               className="w-full h-full object-cover"
             />

@@ -18,6 +18,7 @@ import DropdownSearch from "@/components/DropdownSearch";
 import TopBar from "@/components/TopBar";
 import { tokens } from "@/design-system/tokens";
 import { routing } from "@/i18n/routing";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const SCROLL_THRESHOLD = 60;
 const MINIMAL_BAR_HEIGHT = 56;
@@ -198,6 +199,22 @@ const CategoryItem = styled(Link)`
     background: ${tokens.background.soft};
     color: ${tokens.primary.DEFAULT};
     text-decoration: underline;
+  }
+`;
+
+const CategoryItemBanner = styled.div`
+  width: 100%;
+  height: 56px;
+  margin: -${tokens.spacing.sm} -${tokens.spacing.md} ${tokens.spacing.xs} -${tokens.spacing.md};
+  padding: 0;
+  overflow: hidden;
+  border-radius: ${tokens.radius.card} ${tokens.radius.card} 0 0;
+  background: ${tokens.background.soft};
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 `;
 
@@ -528,6 +545,11 @@ export default function ShopHeader() {
                   )}
                   {mainMenuItems.map((item) => (
                     <CategoryItem key={item.id} href={menuItemHref(item)} onClick={() => setMainMenuOpen(false)}>
+                      {item.banner_url && (
+                        <CategoryItemBanner>
+                          <img src={resolveImageUrl(item.banner_url)} alt="" />
+                        </CategoryItemBanner>
+                      )}
                       {item.label}
                     </CategoryItem>
                   ))}

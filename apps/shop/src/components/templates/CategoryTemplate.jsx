@@ -7,6 +7,7 @@ import { getMedusaClient } from "@/lib/medusa-client";
 import { ProductGrid } from "@/components/ProductGrid";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { Link } from "@/i18n/navigation";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const BannerWrapper = styled.div`
   width: 100%;
@@ -26,20 +27,28 @@ const BannerImage = styled.img`
 const ContentRow = styled.div`
   display: flex;
   width: 100%;
-  max-width: 1440px;
-  margin: 0 auto;
+  margin: 0;
 `;
 
 const FilterSidebar = styled.aside`
   width: 260px;
   flex-shrink: 0;
-  position: sticky;
-  top: 88px;
-  align-self: flex-start;
+  position: fixed;
+  left: 0;
+  top: 72px;
+  bottom: 0;
   padding: 24px 20px 48px 24px;
   border-right: 1px solid #e5e7eb;
   background: #fafafa;
-  min-height: calc(100vh - 72px);
+  overflow-y: auto;
+  z-index: 10;
+`;
+
+const ContentColumn = styled.div`
+  flex: 1;
+  min-width: 0;
+  padding: 20px 24px 48px 32px;
+  margin-left: 260px;
 `;
 
 const FilterTitle = styled.div`
@@ -82,6 +91,7 @@ const ContentColumn = styled.div`
   flex: 1;
   min-width: 0;
   padding: 20px 24px 48px 32px;
+  margin-left: 260px;
 `;
 
 const BreadcrumbWrap = styled.div`
@@ -95,11 +105,13 @@ const CategoryHeader = styled.div`
   margin-top: 0;
 `;
 
+const HEADING_ORANGE = "#c2410c";
+
 const CategoryTitle = styled.h1`
   font-size: 32px;
   font-weight: 700;
   margin: 0 0 8px 0;
-  color: #1f2937;
+  color: ${HEADING_ORANGE};
 `;
 
 const CategoryDescription = styled.p`
@@ -115,11 +127,14 @@ const LongContent = styled.div`
   color: #4b5563;
   line-height: 1.6;
   font-size: 1rem;
+  border: 1px solid #000;
+  border-radius: 8px;
+  padding: 24px;
 
-  & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
-  & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: #1f2937; line-height: 1.3; }
-  & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: #1f2937; line-height: 1.35; }
-  & h4, & h5, & h6 { font-size: 1.125rem; font-weight: 600; margin: 0.85em 0 0.35em; color: #374151; line-height: 1.4; }
+  & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
+  & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
+  & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: ${HEADING_ORANGE}; line-height: 1.35; }
+  & h4, & h5, & h6 { font-size: 1.125rem; font-weight: 600; margin: 0.85em 0 0.35em; color: ${HEADING_ORANGE}; line-height: 1.4; }
   & h1:first-child, & h2:first-child, & h3:first-child { margin-top: 0; }
   & p { margin: 0 0 1em; }
   & p:last-child { margin-bottom: 0; }
@@ -215,7 +230,7 @@ export default function CategoryTemplate() {
     <>
       {category?.banner_image_url && (
         <BannerWrapper>
-          <BannerImage src={category.banner_image_url} alt={title} />
+          <BannerImage src={resolveImageUrl(category.banner_image_url)} alt={title} />
         </BannerWrapper>
       )}
       <ContentRow>

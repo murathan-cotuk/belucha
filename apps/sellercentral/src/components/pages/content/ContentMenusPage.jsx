@@ -26,6 +26,7 @@ const CheckIcon = () => (
 );
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import { titleToHandle } from "@/lib/slugify";
+import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 
 const LINK_TYPES = [
   { label: "Collection", value: "collection" },
@@ -184,6 +185,7 @@ function MenuEditorPanel(props) {
     onOpenImportCsv,
     onMenuSaved,
     locationOptions = [],
+    onDirtyChange,
   } = props;
   const tree = buildMenuTree(items);
   const openInlineAdd = (parentId) => {
@@ -216,6 +218,15 @@ function MenuEditorPanel(props) {
       setMenuSlugManuallyEdited(false);
     }
   }, [panelMenu, isNew, menuForm.name, menuForm.slug, menuForm.location]);
+
+  useEffect(() => {
+    if (typeof onDirtyChange !== "function") return;
+    if (menuFormDirty) {
+      onDirtyChange(true, { save: handleSaveMenuFromPanel, discard: handleDiscardMenuForm });
+    } else {
+      onDirtyChange(false);
+    }
+  }, [menuFormDirty, onDirtyChange]);
 
   const handleDiscardMenuForm = () => {
     if (panelMenu) {
@@ -274,7 +285,7 @@ function MenuEditorPanel(props) {
         .menu-items-card .menu-add-row:hover { background: var(--p-color-bg-surface-secondary) !important; }
       `}</style>
       {menuFormDirty && (
-        <div style={{ marginBottom: 12, padding: "10px 16px", background: "var(--p-color-bg-surface-secondary)", borderRadius: 8, border: "1px solid var(--p-color-border)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 10, marginBottom: 12, padding: "10px 16px", background: "var(--p-color-bg-surface-secondary)", borderRadius: 8, border: "1px solid var(--p-color-border)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
           <span style={{ fontSize: 14, color: "var(--p-color-text)", fontWeight: 500 }}>Unsaved changes</span>
           {hasMenuId && (
             <Button size="slim" variant="secondary" onClick={handleDiscardMenuForm}>Discard</Button>
@@ -606,6 +617,9 @@ function InlineItemRow({ itemForm, setItemForm, collections, products, LINK_TYPE
 
 export default function ContentMenusPage({ panelMode = null, panelMenuId = null }) {
   const router = useRouter();
+  const unsaved = useUnsavedChanges();
+  const menuSaveRef = useRef(null);
+  const menuDiscardRef = useRef(null);
   const [menus, setMenus] = useState([]);
   const [selectedMenuId, setSelectedMenuId] = useState(null);
   const [items, setItems] = useState([]);
@@ -1041,7 +1055,9 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const onDragOver = (e, payload) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (payload && typeof payload === "object" && payload.type) setDropTarget(payload);
+    if (payload && typeof payload === "object" && payload.type && typeof setDropTarget === "function") {
+      setDropTarget({ type: payload.type, id: payload.id ?? null });
+    }
   };
 
   const onDragLeave = () => {
@@ -1219,6 +1235,22 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     onOpenImportCsv={() => setImportCsvOpen(true)}
     onMenuSaved={onMenuSaved}
     locationOptions={locationOptions}
+    onDirtyChange={(dirty, handlers) => {
+      if (!unsaved) return;
+      unsaved.setDirty(!!dirty);
+      if (dirty && handlers) {
+        menuSaveRef.current = handlers.save;
+        menuDiscardRef.current = handlers.discard;
+        unsaved.setHandlers({
+          onSave: () => menuSaveRef.current?.(),
+          onDiscard: () => menuDiscardRef.current?.(),
+        });
+      } else if (!dirty) {
+        menuSaveRef.current = null;
+        menuDiscardRef.current = null;
+        unsaved.clearHandlers();
+      }
+    }}
   />
               </Card>
             </Layout.Section>
