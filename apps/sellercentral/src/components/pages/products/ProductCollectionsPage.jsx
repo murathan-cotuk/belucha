@@ -145,9 +145,7 @@ export default function ProductCollectionsPage() {
                       <IndexTable.Cell>
                         <InlineStack gap="200">
                           <Button size="slim" variant="plain" tone="subdued" accessibilityLabel="Edit" icon={EditIcon} onClick={() => openEdit(col)} />
-                          {col._standalone && (
-                            <Button size="slim" variant="plain" tone="critical" accessibilityLabel="Delete" icon={DeleteIcon} onClick={() => setDeleteId(col.id)} />
-                          )}
+                          <Button size="slim" variant="plain" tone="critical" accessibilityLabel="Delete" icon={DeleteIcon} onClick={() => setDeleteId(col.id)} />
                         </InlineStack>
                       </IndexTable.Cell>
                     </IndexTable.Row>

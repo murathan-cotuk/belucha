@@ -1,5 +1,11 @@
 "use client";
 
+import { UnsavedChangesProvider } from "@/context/UnsavedChangesContext";
+
 export default function Providers({ children }) {
-  return <>{children}</>;
+  return (
+    <UnsavedChangesProvider>
+      {children}
+    </UnsavedChangesProvider>
+  );
 }

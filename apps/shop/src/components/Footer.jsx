@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "@/i18n/navigation";
 import styled from "styled-components";
-import { getMedusaClient } from "@/lib/medusa-client";
 
 function menuItemHref(item) {
   if (!item) return "#";
@@ -104,17 +103,19 @@ export default function Footer() {
   const [footerColumns, setFooterColumns] = useState([]);
 
   useEffect(() => {
-    const client = getMedusaClient();
-    client.getMenus().then((data) => {
-      const menus = data.menus || [];
-      const columns = FOOTER_LOCATIONS.map((loc) => {
-        const menu = menus.find((m) => (m.location || "").toLowerCase().trim() === loc.toLowerCase());
-        if (!menu) return { location: loc, menu: null, items: [] };
-        const items = (menu.items || []).filter((i) => !i.parent_id);
-        return { location: loc, menu, items };
-      });
-      setFooterColumns(columns);
-    }).catch(() => setFooterColumns([]));
+    fetch("/api/store-menus")
+      .then((r) => r.json())
+      .then((data) => {
+        const menus = data.menus || [];
+        const columns = FOOTER_LOCATIONS.map((loc) => {
+          const menu = menus.find((m) => (m.location || "").toLowerCase().trim() === loc.toLowerCase());
+          if (!menu) return { location: loc, menu: null, items: [] };
+          const items = (menu.items || []).filter((i) => !i.parent_id);
+          return { location: loc, menu, items };
+        });
+        setFooterColumns(columns);
+      })
+      .catch(() => setFooterColumns([]));
   }, []);
 
   return (
