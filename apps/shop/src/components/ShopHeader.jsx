@@ -23,6 +23,8 @@ import { resolveImageUrl } from "@/lib/image-url";
 const SCROLL_THRESHOLD = 60;
 const MINIMAL_BAR_HEIGHT = 56;
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function menuItemHref(item) {
   if (!item) return "#";
   const raw = item.link_value;
@@ -36,9 +38,17 @@ function menuItemHref(item) {
     } catch (_) {}
   }
   if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
-  if ((item.link_type === "category" || item.link_type === "collection") && value) return `/${value}`;
   if (item.link_type === "page" && value) return `/pages/${value}`;
   if (item.link_type === "product" && value) return `/produkt/${value}`;
+  if (item.link_type === "category" || item.link_type === "collection") {
+    if (value && typeof raw === "string" && raw.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.id && UUID_REGEX.test(String(parsed.id).trim())) return `/${parsed.id}`;
+      } catch (_) {}
+    }
+    return value ? `/${value}` : "#";
+  }
   return value ? `/${String(value).replace(/^\//, "")}` : "#";
 }
 
