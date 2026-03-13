@@ -169,6 +169,7 @@ export default function CategoryTemplate() {
   const params = useParams();
   const slug = params?.slug;
   const [category, setCategory] = useState(null);
+  const [linkedCollection, setLinkedCollection] = useState(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -180,6 +181,7 @@ export default function CategoryTemplate() {
       try {
         setLoading(true);
         setError(null);
+        setLinkedCollection(null);
         const client = getMedusaClient();
         const [cat, prodRes, catRes] = await Promise.all([
           client.getCategoryBySlug(slug).catch(() => null),
@@ -190,6 +192,13 @@ export default function CategoryTemplate() {
         setProducts(prodRes.products || []);
         const tree = catRes.tree || catRes.categories || [];
         setCategories(flattenCategories(Array.isArray(tree) ? tree : [tree]));
+        if (cat?.collection_id) {
+          const colRes = await fetch(`/api/store-collections?handle=${encodeURIComponent(cat.collection_id)}`);
+          if (colRes.ok) {
+            const colData = await colRes.json();
+            if (colData?.collection) setLinkedCollection(colData.collection);
+          }
+        }
       } catch (err) {
         setError(err?.message || "Failed to load category");
         setProducts([]);
@@ -217,13 +226,33 @@ export default function CategoryTemplate() {
   }
 
   const title = category?.name || (slug ? `Category: ${slug}` : "Category");
-  const safeLongContent = category?.long_content ? sanitizeHtml(category.long_content) : "";
+  const rawBanner =
+    linkedCollection?.banner ||
+    linkedCollection?.banner_image_url ||
+    linkedCollection?.image_url ||
+    category?.banner_image_url ||
+    category?.banner ||
+    null;
+  const bannerUrl = rawBanner
+    ? typeof rawBanner === "string" && (rawBanner.startsWith("http") || rawBanner.startsWith("//"))
+      ? rawBanner
+      : resolveImageUrl(rawBanner)
+    : null;
+  const richtextHtml =
+    linkedCollection?.description
+      ? sanitizeHtml(linkedCollection.description)
+      : category?.long_content
+        ? sanitizeHtml(category.long_content)
+        : "";
 
   return (
     <>
-      {category?.banner_image_url && (
+      {bannerUrl && (
         <BannerWrapper>
-          <BannerImage src={resolveImageUrl(category.banner_image_url)} alt={title} />
+          <BannerImage
+            src={typeof bannerUrl === "string" && (bannerUrl.startsWith("http") || bannerUrl.startsWith("//")) ? bannerUrl : resolveImageUrl(bannerUrl)}
+            alt={title}
+          />
         </BannerWrapper>
       )}
       <ContentRow>
@@ -251,10 +280,10 @@ export default function CategoryTemplate() {
             <CategoryTitle>{title}</CategoryTitle>
             {category?.description && <CategoryDescription>{category.description}</CategoryDescription>}
           </CategoryHeader>
-          {safeLongContent && (
-            <LongContent dangerouslySetInnerHTML={{ __html: safeLongContent }} />
-          )}
           <ProductGrid products={products} />
+          {richtextHtml && (
+            <LongContent dangerouslySetInnerHTML={{ __html: richtextHtml }} />
+          )}
         </ContentColumn>
       </ContentRow>
     </>

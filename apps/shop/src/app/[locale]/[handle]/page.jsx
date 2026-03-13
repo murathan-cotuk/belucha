@@ -32,6 +32,7 @@ const Main = styled.main`
   flex: 1;
   width: 100%;
   padding: 0;
+  padding-top: 72px;
   display: flex;
   flex-direction: column;
 `;
@@ -109,14 +110,14 @@ const BannerWrap = styled.div`
 
 const Banner = styled.div`
   width: 100%;
-  margin-bottom: ${tokens.spacing.xl};
+  margin-bottom: ${tokens.spacing.lg};
   border-radius: ${tokens.radius.card};
   overflow: hidden;
   background: ${tokens.background.soft};
   img {
     width: 100%;
     height: auto;
-    max-height: 280px;
+    max-height: 200px;
     object-fit: cover;
     display: block;
   }
@@ -140,9 +141,8 @@ const Description = styled.div`
   margin-bottom: ${tokens.spacing.xl};
   width: 100%;
   max-width: 100%;
-  border: 1px solid #000;
   border-radius: ${tokens.radius.card};
-  padding: ${tokens.spacing.lg};
+  padding: ${tokens.spacing.lg} 0;
   & h1 { font-size: 1.75rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
   & h2 { font-size: 1.5rem; font-weight: 700; margin: 1.25em 0 0.5em; color: ${HEADING_ORANGE}; line-height: 1.3; }
   & h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.4em; color: ${HEADING_ORANGE}; line-height: 1.35; }
@@ -336,6 +336,17 @@ export default function CollectionByHandlePage() {
   const paginatedProducts = sortedProducts.slice(start, start + PER_PAGE);
 
   const displayTitle = collection?.display_title || collection?.title || "";
+  // Banner: backend may send "banner" (resolved) and/or raw banner_image_url / image_url from collection metadata
+  const rawBanner =
+    collection?.banner ||
+    collection?.banner_image_url ||
+    collection?.image_url ||
+    "";
+  const bannerUrl = rawBanner
+    ? typeof rawBanner === "string" && (rawBanner.startsWith("http") || rawBanner.startsWith("//"))
+      ? rawBanner
+      : resolveImageUrl(rawBanner)
+    : "";
 
   if (notFoundState) notFound();
 
@@ -367,10 +378,10 @@ export default function CollectionByHandlePage() {
     <PageWrap>
       <ShopHeader />
       <Main>
-        {collection.banner && (
+        {bannerUrl && (
           <BannerWrap>
             <Banner>
-              <img src={resolveImageUrl(collection.banner)} alt="" />
+              <img src={bannerUrl} alt="" />
             </Banner>
           </BannerWrap>
         )}

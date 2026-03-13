@@ -2221,6 +2221,7 @@ async function start() {
             return res.status(404).json({ message: 'Collection not found' })
           }
           const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+          const bannerResolved = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
           const collection = {
             id: row.id,
             title: row.title,
@@ -2228,7 +2229,9 @@ async function start() {
             display_title: meta.display_title || row.title,
             meta_title: meta.meta_title || null,
             meta_description: meta.meta_description || null,
-            banner: resolveUploadUrl(meta.banner_image_url || meta.image_url || null),
+            banner: bannerResolved,
+            banner_image_url: meta.banner_image_url || null,
+            image_url: meta.image_url || null,
             description: meta.richtext || meta.description_html || null,
           }
           try { await client.end() } catch (_) {}
@@ -2243,6 +2246,8 @@ async function start() {
             handle: row.handle,
             display_title: meta.display_title || row.title,
             banner: resolveUploadUrl(meta.banner_image_url || meta.image_url || null),
+            banner_image_url: meta.banner_image_url || null,
+            image_url: meta.image_url || null,
             description: meta.richtext || meta.description_html || null,
           }
         })
@@ -2267,6 +2272,7 @@ async function start() {
           const category = await adminHubService.getCategoryBySlug(slug)
           if (!category) return res.status(404).json({ message: 'Category not found' })
           const meta = category.metadata && typeof category.metadata === 'object' ? category.metadata : {}
+          const collectionId = category.has_collection && meta.collection_id ? meta.collection_id : null
           const cat = {
             id: category.id,
             name: category.name,
@@ -2277,6 +2283,7 @@ async function start() {
             long_content: category.long_content || null,
             banner_image_url: resolveUploadUrl(category.banner_image_url || meta.banner_image_url || null) || null,
             has_collection: category.has_collection,
+            collection_id: collectionId || null,
           }
           return res.json({ category: cat, categories: [cat], count: 1 })
         }

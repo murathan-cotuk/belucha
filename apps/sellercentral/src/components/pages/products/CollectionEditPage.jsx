@@ -258,8 +258,22 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
           standalone: true,
           ...(form.category_id && { category_id: form.category_id }),
         });
-        if (created?.id) router.replace(`/products/collections/${created.id}`);
-        else await (onReload?.() ?? Promise.resolve());
+        if (created?.id) {
+          await client.updateCollection(created.id, {
+            title,
+            handle: handle || slugFromTitle(title),
+            display_title: form.display_title,
+            meta_title: form.meta_title,
+            meta_description: form.meta_description,
+            keywords: form.keywords,
+            richtext: form.richtext,
+            image_url: form.image_url,
+            banner_image_url: form.banner_image_url,
+          });
+          router.replace(`/products/collections/${created.id}`);
+        } else {
+          await (onReload?.() ?? Promise.resolve());
+        }
       } else if (collection?.id) {
         await client.updateCollection(collection.id, {
           title,
