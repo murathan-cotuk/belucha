@@ -12,6 +12,8 @@
     "@belucha/lib": "*",
     "next-intl": "^3.25.0",
     "@belucha/ui": "*",
+    "@stripe/react-stripe-js": "^2.4.0",
+    "@stripe/stripe-js": "^4.8.0",
     "algoliasearch": "^5.17.2",
     "autoprefixer": "^10.4.16",
     "framer-motion": "^12.34.3",
