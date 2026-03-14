@@ -6,7 +6,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { Link } from "@/i18n/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useParams, notFound } from "next/navigation";
-import { resolveImageUrl } from "@/lib/image-url";
+import { resolveImageUrl, rewriteImageUrlsInHtml } from "@/lib/image-url";
 import styled, { keyframes } from "styled-components";
 
 /* ─────────────────────────────────────────────────────────── */
@@ -46,7 +46,6 @@ const PageWrap = styled.div`
 
 const Main = styled.main`
   flex: 1;
-  padding-top: ${HEADER_H}px;
 `;
 
 /* ─── Hero banner ────────────────────────────────────────── */
@@ -420,6 +419,7 @@ export default function CollectionPage() {
 
         const colData = await colRes.json();
         const col = colData?.collection ?? null;
+        console.log("[CollectionPage] colData:", JSON.stringify({ banner: col?.banner, banner_image_url: col?.banner_image_url, title: col?.title }));
         if (!col) { setNotFoundSt(true); setLoading(false); return; }
         setCollection(col);
 
@@ -505,10 +505,7 @@ export default function CollectionPage() {
   /* ── Derived display values ── */
   const title     = collection?.display_title || collection?.title || handle || "";
   const rawBanner = collection?.banner || collection?.banner_image_url || collection?.image_url || "";
-  const bannerUrl = rawBanner
-    ? (rawBanner.startsWith("http") || rawBanner.startsWith("//"))
-      ? rawBanner : resolveImageUrl(rawBanner)
-    : "";
+  const bannerUrl = rawBanner ? resolveImageUrl(rawBanner) : "";
 
   if (notFoundSt) notFound();
 
@@ -716,7 +713,7 @@ export default function CollectionPage() {
 
           {/* Description */}
           {collection.description && (
-            <Desc dangerouslySetInnerHTML={{ __html: sanitize(collection.description) }} />
+            <Desc dangerouslySetInnerHTML={{ __html: sanitize(rewriteImageUrlsInHtml(collection.description)) }} />
           )}
         </Body>
       </Main>

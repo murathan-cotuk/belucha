@@ -5,11 +5,15 @@ import { Link } from "@/i18n/navigation";
 import styled from "styled-components";
 import { tokens } from "@/design-system/tokens";
 
+const TOP_BAR_HEIGHT = "32px";
+const TOP_BAR_BG = "#e4eaf2";
+
 const Bar = styled.div`
-  height: ${tokens.topBar.height};
-  background: ${tokens.dark[900]};
-  color: white;
-  font-size: ${tokens.topBar.fontSize};
+  height: ${TOP_BAR_HEIGHT};
+  min-height: ${TOP_BAR_HEIGHT};
+  background: ${TOP_BAR_BG};
+  color: #2c3e5a;
+  font-size: 12px;
   font-family: ${tokens.fontFamily.sans};
   display: flex;
   align-items: center;

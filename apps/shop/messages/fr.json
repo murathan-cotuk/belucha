@@ -43,5 +43,66 @@
     "privacy": "Confidentialité",
     "terms": "CGV",
     "returns": "Retours"
+  },
+  "cart": {
+    "title": "Votre panier",
+    "empty": "Votre panier est vide.",
+    "viewCart": "Voir le panier",
+    "item": "Article",
+    "decreaseQty": "Diminuer la quantité",
+    "increaseQty": "Augmenter la quantité",
+    "remove": "Supprimer",
+    "subtotal": "Sous-total",
+    "shippingLabel": "Livraison",
+    "shipping": "Calculé à la caisse",
+    "total": "Total",
+    "checkout": "Commander"
+  },
+  "checkout": {
+    "title": "Paiement",
+    "paymentError": "Paiement échoué. Veuillez réessayer.",
+    "invalidEmail": "E-mail invalide",
+    "requiredField": "Requis",
+    "contactInfo": "Coordonnées",
+    "email": "E-mail",
+    "phone": "Téléphone",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "shippingAddress": "Adresse de livraison",
+    "address": "Adresse",
+    "address2": "Appartement, étage, etc.",
+    "postalCode": "Code postal",
+    "city": "Ville",
+    "country": "Pays",
+    "payment": "Paiement",
+    "processing": "Traitement…",
+    "placeOrder": "Passer la commande",
+    "backToCart": "Retour au panier",
+    "configError": "Impossible de charger la caisse. Veuillez réessayer.",
+    "orderSummary": "Récapitulatif",
+    "subtotal": "Sous-total",
+    "shipping": "Livraison",
+    "freeShipping": "Gratuit",
+    "total": "Total"
+  },
+  "pages": {
+    "orders": {
+      "back": "Retour au compte",
+      "title": "Mes commandes",
+      "loading": "Chargement des commandes…",
+      "error": "Impossible de charger les commandes.",
+      "empty": "Vous n'avez pas encore de commandes.",
+      "orderNumber": "Commande",
+      "date": "Date",
+      "items": "Articles",
+      "statuses": {
+        "pending": "En attente",
+        "processing": "En cours",
+        "shipped": "Expédié",
+        "delivered": "Livré",
+        "completed": "Terminé",
+        "cancelled": "Annulé"
+      }
+    }
   }
 }

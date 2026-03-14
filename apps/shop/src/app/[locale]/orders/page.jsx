@@ -68,7 +68,7 @@ export default function OrdersPage() {
         <div className="max-w-4xl mx-auto px-4 py-12">
           <div className="flex items-center gap-4 mb-8">
             <Link href="/account" className="text-blue-500 hover:underline text-sm">
-              ← {t("statuses.pending", { ns: "common" })}
+              ← {t("back")}
             </Link>
             <h1 className="text-3xl font-bold text-gray-900">{t("title")}</h1>
           </div>

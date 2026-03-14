@@ -43,5 +43,66 @@
     "privacy": "Privacidad",
     "terms": "Términos y condiciones",
     "returns": "Devoluciones"
+  },
+  "cart": {
+    "title": "Tu carrito",
+    "empty": "Tu carrito está vacío.",
+    "viewCart": "Ver carrito",
+    "item": "Artículo",
+    "decreaseQty": "Reducir cantidad",
+    "increaseQty": "Aumentar cantidad",
+    "remove": "Eliminar",
+    "subtotal": "Subtotal",
+    "shippingLabel": "Envío",
+    "shipping": "Calculado en el pago",
+    "total": "Total",
+    "checkout": "Pagar"
+  },
+  "checkout": {
+    "title": "Pago",
+    "paymentError": "Pago fallido. Inténtalo de nuevo.",
+    "invalidEmail": "E-mail no válido",
+    "requiredField": "Obligatorio",
+    "contactInfo": "Datos de contacto",
+    "email": "E-mail",
+    "phone": "Teléfono",
+    "firstName": "Nombre",
+    "lastName": "Apellidos",
+    "shippingAddress": "Dirección de envío",
+    "address": "Dirección",
+    "address2": "Piso, puerta, etc.",
+    "postalCode": "Código postal",
+    "city": "Ciudad",
+    "country": "País",
+    "payment": "Pago",
+    "processing": "Procesando…",
+    "placeOrder": "Realizar pedido",
+    "backToCart": "Volver al carrito",
+    "configError": "No se pudo cargar el pago. Inténtalo de nuevo.",
+    "orderSummary": "Resumen del pedido",
+    "subtotal": "Subtotal",
+    "shipping": "Envío",
+    "freeShipping": "Gratis",
+    "total": "Total"
+  },
+  "pages": {
+    "orders": {
+      "back": "Volver a la cuenta",
+      "title": "Mis pedidos",
+      "loading": "Cargando pedidos…",
+      "error": "No se pudieron cargar los pedidos.",
+      "empty": "Aún no tienes pedidos.",
+      "orderNumber": "Pedido",
+      "date": "Fecha",
+      "items": "Artículos",
+      "statuses": {
+        "pending": "Pendiente",
+        "processing": "Procesando",
+        "shipped": "Enviado",
+        "delivered": "Entregado",
+        "completed": "Completado",
+        "cancelled": "Cancelado"
+      }
+    }
   }
 }

@@ -7,7 +7,7 @@ import { getMedusaClient } from "@/lib/medusa-client";
 import { ProductGrid } from "@/components/ProductGrid";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { Link } from "@/i18n/navigation";
-import { resolveImageUrl } from "@/lib/image-url";
+import { resolveImageUrl, rewriteImageUrlsInHtml } from "@/lib/image-url";
 
 const BannerWrapper = styled.div`
   width: 100%;
@@ -233,26 +233,19 @@ export default function CategoryTemplate() {
     category?.banner_image_url ||
     category?.banner ||
     null;
-  const bannerUrl = rawBanner
-    ? typeof rawBanner === "string" && (rawBanner.startsWith("http") || rawBanner.startsWith("//"))
-      ? rawBanner
-      : resolveImageUrl(rawBanner)
-    : null;
+  const bannerUrl = rawBanner ? resolveImageUrl(rawBanner) : null;
   const richtextHtml =
     linkedCollection?.description
-      ? sanitizeHtml(linkedCollection.description)
+      ? sanitizeHtml(rewriteImageUrlsInHtml(linkedCollection.description))
       : category?.long_content
-        ? sanitizeHtml(category.long_content)
+        ? sanitizeHtml(rewriteImageUrlsInHtml(category.long_content))
         : "";
 
   return (
     <>
       {bannerUrl && (
         <BannerWrapper>
-          <BannerImage
-            src={typeof bannerUrl === "string" && (bannerUrl.startsWith("http") || bannerUrl.startsWith("//")) ? bannerUrl : resolveImageUrl(bannerUrl)}
-            alt={title}
-          />
+          <BannerImage src={bannerUrl} alt={title} />
         </BannerWrapper>
       )}
       <ContentRow>

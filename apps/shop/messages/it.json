@@ -43,5 +43,66 @@
     "privacy": "Privacy",
     "terms": "Termini e condizioni",
     "returns": "Resi"
+  },
+  "cart": {
+    "title": "Il tuo carrello",
+    "empty": "Il tuo carrello è vuoto.",
+    "viewCart": "Vedi carrello",
+    "item": "Articolo",
+    "decreaseQty": "Diminuisci quantità",
+    "increaseQty": "Aumenta quantità",
+    "remove": "Rimuovi",
+    "subtotal": "Subtotale",
+    "shippingLabel": "Spedizione",
+    "shipping": "Calcolato al checkout",
+    "total": "Totale",
+    "checkout": "Acquista"
+  },
+  "checkout": {
+    "title": "Pagamento",
+    "paymentError": "Pagamento fallito. Riprova.",
+    "invalidEmail": "E-mail non valida",
+    "requiredField": "Obbligatorio",
+    "contactInfo": "Informazioni di contatto",
+    "email": "E-mail",
+    "phone": "Telefono",
+    "firstName": "Nome",
+    "lastName": "Cognome",
+    "shippingAddress": "Indirizzo di spedizione",
+    "address": "Indirizzo",
+    "address2": "Appartamento, scala, ecc.",
+    "postalCode": "CAP",
+    "city": "Città",
+    "country": "Paese",
+    "payment": "Pagamento",
+    "processing": "Elaborazione…",
+    "placeOrder": "Invia ordine",
+    "backToCart": "Torna al carrello",
+    "configError": "Impossibile caricare il checkout. Riprova.",
+    "orderSummary": "Riepilogo ordine",
+    "subtotal": "Subtotale",
+    "shipping": "Spedizione",
+    "freeShipping": "Gratis",
+    "total": "Totale"
+  },
+  "pages": {
+    "orders": {
+      "back": "Torna all'account",
+      "title": "I miei ordini",
+      "loading": "Caricamento ordini…",
+      "error": "Impossibile caricare gli ordini.",
+      "empty": "Non hai ancora ordini.",
+      "orderNumber": "Ordine",
+      "date": "Data",
+      "items": "Articoli",
+      "statuses": {
+        "pending": "In attesa",
+        "processing": "In elaborazione",
+        "shipped": "Spedito",
+        "delivered": "Consegnato",
+        "completed": "Completato",
+        "cancelled": "Annullato"
+      }
+    }
   }
 }

@@ -43,5 +43,66 @@
     "privacy": "Gizlilik",
     "terms": "Kullanım Koşulları",
     "returns": "İade"
+  },
+  "cart": {
+    "title": "Sepetiniz",
+    "empty": "Sepetiniz boş.",
+    "viewCart": "Sepeti görüntüle",
+    "item": "Ürün",
+    "decreaseQty": "Adet azalt",
+    "increaseQty": "Adet artır",
+    "remove": "Kaldır",
+    "subtotal": "Ara toplam",
+    "shippingLabel": "Kargo",
+    "shipping": "Ödeme sayfasında hesaplanır",
+    "total": "Toplam",
+    "checkout": "Ödemeye geç"
+  },
+  "checkout": {
+    "title": "Ödeme",
+    "paymentError": "Ödeme başarısız. Lütfen tekrar deneyin.",
+    "invalidEmail": "Geçersiz e-posta",
+    "requiredField": "Zorunlu",
+    "contactInfo": "İletişim bilgileri",
+    "email": "E-posta",
+    "phone": "Telefon",
+    "firstName": "Ad",
+    "lastName": "Soyad",
+    "shippingAddress": "Teslimat adresi",
+    "address": "Adres",
+    "address2": "Daire, bina, vb.",
+    "postalCode": "Posta kodu",
+    "city": "Şehir",
+    "country": "Ülke",
+    "payment": "Ödeme",
+    "processing": "İşleniyor…",
+    "placeOrder": "Siparişi ver",
+    "backToCart": "Sepete dön",
+    "configError": "Ödeme yüklenemedi. Lütfen tekrar deneyin.",
+    "orderSummary": "Sipariş özeti",
+    "subtotal": "Ara toplam",
+    "shipping": "Kargo",
+    "freeShipping": "Ücretsiz",
+    "total": "Toplam"
+  },
+  "pages": {
+    "orders": {
+      "back": "Hesaba dön",
+      "title": "Siparişlerim",
+      "loading": "Siparişler yükleniyor…",
+      "error": "Siparişler yüklenemedi.",
+      "empty": "Henüz siparişiniz yok.",
+      "orderNumber": "Sipariş",
+      "date": "Tarih",
+      "items": "Ürün",
+      "statuses": {
+        "pending": "Beklemede",
+        "processing": "İşleniyor",
+        "shipped": "Kargoya verildi",
+        "delivered": "Teslim edildi",
+        "completed": "Tamamlandı",
+        "cancelled": "İptal"
+      }
+    }
   }
 }

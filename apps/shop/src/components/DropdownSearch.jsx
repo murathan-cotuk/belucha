@@ -13,10 +13,14 @@ import { tokens } from "@/design-system/tokens";
 const Wrap = styled.div`
   position: relative;
   width: 100%;
+  ${(p) => p.$pill && `height: 100%; display: flex; align-items: center;`}
 `;
 
 const InputWrap = styled.div`
   position: relative;
+  flex: 1;
+  min-width: 0;
+  ${(p) => p.$pill && `height: 100%; display: flex; align-items: center;`}
 `;
 
 const SearchIcon = styled.span`
@@ -42,6 +46,29 @@ const Input = styled.input`
     border-color: ${tokens.primary.DEFAULT};
     box-shadow: 0 0 0 2px ${tokens.primary.light};
   }
+  ${(p) => p.$pill && `
+    padding: 0 16px 0 0;
+    height: 100%;
+    min-height: 36px;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    font-size: 15px;
+    font-family: inherit;
+    color: #111;
+    letter-spacing: 0.01em;
+    transition: opacity 0.2s;
+    &:focus {
+      outline: none;
+      box-shadow: none;
+    }
+    &::placeholder {
+      font-size: 14px;
+      font-weight: 400;
+      color: #9ca3af;
+      letter-spacing: 0.02em;
+    }
+  `}
 `;
 
 const Dropdown = styled.div`
@@ -145,7 +172,7 @@ function formatPriceCents(cents) {
   return v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }
 
-function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px" }) {
+function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px", hideSearchIcon = false, pill = false }) {
   const router = useRouter();
   const locale = useLocale();
   const [q, setQ] = useState("");
@@ -208,7 +235,7 @@ function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px" }) {
   return (
     <Wrap ref={wrapRef} as="form" onSubmit={handleSubmit}>
       <InputWrap>
-        <SearchIcon aria-hidden>🔍</SearchIcon>
+        {!hideSearchIcon && <SearchIcon aria-hidden>🔍</SearchIcon>}
         <Input
           type="search"
           placeholder={placeholder}
@@ -216,6 +243,7 @@ function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px" }) {
           onChange={(e) => setQ(e.target.value)}
           aria-label="Suche"
           aria-expanded={showDropdown}
+          $pill={pill}
         />
       </InputWrap>
       {showDropdown && (
@@ -308,10 +336,10 @@ function SearchInputWithDropdown({
   const imageKey = attributes.image;
 
   return (
-    <Wrap className={className} ref={wrapRef} onKeyDown={handleKeyDown}>
+    <Wrap className={className} ref={wrapRef} onKeyDown={handleKeyDown} $pill={pill}>
       <Configure hitsPerPage={hitsPerPage} />
-      <InputWrap>
-        <SearchIcon aria-hidden>🔍</SearchIcon>
+      <InputWrap $pill={pill}>
+        {!hideSearchIcon && <SearchIcon aria-hidden>🔍</SearchIcon>}
         <Input
           type="search"
           autoComplete="off"
@@ -320,6 +348,7 @@ function SearchInputWithDropdown({
           onChange={(e) => refine(e.target.value)}
           aria-expanded={showDropdown}
           aria-controls="search-hits"
+          $pill={pill}
         />
       </InputWrap>
       {showDropdown && (
@@ -368,13 +397,15 @@ export default function DropdownSearch({
   attributes = {},
   className,
   maxHeight = "300px",
+  hideSearchIcon,
+  pill,
 }) {
   const appId = applicationId || process.env.NEXT_PUBLIC_ALGOLIA_APP_ID;
   const key = apiKey || process.env.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY;
   const index = indexName || process.env.NEXT_PUBLIC_ALGOLIA_INDEX_PRODUCTS;
 
   if (!appId || !key || !index) {
-    return <SearchBarFallback placeholder={placeholder} maxHeight={maxHeight} />;
+    return <SearchBarFallback placeholder={placeholder} maxHeight={maxHeight} hideSearchIcon={hideSearchIcon} pill={pill} />;
   }
 
   const searchClient = algoliasearch(appId, key);
@@ -387,6 +418,8 @@ export default function DropdownSearch({
         attributes={attributes}
         maxHeight={maxHeight}
         className={className}
+        hideSearchIcon={hideSearchIcon}
+        pill={pill}
       />
     </InstantSearch>
   );

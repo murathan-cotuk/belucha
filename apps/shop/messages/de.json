@@ -43,5 +43,66 @@
     "privacy": "Datenschutz",
     "terms": "AGB",
     "returns": "Retouren"
+  },
+  "cart": {
+    "title": "Ihr Warenkorb",
+    "empty": "Ihr Warenkorb ist leer.",
+    "viewCart": "Warenkorb ansehen",
+    "item": "Artikel",
+    "decreaseQty": "Menge verringern",
+    "increaseQty": "Menge erhöhen",
+    "remove": "Entfernen",
+    "subtotal": "Zwischensumme",
+    "shippingLabel": "Versand",
+    "shipping": "Wird an der Kasse berechnet",
+    "total": "Gesamt",
+    "checkout": "Zur Kasse"
+  },
+  "checkout": {
+    "title": "Kasse",
+    "paymentError": "Zahlung fehlgeschlagen. Bitte erneut versuchen.",
+    "invalidEmail": "Ungültige E-Mail",
+    "requiredField": "Pflichtfeld",
+    "contactInfo": "Kontaktdaten",
+    "email": "E-Mail",
+    "phone": "Telefon",
+    "firstName": "Vorname",
+    "lastName": "Nachname",
+    "shippingAddress": "Lieferadresse",
+    "address": "Adresse",
+    "address2": "Wohnung, Etage, etc.",
+    "postalCode": "PLZ",
+    "city": "Stadt",
+    "country": "Land",
+    "payment": "Zahlung",
+    "processing": "Wird verarbeitet…",
+    "placeOrder": "Bestellung aufgeben",
+    "backToCart": "Zurück zum Warenkorb",
+    "configError": "Kasse konnte nicht geladen werden. Bitte erneut versuchen.",
+    "orderSummary": "Bestellübersicht",
+    "subtotal": "Zwischensumme",
+    "shipping": "Versand",
+    "freeShipping": "Kostenlos",
+    "total": "Gesamt"
+  },
+  "pages": {
+    "orders": {
+      "back": "Zurück zum Konto",
+      "title": "Meine Bestellungen",
+      "loading": "Bestellungen werden geladen…",
+      "error": "Bestellungen konnten nicht geladen werden.",
+      "empty": "Sie haben noch keine Bestellungen.",
+      "orderNumber": "Bestellung",
+      "date": "Datum",
+      "items": "Artikel",
+      "statuses": {
+        "pending": "Ausstehend",
+        "processing": "In Bearbeitung",
+        "shipped": "Versandt",
+        "delivered": "Zugestellt",
+        "completed": "Abgeschlossen",
+        "cancelled": "Storniert"
+      }
+    }
   }
 }
