@@ -3,7 +3,15 @@
     "allow": [
       "Bash(git:*)",
       "Bash(grep:*)",
-      "WebFetch(domain:www.pinqponq.com)"
+      "WebFetch(domain:www.pinqponq.com)",
+      "WebFetch(domain:www.zooplus.de)",
+      "Bash(find \"C:\\\\Users\\\\Lenovo\\\\Desktop\\\\Ortam\\\\Yazilim\\\\belucha\\\\apps\\\\medusa-backend\" -name \"*.ts\" -o -name \"*.js\" 2>/dev/null | xargs grep -l \"collections\" 2>/dev/null | head -20)",
+      "Bash(curl -s \"http://localhost:9000/store/collections\" 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(json.dumps\\({'id':c.get\\('id'\\),'title':c.get\\('title'\\),'handle':c.get\\('handle'\\),'banner':c.get\\('banner'\\),'banner_image_url':c.get\\('banner_image_url'\\)},indent=2\\)\\) for c in d.get\\('collections',[]\\)]\" 2>/dev/null || echo \"FAILED\")",
+      "Bash(curl -s \"http://localhost:3000/api/store-collections?handle=sale\" 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); c=d.get\\('collection',{}\\); print\\(json.dumps\\({'banner':c.get\\('banner'\\),'banner_image_url':c.get\\('banner_image_url'\\),'title':c.get\\('title'\\)},indent=2\\)\\)\" 2>/dev/null || echo \"FAILED\")",
+      "Bash(curl -s \"http://localhost:9000/store/collections?handle=c0a8bd0d-9d83-4dc7-b911-43ebd40e3c23\" 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); c=d.get\\('collection',{}\\); print\\(json.dumps\\({'banner':c.get\\('banner'\\),'title':c.get\\('title'\\)},indent=2\\)\\)\" 2>/dev/null || echo \"FAILED\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:9000/uploads/1773482151571-ww6.png\")",
+      "Bash(ls \"$\\(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"uploads\" -type d 2>/dev/null | head -1\\)\" 2>/dev/null | head -20 || find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"*.png\" -o -name \"*.jpg\" -o -name \"*.webp\" 2>/dev/null | head -10)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"ww6*\" -o -name \"1773482*\" 2>/dev/null; ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/uploads/ 2>/dev/null | head -20)"
     ]
   }
 }

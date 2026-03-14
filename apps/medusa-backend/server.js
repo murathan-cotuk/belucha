@@ -2316,6 +2316,7 @@ async function start() {
         const menusWithItems = []
         const collectionKeys = new Set() // handle or id from link_value
         const collectionIds = new Set()
+        const categoryKeys = new Set() // slug or id for link_type=category
         for (const menu of menus) {
           const itemsRes = await client.query(
             'SELECT id, menu_id, label, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE menu_id = $1 ORDER BY sort_order ASC, label ASC',
@@ -2337,6 +2338,16 @@ async function start() {
               if (h) collectionKeys.add(h)
               if (parsedId) collectionIds.add(parsedId)
             }
+            if (lt === 'category' && r.link_value) {
+              let v = (r.link_value || '').toString().trim()
+              if (v.startsWith('{')) {
+                try {
+                  const p = JSON.parse(v)
+                  v = p.slug || p.handle || p.id || v
+                } catch (_) {}
+              }
+              if (v) categoryKeys.add(v)
+            }
           }
           const items = rows.map((r) => ({
             id: r.id,
@@ -2351,6 +2362,8 @@ async function start() {
         }
         const handleToBanner = {}
         const idToCollection = {}
+        const idToBanner = {} // collection id -> banner url (for category->collection lookup)
+        const categoryToCollectionId = {} // category slug/id -> collection id
         const handlesList = Array.from(collectionKeys).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(k))
         const idsList = Array.from(collectionIds)
         if (handlesList.length > 0) {
@@ -2361,7 +2374,10 @@ async function start() {
           for (const row of collRes.rows || []) {
             const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             const url = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
-            if (url) handleToBanner[(row.handle || '').toLowerCase()] = url
+            if (url) {
+              handleToBanner[(row.handle || '').toLowerCase()] = url
+              idToBanner[String(row.id)] = url
+            }
             idToCollection[String(row.id)] = { id: row.id, title: row.title, handle: row.handle }
           }
         }
@@ -2373,8 +2389,59 @@ async function start() {
           for (const row of byIdRes.rows || []) {
             const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
             const url = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
-            if (url) handleToBanner[(row.handle || '').toLowerCase()] = url
+            if (url) {
+              handleToBanner[(row.handle || '').toLowerCase()] = url
+              idToBanner[String(row.id)] = url
+            }
             idToCollection[String(row.id)] = { id: row.id, title: row.title, handle: row.handle }
+          }
+        }
+        // Resolve category -> collection_id for menu items with link_type=category (collection banner in menu)
+        if (categoryKeys.size > 0) {
+          const catSlugs = Array.from(categoryKeys).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(k))
+          const catIds = Array.from(categoryKeys).filter((k) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(k))
+          const categoryCollectionIds = new Set()
+          if (catSlugs.length > 0) {
+            const catRes = await client.query(
+              'SELECT id, slug, metadata FROM admin_hub_categories WHERE LOWER(slug) = ANY($1)',
+              [catSlugs.map((s) => s.toLowerCase())]
+            )
+            for (const row of catRes.rows || []) {
+              const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+              const cid = meta.collection_id
+              if (cid) {
+                categoryToCollectionId[(row.slug || '').toLowerCase()] = String(cid)
+                categoryToCollectionId[String(row.id)] = String(cid)
+                categoryCollectionIds.add(String(cid))
+              }
+            }
+          }
+          if (catIds.length > 0) {
+            const catByIdRes = await client.query(
+              'SELECT id, slug, metadata FROM admin_hub_categories WHERE id = ANY($1)',
+              [catIds]
+            )
+            for (const row of catByIdRes.rows || []) {
+              const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+              const cid = meta.collection_id
+              if (cid) {
+                categoryToCollectionId[(row.slug || '').toLowerCase()] = String(cid)
+                categoryToCollectionId[String(row.id)] = String(cid)
+                categoryCollectionIds.add(String(cid))
+              }
+            }
+          }
+          const collIdsToFetch = Array.from(categoryCollectionIds).filter((id) => !idToBanner[id])
+          if (collIdsToFetch.length > 0) {
+            const collByCatRes = await client.query(
+              'SELECT id, title, handle, metadata FROM admin_hub_collections WHERE id = ANY($1)',
+              [collIdsToFetch]
+            )
+            for (const row of collByCatRes.rows || []) {
+              const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+              const url = resolveUploadUrl(meta.banner_image_url || meta.image_url || null)
+              if (url) idToBanner[String(row.id)] = url
+            }
           }
         }
         for (const m of menusWithItems) {
@@ -2384,22 +2451,38 @@ async function start() {
             const r = rows[idx]
             if (!r) return it
             const lt = (r.link_type || 'url').toLowerCase()
-            if (lt !== 'collection' || !r.link_value) return it
-            let h = (r.link_value || '').toString().trim()
-            let parsed = null
-            if (h.startsWith('{')) {
-              try {
-                parsed = JSON.parse(h)
-                h = parsed.handle || parsed.slug || parsed.id || h
-              } catch (_) {}
+            let banner_url = null
+            if (lt === 'collection' && r.link_value) {
+              let h = (r.link_value || '').toString().trim()
+              let parsed = null
+              if (h.startsWith('{')) {
+                try {
+                  parsed = JSON.parse(h)
+                  h = parsed.handle || parsed.slug || parsed.id || h
+                } catch (_) {}
+              }
+              const resolved = (parsed && parsed.id && idToCollection[String(parsed.id)]) ? idToCollection[String(parsed.id)] : null
+              const resolvedHandle = resolved ? resolved.handle : (h && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(h) ? h : null)
+              banner_url = resolvedHandle ? (handleToBanner[resolvedHandle.toLowerCase()] || null) : null
+              const linkValueForShop = resolvedHandle
+                ? JSON.stringify({ id: resolved?.id || parsed?.id, title: resolved?.title || parsed?.title, handle: resolvedHandle })
+                : it.link_value
+              return { ...it, ...(linkValueForShop !== it.link_value ? { link_value: linkValueForShop } : {}), ...(banner_url ? { banner_url } : {}) }
             }
-            const resolved = (parsed && parsed.id && idToCollection[String(parsed.id)]) ? idToCollection[String(parsed.id)] : null
-            const resolvedHandle = resolved ? resolved.handle : (h && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(h) ? h : null)
-            const banner_url = resolvedHandle ? (handleToBanner[resolvedHandle.toLowerCase()] || null) : null
-            const linkValueForShop = resolvedHandle
-              ? JSON.stringify({ id: resolved?.id || parsed?.id, title: resolved?.title || parsed?.title, handle: resolvedHandle })
-              : it.link_value
-            return { ...it, ...(linkValueForShop !== it.link_value ? { link_value: linkValueForShop } : {}), ...(banner_url ? { banner_url } : {}) }
+            if (lt === 'category' && r.link_value) {
+              let v = (r.link_value || '').toString().trim()
+              let key = v
+              if (v.startsWith('{')) {
+                try {
+                  const p = JSON.parse(v)
+                  key = p.slug || p.handle || p.id || v
+                } catch (_) {}
+              }
+              const collectionId = key ? (categoryToCollectionId[key.toLowerCase()] || categoryToCollectionId[String(key)]) : null
+              banner_url = collectionId ? (idToBanner[collectionId] || null) : null
+              return { ...it, ...(banner_url ? { banner_url } : {}) }
+            }
+            return it
           })
         }
         await client.end()

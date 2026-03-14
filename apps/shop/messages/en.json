@@ -43,5 +43,66 @@
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
     "returns": "Returns"
+  },
+  "cart": {
+    "title": "Your cart",
+    "empty": "Your cart is empty.",
+    "viewCart": "View cart",
+    "item": "Item",
+    "decreaseQty": "Decrease quantity",
+    "increaseQty": "Increase quantity",
+    "remove": "Remove",
+    "subtotal": "Subtotal",
+    "shippingLabel": "Shipping",
+    "shipping": "Calculated at checkout",
+    "total": "Total",
+    "checkout": "Checkout"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "paymentError": "Payment failed. Please try again.",
+    "invalidEmail": "Invalid email",
+    "requiredField": "Required",
+    "contactInfo": "Contact information",
+    "email": "Email",
+    "phone": "Phone",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "shippingAddress": "Shipping address",
+    "address": "Address",
+    "address2": "Apartment, suite, etc.",
+    "postalCode": "Postal code",
+    "city": "City",
+    "country": "Country",
+    "payment": "Payment",
+    "processing": "Processing…",
+    "placeOrder": "Place order",
+    "backToCart": "Back to cart",
+    "configError": "Unable to load checkout. Please try again.",
+    "orderSummary": "Order summary",
+    "subtotal": "Subtotal",
+    "shipping": "Shipping",
+    "freeShipping": "Free",
+    "total": "Total"
+  },
+  "pages": {
+    "orders": {
+      "back": "Back to account",
+      "title": "My orders",
+      "loading": "Loading orders…",
+      "error": "Failed to load orders.",
+      "empty": "You have no orders yet.",
+      "orderNumber": "Order",
+      "date": "Date",
+      "items": "Items",
+      "statuses": {
+        "pending": "Pending",
+        "processing": "Processing",
+        "shipped": "Shipped",
+        "delivered": "Delivered",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+      }
+    }
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Page,
   Layout,
@@ -19,6 +19,7 @@ import {
   IndexTable,
   useIndexResourceState,
   Badge,
+  DropZone,
 } from "@shopify/polaris";
 import { EditIcon, DeleteIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
@@ -95,6 +96,11 @@ function flattenTree(tree, level = 0) {
   return out;
 }
 
+const getDefaultBaseUrl = () => {
+  const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
+  return (typeof env === "string" ? env : "").trim() || (typeof window !== "undefined" ? "http://localhost:9000" : "");
+};
+
 const emptyForm = {
   name: "",
   slug: "",
@@ -104,6 +110,7 @@ const emptyForm = {
   active: true,
   is_visible: true,
   collection_id: "",
+  banner_image_url: "",
 };
 const initialSlugTouched = false;
 
@@ -123,7 +130,9 @@ export default function ContentCategoriesPage() {
   const [importCsvOpen, setImportCsvOpen] = useState(false);
   const [importCsvFile, setImportCsvFile] = useState(null);
   const [importProgress, setImportProgress] = useState(null); // { total, done, error } | null
+  const [bannerUploading, setBannerUploading] = useState(false);
   const client = getMedusaAdminClient();
+  const baseUrl = (client.baseURL || getDefaultBaseUrl()).replace(/\/$/, "");
 
   const fetchCategories = async () => {
     try {
@@ -158,9 +167,28 @@ export default function ContentCategoriesPage() {
   const openCreate = () => {
     setEditId(null);
     setSlugManuallyEdited(false);
-    setForm({ ...emptyForm, parent_id: "" });
+    setForm({ ...emptyForm, parent_id: "", banner_image_url: "" });
     setModalOpen(true);
   };
+
+  const handleBannerDrop = useCallback(
+    (files) => {
+      setBannerUploading(true);
+      const file = Array.isArray(files) ? files[0] : files;
+      if (!file) return setBannerUploading(false);
+      const fd = new FormData();
+      fd.append("file", file);
+      client
+        .uploadMedia(fd)
+        .then((r) => {
+          const url = r?.url || null;
+          if (url) setForm((prev) => ({ ...prev, banner_image_url: url }));
+        })
+        .catch(() => setError("Banner upload failed"))
+        .finally(() => setBannerUploading(false));
+    },
+    [client]
+  );
 
   const openEdit = (cat) => {
     setEditId(cat.id);
@@ -174,6 +202,7 @@ export default function ContentCategoriesPage() {
       active: !!cat.active,
       is_visible: !!cat.is_visible,
       collection_id: (cat.metadata && cat.metadata.collection_id) || "",
+      banner_image_url: cat.banner_image_url ?? "",
     });
     setModalOpen(true);
   };
@@ -209,6 +238,7 @@ export default function ContentCategoriesPage() {
       active: !!form.active,
       is_visible: !!form.is_visible,
       metadata: form.collection_id ? { collection_id: form.collection_id } : undefined,
+      banner_image_url: (form.banner_image_url || "").trim() || null,
     };
 
     try {
@@ -520,6 +550,33 @@ export default function ContentCategoriesPage() {
               multiline={2}
               autoComplete="off"
             />
+            <Box>
+              <Text as="span" variant="bodyMd" fontWeight="medium">Category banner (shop category page)</Text>
+              <div style={{ marginTop: 8 }}>
+                {form.banner_image_url ? (
+                  <div style={{ maxWidth: 320, height: 50, borderRadius: 8, overflow: "hidden", background: "var(--p-color-bg-fill-secondary)", position: "relative" }}>
+                    <img
+                      src={form.banner_image_url.startsWith("http") || form.banner_image_url.startsWith("data:") ? form.banner_image_url : `${baseUrl}${form.banner_image_url}`}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, banner_image_url: "" }))}
+                      style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, border: "none", borderRadius: "50%", background: "rgba(0,0,0,0.5)", color: "#fff", cursor: "pointer", fontSize: 14 }}
+                      aria-label="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : null}
+                {!form.banner_image_url && (
+                  <DropZone accept="image/*" type="image" onDropAccepted={handleBannerDrop} allowMultiple={false}>
+                    <DropZone.FileUpload actionHint={bannerUploading ? "Uploading…" : "Upload banner image"} />
+                  </DropZone>
+                )}
+              </div>
+            </Box>
             <Checkbox
               label="Has collection (create or link collection page)"
               checked={form.has_collection}

@@ -13,7 +13,7 @@ export async function GET(request) {
       const singleUrl = `${base}/store/collections?handle=${encodeURIComponent(handle)}`;
       const res = await fetch(singleUrl, {
         headers: { "Content-Type": "application/json" },
-        next: { revalidate: 30 },
+        cache: "no-store",
       });
       if (res.ok) {
         const data = await res.json();
@@ -22,7 +22,7 @@ export async function GET(request) {
       // Fallback: fetch all collections and find by handle or id (case-insensitive)
       const listRes = await fetch(`${base}/store/collections`, {
         headers: { "Content-Type": "application/json" },
-        next: { revalidate: 30 },
+        cache: "no-store",
       });
       if (listRes.ok) {
         const listData = await listRes.json();
@@ -40,7 +40,7 @@ export async function GET(request) {
 
     const res = await fetch(`${base}/store/collections`, {
       headers: { "Content-Type": "application/json" },
-      next: { revalidate: 30 },
+      cache: "no-store",
     });
     if (!res.ok) return NextResponse.json({ collections: [] }, { status: 200 });
     const data = await res.json();

@@ -344,9 +344,10 @@ export default function CollectionEditPage({ collection: initialCollection, isNe
       title={isNew ? "New collection" : (collection?.title || "Edit collection")}
       backAction={{ content: "Collections", onAction: () => router.push("/products/collections") }}
       primaryAction={{
-        content: saving ? "Saving…" : "Save",
+        content: saving ? "Saving…" : mediaUploading ? "Uploading…" : "Save",
         onAction: handleSave,
         loading: saving,
+        disabled: mediaUploading,
       }}
     >
       <style>{`
