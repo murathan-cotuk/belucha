@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "@belucha/lib": "*",
-    "next-intl": "^3.25.0",
     "@belucha/ui": "*",
+    "@sentry/nextjs": "^10.35.0",
+    "next-intl": "^3.25.0",
     "@stripe/react-stripe-js": "^2.4.0",
     "@stripe/stripe-js": "^4.8.0",
     "algoliasearch": "^5.17.2",

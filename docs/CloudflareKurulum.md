@@ -168,6 +168,19 @@ Cloudflare Pages → projen → **Settings** → **Environment variables** kısm
 
 # Sorun giderme
 
+## “Cannot find module '@sentry/nextjs'” veya “Root directory = apps/shop” kullanıyorsan
+
+**Sebep:** Build, **repo kökü yerine** sadece `apps/shop` içinde çalışıyorsa (Cloudflare’da **Root directory** = `apps/shop` ise) kök `package.json`’daki bağımlılıklar yüklenmez; `next.config.js` içindeki `@sentry/nextjs` bulunamaz.
+
+**Çözüm (tercih edilen):** Build’in **repo kökünden** çalışmasını sağla:
+
+- **Root directory / Path:** Boş bırak (proje kökü = repo kökü).
+- **Build command:** `npm ci && npx turbo run build --filter=@belucha/shop`
+
+Böylece `npm ci` repo kökünde çalışır, tüm workspace ve `@sentry/nextjs` yüklenir; sadece shop build edilir.
+
+**Alternatif:** Root directory’yi `apps/shop` bırakmak istiyorsan, shop’un `package.json`’ında `@sentry/nextjs` tanımlı olmalı (projede eklendi). Yine de `@belucha/lib` ve `@belucha/ui` workspace paketleri için repo kökünden build almak daha güvenilir.
+
 ## “Wrangler has been run in the root of a workspace...”
 
 **Sebep:** Deploy command monorepo kökünde çalışıyor.
