@@ -7,7 +7,7 @@ Bu rehber, Belucha projesinde Cloudflare’ı nasıl kullanacağını adım adı
 ## 1. Cloudflare’da ne yapacağız?
 
 | Kullanım | Açıklama |
-|----------|----------|
+|----------|----------| 
 | **R2 Object Storage** | Sellercentral’dan yüklenen görsellerin kalıcı ve her yerden erişilebilir olması için. Backend (Render) R2’ye yazar; ayrı bir “uygulama” deploy etmiyorsun. |
 | **Cloudflare Pages** | İstersen **shop** (mağaza) ve **sellercentral** (panel) uygulamalarını burada yayınlarsın. Her biri için ayrı Pages projesi. |
 
