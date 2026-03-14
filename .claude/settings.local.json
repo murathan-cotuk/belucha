@@ -11,7 +11,25 @@
       "Bash(curl -s \"http://localhost:9000/store/collections?handle=c0a8bd0d-9d83-4dc7-b911-43ebd40e3c23\" 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); c=d.get\\('collection',{}\\); print\\(json.dumps\\({'banner':c.get\\('banner'\\),'title':c.get\\('title'\\)},indent=2\\)\\)\" 2>/dev/null || echo \"FAILED\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:9000/uploads/1773482151571-ww6.png\")",
       "Bash(ls \"$\\(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"uploads\" -type d 2>/dev/null | head -1\\)\" 2>/dev/null | head -20 || find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"*.png\" -o -name \"*.jpg\" -o -name \"*.webp\" 2>/dev/null | head -10)",
-      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"ww6*\" -o -name \"1773482*\" 2>/dev/null; ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/uploads/ 2>/dev/null | head -20)"
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"ww6*\" -o -name \"1773482*\" 2>/dev/null; ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/uploads/ 2>/dev/null | head -20)",
+      "Bash(npm install:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000\" 2>/dev/null)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -L \"http://localhost:3000\" 2>/dev/null)",
+      "Bash(curl -s -o /dev/null -w \"%{url_effective}\" -L \"http://localhost:3000\" 2>/dev/null)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/en\" 2>/dev/null && curl -s -o /dev/null -w \"\\\\n%{http_code}\" \"http://localhost:3000/de\" 2>/dev/null)",
+      "Bash(curl -s \"http://localhost:3000/en\" 2>/dev/null | head -50)",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/[locale]/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/en/sale\" && curl -s -o /dev/null -w \"\\\\n%{http_code}\" \"http://localhost:3000/en/bestsellers\")",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/packages/lib/src/ 2>/dev/null && cat /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/packages/lib/package.json 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('main:', d.get\\('main'\\)\\); print\\('exports:', d.get\\('exports'\\)\\)\")",
+      "Bash(cd /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop && node -e \"require\\('next'\\)\" 2>&1 | head -5)",
+      "Bash(cat /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/.next/dev/routes-manifest.json 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(r.get\\('page'\\)\\) for r in d.get\\('dynamicRoutes',[]\\)]\")",
+      "Bash(cat /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/.next/dev/routes-manifest.json 2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\" 2>/dev/null | head -50)",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/.next/dev/logs/ 2>/dev/null && cat /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/.next/dev/logs/*.log 2>/dev/null | tail -30)",
+      "Bash(curl -s -X POST \"http://localhost:9000/admin/media-upload\" \\\\\n  -F \"file=@/c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/server.js;type=image/png\" \\\\\n  2>/dev/null | python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d,indent=2\\)\\)\" 2>/dev/null || echo \"FAILED\")",
+      "Bash(curl -v -X POST \"http://localhost:9000/admin/media-upload\" \\\\\n  -F \"file=@/c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/package.json;type=image/png\" \\\\\n  2>&1 | tail -20)",
+      "Bash(curl -s -X POST \"http://localhost:9000/admin/media-upload\" \\\\\n  -F \"file=@C:/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/package.json;type=image/png\" \\\\\n  2>/dev/null)",
+      "Bash(curl -s -X POST \"http://localhost:9000/admin-hub/v1/media\" \\\\\n  -F \"file=@C:/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/package.json;type=image/png\" \\\\\n  2>/dev/null)",
+      "Bash(ls -la /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/uploads/ && curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:9000/uploads/1773502096802-package.json\")"
     ]
   }
 }
