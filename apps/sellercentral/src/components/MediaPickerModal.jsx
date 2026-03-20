@@ -15,9 +15,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Modal,
   Text,
+  Button,
   TextField,
   BlockStack,
-  InlineStack,
   Box,
   Divider,
   Thumbnail,
@@ -150,30 +150,42 @@ export default function MediaPickerModal({
       onClose={onClose}
       title={title}
       size="large"
-      primaryAction={{
-        content: "Apply",
-        onAction: handleApply,
-        disabled: !canApply || uploading,
-      }}
-      secondaryActions={[{ content: "Cancel", onAction: onClose }]}
     >
       <Modal.Section>
-        <BlockStack gap="400">
-          {/* URL input */}
-          <TextField
-            label={multiple ? "URL ile ekle (birden fazla için alt alta gir)" : "URL ile ekle"}
-            value={urlInput}
-            onChange={setUrlInput}
-            placeholder="https://..."
-            multiline={multiple ? 3 : 1}
-            autoComplete="off"
-            helpText={multiple ? "Her satıra bir URL, veya virgülle ayrılmış" : undefined}
-          />
-          <Divider />
-          <Text as="p" variant="bodySm" fontWeight="semibold" tone="subdued">
-            Medya kütüphanesinden seç
-          </Text>
-        </BlockStack>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {/* URL input (search-like) */}
+            <TextField
+              label={multiple ? "URL ile ekle (birden fazla için alt alta gir)" : "URL ile ekle"}
+              value={urlInput}
+              onChange={setUrlInput}
+              placeholder="https://..."
+              multiline={multiple ? 3 : 1}
+              autoComplete="off"
+              helpText={multiple ? "Her satıra bir URL, veya virgülle ayrılmış" : undefined}
+            />
+          </div>
+          <div style={{ alignSelf: "end", display: "flex", gap: 8, paddingBottom: 2 }}>
+            <Button variant="primary" onClick={handleApply} disabled={!canApply || uploading}>
+              Save
+            </Button>
+            <Button onClick={onClose} disabled={uploading}>
+              Discard
+            </Button>
+          </div>
+        </div>
+
+        <Divider />
+        <Text as="p" variant="bodySm" fontWeight="semibold" tone="subdued">
+          Medya kütüphanesinden seç
+        </Text>
       </Modal.Section>
 
       <Modal.Section>

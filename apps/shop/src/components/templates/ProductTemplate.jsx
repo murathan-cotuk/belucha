@@ -1095,7 +1095,7 @@ export default function ProductTemplate() {
                 {[
                   { label: "Versand", value: meta.shipping_info || meta.versand || "Standardversand" },
                   { label: "Rückgabe", value: `${returnDays} Tage, ${returnCost}` },
-                  { label: "Sold by", value: storeName },
+                  { label: "Verkäufer", value: storeName },
                   ...((variant?.ean || meta.ean) ? [{ label: "EAN", value: variant?.ean || meta.ean }] : []),
                 ].map(({ label, value }) => (
                   <InfoRow key={label}>

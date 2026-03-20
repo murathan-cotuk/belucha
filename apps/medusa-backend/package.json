@@ -20,18 +20,24 @@
     "postinstall": "node scripts/patch-link-modules.js",
     "patch": "node scripts/patch-link-modules.js"
   },
-  "keywords": ["medusa", "ecommerce", "api", "mock"],
+  "keywords": [
+    "medusa",
+    "ecommerce",
+    "api",
+    "mock"
+  ],
   "author": "",
   "license": "ISC",
   "description": "Medusa-compatible mock backend (bridge). In-memory API for development/testing. NOT production-ready. Real Medusa v2 integration pending.",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
     "@medusajs/admin": "^7.1.18",
     "@medusajs/admin-ui": "^2.1.18",
     "@medusajs/auth-emailpass": "2.13.1",
     "@medusajs/cli": "^2.13.1",
     "@medusajs/file-local": "2.13.1",
-    "@medusajs/fulfillment-manual": "2.13.1",
     "@medusajs/framework": "2.13.1",
+    "@medusajs/fulfillment-manual": "2.13.1",
     "@medusajs/link-modules": "2.13.1",
     "@medusajs/medusa": "2.13.1",
     "@medusajs/notification-local": "2.13.1",
@@ -39,12 +45,11 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
-    "@aws-sdk/client-s3": "^3.700.0",
+    "medusa": "^0.0.3",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.13.1",
-    "medusa": "^0.0.3",
+    "stripe": "^20.4.1",
     "ts-node": "^10.9.2",
     "typeorm": "^0.3.20"
-  },
-  "devDependencies": {}
+  }
 }

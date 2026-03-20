@@ -26,6 +26,7 @@ import {
 import { ProductIcon, MenuHorizontalIcon, ViewIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import { titleToHandle } from "@/lib/slugify";
+import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 import MediaPickerModal from "@/components/MediaPickerModal";
 
 const getDefaultBaseUrl = () => {
@@ -173,17 +174,18 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const initialProductId = initialProduct?.id ?? initialProduct?.handle ?? "";
   useEffect(() => {
     const next = initialProduct ?? (isNew ? getEmptyProduct() : null);
+    if (!next) { setProduct((prev) => prev ?? null); return; }
+    const tr = next.metadata?.translations;
+    const localized = tr?.[locale] ? { ...next, title: tr[locale].title ?? next.title, description: tr[locale].description ?? next.description } : next;
     setProduct((prev) => {
-      if (!next) return prev ?? null;
       const prevKey = prev?.id ?? prev?.handle ?? "";
-      const tr = next.metadata?.translations;
-      const localized = tr?.[locale] ? { ...next, title: tr[locale].title ?? next.title, description: tr[locale].description ?? next.description } : next;
       if (prevKey && initialProductId && prevKey === initialProductId) {
         return { ...prev, title: localized.title, description: localized.description };
       }
       return localized;
     });
-    if (next) initialSnapshotRef.current = JSON.stringify(normalizeForCompare(next));
+    // Snapshot must match what product state is set to (localized), not raw next
+    initialSnapshotRef.current = JSON.stringify(normalizeForCompare(localized));
   }, [initialProductId, isNew, locale]);
 
   // Load categories, collections, brands in parallel so the page feels faster
@@ -215,11 +217,12 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   // Auto-prune stale related_product_ids if those products were deleted
   useEffect(() => {
     if (!product) return;
+    if (!relatedProductsList.length) return; // list not loaded yet — don't prune
     const ids = Array.isArray(product?.metadata?.related_product_ids)
       ? product.metadata.related_product_ids
       : [];
     if (!ids.length) return;
-    const valid = new Set((relatedProductsList || []).map((p) => p?.id).filter(Boolean));
+    const valid = new Set(relatedProductsList.map((p) => p?.id).filter(Boolean));
     const next = ids.filter((id) => valid.has(id));
     if (next.length !== ids.length) {
       setProduct((prev) => {
@@ -250,6 +253,33 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       variants: Array.isArray(p.variants) ? p.variants : [],
     };
   }
+  const isDirty = product && initialSnapshotRef.current != null && JSON.stringify(normalizeForCompare(product)) !== initialSnapshotRef.current;
+  const unsaved = useUnsavedChanges();
+  const unsavedRef = useRef(unsaved);
+  unsavedRef.current = unsaved;
+
+  const handleDiscard = useCallback(() => {
+    setProduct(initialProduct ?? (isNew ? getEmptyProduct() : null));
+    if (initialProduct) initialSnapshotRef.current = JSON.stringify(normalizeForCompare(initialProduct));
+    else if (isNew) initialSnapshotRef.current = JSON.stringify(normalizeForCompare(getEmptyProduct()));
+    unsavedRef.current?.setDirty(false);
+  }, [initialProduct, isNew]);
+
+  useEffect(() => {
+    unsavedRef.current?.setDirty(isDirty);
+  }, [isDirty]);
+
+  useEffect(() => {
+    unsavedRef.current?.setHandlers({
+      onSave: () => saveRef.current?.(),
+      onDiscard: () => discardRef.current?.(),
+    });
+    return () => {
+      unsavedRef.current?.clearHandlers();
+      unsavedRef.current?.setDirty(false);
+    };
+  }, []);
+
   const meta = product?.metadata && typeof product.metadata === "object" ? product.metadata : {};
   const uvp = meta.uvp_cents != null ? Number(meta.uvp_cents) / 100 : null;
   const rabattpreis = meta.rabattpreis_cents != null ? Number(meta.rabattpreis_cents) / 100 : null;
@@ -276,6 +306,10 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       ? (descEditorRef.current.innerHTML || "")
       : (product.description || "");
     const handle = (product.handle || "").trim() || titleToHandle(product.title || "product");
+    const fallbackStatus = initialProduct?.status ?? "draft";
+    const nextStatus = product.status != null && String(product.status).trim() !== ""
+      ? String(product.status).trim()
+      : fallbackStatus;
     try {
       setSaving(true);
       setMessage({ type: "", text: "" });
@@ -296,17 +330,23 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
           })),
         }));
       }
+      // Top-level EAN alanı (SKU & EAN) güncellendiğinde shop tarafında doğru görünsün diye
+      // varyantlara da aynı EAN'ı uygula. (Shop önce variant.ean'ı kullanıyor.)
+      const metaEan = metadata.ean != null ? String(metadata.ean).trim() : "";
+      const variantsToSave = metaEan
+        ? (product.variants || []).map((v) => ({ ...(v || {}), ean: metaEan }))
+        : product.variants || [];
       const collectionId = (metadata.collection_ids && metadata.collection_ids[0]) || product.collection_id || null;
       const payload = {
         title: product.title || "Untitled",
         handle,
         sku: product.sku || "",
         description: descriptionToSave,
-        status: product.status || "draft",
+        status: nextStatus,
         price: product.price ?? 0,
         inventory: product.inventory ?? 0,
         metadata,
-        variants: product.variants || [],
+        variants: variantsToSave,
         ...(collectionId !== undefined && { collection_id: collectionId }),
       };
       if (isNew) {
@@ -333,8 +373,9 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         : savedProductRaw;
 
       setProduct(savedProduct);
-      setMessage({ type: "success", text: "Saved" });
       initialSnapshotRef.current = JSON.stringify(normalizeForCompare(savedProduct));
+      unsavedRef.current?.setDirty(false);
+      setMessage({ type: "success", text: "Saved" });
       onReload?.();
     } catch (err) {
       setMessage({ type: "error", text: err?.message || "Save failed" });
@@ -342,6 +383,11 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       setSaving(false);
     }
   };
+
+  const saveRef = useRef(save);
+  const discardRef = useRef(handleDiscard);
+  saveRef.current = save;
+  discardRef.current = handleDiscard;
 
   const openDuplicateModal = () => {
     setDuplicateOptions({ ...DEFAULT_DUPLICATE_OPTIONS });
@@ -1130,21 +1176,14 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                                         ? <img src={effectiveImg} alt="" />
                                         : <span style={{ fontSize: 9, color: "var(--p-color-text-subdued)" }}>+</span>}
                                     </button>
-                                    <div style={{ flex: 1, minWidth: 80 }}>
-                                      <TextField
-                                        label="" labelHidden
-                                        value={v.image_url ?? ""}
-                                        onChange={(val) => updateMatrixVariant(v.option_values, "image_url", val)}
-                                        placeholder={groupSwatchUrl ? "Override…" : "Image URL"}
-                                        autoComplete="off"
-                                      />
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 80 }}>
                                       {isOverride && (
                                         <button type="button" className="vg-clear-override" onClick={() => updateMatrixVariant(v.option_values, "image_url", "")}>
                                           Clear override
                                         </button>
                                       )}
                                       {!isOverride && groupSwatchUrl && (
-                                        <span style={{ fontSize: 10, color: "var(--p-color-text-subdued)", display: "block", marginTop: 2 }}>Using group swatch</span>
+                                        <span style={{ fontSize: 10, color: "var(--p-color-text-subdued)", display: "block" }}>Using group swatch</span>
                                       )}
                                     </div>
                                   </div>
@@ -1248,7 +1287,34 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 </BlockStack>
                 <BlockStack gap="200">
                   <Text as="h2" variant="bodyMd" fontWeight="regular">Yayın tarihi (opsiyonel)</Text>
-                  <TextField label="" labelHidden type="date" value={meta.publish_date ?? ""} onChange={(v) => updateMeta("publish_date", v || undefined)} placeholder="YYYY-MM-DD" helpText="İleri tarih seçilirse shop’ta “Pek yakında” gösterilir." />
+                  <TextField
+                    label=""
+                    labelHidden
+                    type="datetime-local"
+                    value={(() => {
+                      // Keep the input controlled: datetime-local expects "YYYY-MM-DDTHH:mm"
+                      const raw = meta.publish_date;
+                      if (!raw) return "";
+                      const d = new Date(raw);
+                      if (isNaN(d.getTime())) return "";
+                      const pad = (n) => String(n).padStart(2, "0");
+                      const yyyy = d.getFullYear();
+                      const mm = pad(d.getMonth() + 1);
+                      const dd = pad(d.getDate());
+                      const hh = pad(d.getHours());
+                      const min = pad(d.getMinutes());
+                      return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+                    })()}
+                    onChange={(v) => {
+                      if (!v) return updateMeta("publish_date", undefined);
+                      const d = new Date(v);
+                      if (isNaN(d.getTime())) return updateMeta("publish_date", undefined);
+                      // Store ISO so shop can do new Date(publish_date) safely
+                      updateMeta("publish_date", d.toISOString());
+                    }}
+                    placeholder="YYYY-MM-DDTHH:mm"
+                    helpText="İleri tarih + saat seçilirse shop’ta “Pek yakında” gösterilir."
+                  />
                 </BlockStack>
 
                 <Divider />

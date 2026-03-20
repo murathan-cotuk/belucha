@@ -1,4 +1,4 @@
-19.03.
+20.03.
 ----------------------------------
 1. PRODUCT PAGE SCROLL (UX FIX)
 -----------------------------------
@@ -228,3 +228,4 @@ Yarım iş istemiyorum.
 
 - shoptaki search bar bir tik daha kücülsün ve o bar incelsin bir tik. second bar bir tik kalin olsun ve oradaki menüler daha büyük puntolu yazilsin. 
 - sellercentralde bir varyasyon optionuna swatch image ekleyince onu varyasyon ürününün ilk fotografi olarak da kabul ediyor. ürün fotosu size in sagindaki yer oldugu icin oraya etki etmemeli. oraya tiklayarak ürün eklenmeli. o kisimdan eklenen görselleri silebilme sansimiz da olmali.
+- sellercentralde ürüne girdigimde ya da database de olan herhangi bir seye girdigimde (kategori, kolkesiyon, ürün, fotograf vs.) database de ne sekilde tanimlaniyorsa o gözükmeli. yani ID si yazmali sellercentralde urlde. yani bunu lütfen atlama burasi cok kritik. isim tanimli su anda ancak ben sürekli isim degistiriyorum urlde güncellenmiyor. database ile sürekli iletisim halinde kalinmasi lazim. o yüzde id kullanalim id hep sabittir.

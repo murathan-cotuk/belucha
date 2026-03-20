@@ -397,6 +397,49 @@ async function start() {
           );
         `)
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_cart_items_cart_id ON store_cart_items(cart_id);')
+
+        // Orders (Stripe checkout sonrası)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_orders (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            cart_id uuid REFERENCES store_carts(id) ON DELETE SET NULL,
+            payment_intent_id text,
+            status varchar(50) NOT NULL DEFAULT 'pending',
+            email text,
+            first_name text,
+            last_name text,
+            phone text,
+            address_line1 text,
+            address_line2 text,
+            city text,
+            postal_code text,
+            country text,
+            subtotal_cents integer NOT NULL DEFAULT 0,
+            total_cents integer NOT NULL DEFAULT 0,
+            currency text NOT NULL DEFAULT 'eur',
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_order_items (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            order_id uuid NOT NULL REFERENCES store_orders(id) ON DELETE CASCADE,
+            variant_id text,
+            product_id text,
+            quantity integer NOT NULL DEFAULT 1 CHECK (quantity > 0),
+            unit_price_cents integer NOT NULL DEFAULT 0,
+            title text,
+            thumbnail text,
+            product_handle text,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `)
+
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_order_items_order_id ON store_order_items(order_id);')
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_orders_payment_intent_id ON store_orders(payment_intent_id);')
         await client.end()
         console.log('Admin Hub: admin_hub_menus, admin_hub_menu_locations, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
       } catch (migErr) {
@@ -2338,6 +2381,204 @@ async function start() {
     httpApp.delete('/store/carts/:id/line-items/:lineId', storeCartLineItemDELETE)
     httpApp.delete('/store/carts/:id/line-items', storeCartClearDELETE)
     console.log('Store routes: POST/GET /store/carts, POST/PATCH/DELETE line-items')
+
+    // --- Store Payment Intent (Stripe) ---
+    const storePaymentIntentPOST = async (req, res) => {
+      const body = req.body || {}
+      const cartId = (body.cart_id || body.cartId || '').toString().trim()
+      if (!cartId) return res.status(400).json({ message: 'cart_id required' })
+
+      const secretKey = (process.env.STRIPE_SECRET_KEY || '').toString().trim()
+      if (!secretKey) return res.status(503).json({ message: 'STRIPE_SECRET_KEY not configured' })
+
+      const { Client } = require('pg')
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+
+      let client
+      try {
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const cart = await getCartWithItems(client, cartId)
+        await client.end()
+        if (!cart) return res.status(404).json({ message: 'Cart not found' })
+
+        const items = Array.isArray(cart.items) ? cart.items : []
+        if (!items.length) return res.status(400).json({ message: 'Cart is empty' })
+
+        const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
+        const stripe = new (require('stripe'))(secretKey)
+
+        // PaymentElement uyumu için automatic_payment_methods kullanıyoruz
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: subtotalCents,
+          currency: 'eur',
+          automatic_payment_methods: { enabled: true },
+          metadata: { cart_id: cartId },
+        })
+
+        res.json({
+          client_secret: paymentIntent.client_secret,
+          payment_intent_id: paymentIntent.id,
+          amount_cents: subtotalCents,
+        })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store payment-intent POST:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+
+    // --- Store Orders (Stripe payment success sonrası) ---
+    const getOrderWithItems = async (client, orderId) => {
+      const oRes = await client.query(
+        'SELECT id, cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
+        [orderId]
+      )
+      const oRow = oRes.rows && oRes.rows[0]
+      if (!oRow) return null
+
+      const itemsRes = await client.query(
+        'SELECT id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle FROM store_order_items WHERE order_id = $1 ORDER BY created_at',
+        [orderId]
+      )
+      const items = (itemsRes.rows || []).map((r) => ({
+        id: r.id,
+        variant_id: r.variant_id,
+        product_id: r.product_id,
+        quantity: r.quantity,
+        unit_price_cents: r.unit_price_cents,
+        title: r.title,
+        thumbnail: r.thumbnail,
+        product_handle: r.product_handle,
+      }))
+
+      return {
+        id: oRow.id,
+        cart_id: oRow.cart_id,
+        payment_intent_id: oRow.payment_intent_id,
+        status: oRow.status,
+        email: oRow.email,
+        first_name: oRow.first_name,
+        last_name: oRow.last_name,
+        phone: oRow.phone,
+        address_line1: oRow.address_line1,
+        address_line2: oRow.address_line2,
+        city: oRow.city,
+        postal_code: oRow.postal_code,
+        country: oRow.country,
+        subtotal_cents: oRow.subtotal_cents,
+        total_cents: oRow.total_cents,
+        currency: oRow.currency,
+        created_at: oRow.created_at,
+        updated_at: oRow.updated_at,
+        items,
+      }
+    }
+
+    const storeOrdersPOST = async (req, res) => {
+      const body = req.body || {}
+      const cartId = (body.cart_id || body.cartId || '').toString().trim()
+      const paymentIntentId = (body.payment_intent_id || body.paymentIntentId || '').toString().trim()
+      if (!cartId) return res.status(400).json({ message: 'cart_id required' })
+      if (!paymentIntentId) return res.status(400).json({ message: 'payment_intent_id required' })
+
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+
+        const cart = await getCartWithItems(client, cartId)
+        if (!cart) { await client.end(); return res.status(404).json({ message: 'Cart not found' }) }
+        const items = Array.isArray(cart.items) ? cart.items : []
+        if (!items.length) { await client.end(); return res.status(400).json({ message: 'Cart is empty' }) }
+
+        const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
+        const totalCents = subtotalCents // shipping burada yok (checkout mevcut)
+
+        const email = (body.email || '').toString().trim() || null
+        const first_name = (body.first_name || '').toString().trim() || null
+        const last_name = (body.last_name || '').toString().trim() || null
+        const phone = (body.phone || '').toString().trim() || null
+        const address_line1 = (body.address_line1 || '').toString().trim() || null
+        const address_line2 = (body.address_line2 || '').toString().trim() || null
+        const city = (body.city || '').toString().trim() || null
+        const postal_code = (body.postal_code || '').toString().trim() || null
+        const country = (body.country || '').toString().trim() || null
+
+        const ins = await client.query(
+          `INSERT INTO store_orders
+            (cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency)
+           VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'eur')
+           RETURNING id`,
+          [cartId, paymentIntentId, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotalCents, totalCents]
+        )
+
+        const orderId = ins.rows && ins.rows[0] ? ins.rows[0].id : null
+        if (!orderId) { await client.end(); return res.status(500).json({ message: 'Order insert failed' }) }
+
+        for (const it of items) {
+          await client.query(
+            `INSERT INTO store_order_items
+              (order_id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              orderId,
+              it.variant_id,
+              it.product_id,
+              it.quantity,
+              it.unit_price_cents,
+              it.title,
+              it.thumbnail,
+              it.product_handle,
+            ]
+          )
+        }
+
+        // Clear cart items so user can't reorder accidentally
+        await client.query('DELETE FROM store_cart_items WHERE cart_id = $1', [cartId])
+
+        const order = await getOrderWithItems(client, orderId)
+        await client.end()
+        res.status(201).json({ order })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store orders POST:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+
+    const storeOrdersGET = async (req, res) => {
+      const orderId = (req.params.id || '').toString().trim()
+      if (!orderId) return res.status(400).json({ message: 'Order id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const order = await getOrderWithItems(client, orderId)
+        await client.end()
+        if (!order) return res.status(404).json({ message: 'Order not found' })
+        res.json({ order })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store orders GET:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+
+    // Routes
+    httpApp.post('/store/payment-intent', storePaymentIntentPOST)
+    httpApp.post('/store/orders', storeOrdersPOST)
+    httpApp.get('/store/orders/:id', storeOrdersGET)
+    console.log('Store routes: POST /store/payment-intent, POST /store/orders, GET /store/orders/:id')
 
     const storeCollectionsGET = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
