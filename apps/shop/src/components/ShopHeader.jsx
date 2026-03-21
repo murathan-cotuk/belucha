@@ -503,22 +503,25 @@ const LocaleCurrencyBtn = styled.button`
   }
 `;
 
-const LocaleDropdown = styled(motion.div)`
+const LocaleDropdown = styled.div`
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 160px;
+  width: 480px;
+  max-width: 95vw;
   background: ${tokens.background.card};
   border: 1px solid ${tokens.border.light};
-  border-radius: 12px;
-  box-shadow: ${tokens.shadow.hover};
-  padding: 6px 0;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
   z-index: 99999;
-  display: ${(p) => (p.$open ? "block" : "none")};
+  display: ${(p) => (p.$open ? "flex" : "none")};
+  overflow: hidden;
 `;
 
 const LocaleOption = styled.button`
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   padding: 10px 16px;
@@ -529,12 +532,40 @@ const LocaleOption = styled.button`
   cursor: pointer;
   font-family: ${tokens.fontFamily.sans};
   transition: background ${tokens.transition.base}, color ${tokens.transition.base};
+  border-radius: 8px;
 
   &:hover {
     background: ${tokens.background.soft};
     color: ${tokens.primary.DEFAULT};
   }
+
+  &[data-active="true"] {
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+  }
 `;
+
+const SHOP_COUNTRIES = [
+  { code: "DE", label: "Deutschland",   flag: "🇩🇪", currency: "EUR", defaultLocale: "de" },
+  { code: "AT", label: "Österreich",    flag: "🇦🇹", currency: "EUR", defaultLocale: "de" },
+  { code: "CH", label: "Schweiz",       flag: "🇨🇭", currency: "CHF", defaultLocale: "de" },
+  { code: "FR", label: "France",        flag: "🇫🇷", currency: "EUR", defaultLocale: "fr" },
+  { code: "IT", label: "Italia",        flag: "🇮🇹", currency: "EUR", defaultLocale: "it" },
+  { code: "ES", label: "España",        flag: "🇪🇸", currency: "EUR", defaultLocale: "es" },
+  { code: "TR", label: "Türkiye",       flag: "🇹🇷", currency: "TRY", defaultLocale: "tr" },
+  { code: "US", label: "United States", flag: "🇺🇸", currency: "USD", defaultLocale: "en" },
+  { code: "GB", label: "United Kingdom",flag: "🇬🇧", currency: "GBP", defaultLocale: "en" },
+];
+
+const SHOP_LOCALES = [
+  { code: "de", label: "Deutsch",    flag: "🇩🇪" },
+  { code: "en", label: "English",    flag: "🇬🇧" },
+  { code: "fr", label: "Français",   flag: "🇫🇷" },
+  { code: "it", label: "Italiano",   flag: "🇮🇹" },
+  { code: "es", label: "Español",    flag: "🇪🇸" },
+  { code: "tr", label: "Türkçe",     flag: "🇹🇷" },
+];
 
 export default function ShopHeader() {
   const pathname = usePathname() || "/";
@@ -545,9 +576,29 @@ export default function ShopHeader() {
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [localeDropdownOpen, setLocaleDropdownOpen] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState("DE");
   const [mainMenuItems, setMainMenuItems] = useState([]);
   const [secondMenuItems, setSecondMenuItems] = useState([]);
   const { isAuthenticated, user, logout } = useAuth();
+
+  // Load/persist selected country in localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("selectedCountry");
+      if (saved && SHOP_COUNTRIES.some((c) => c.code === saved)) setSelectedCountry(saved);
+    }
+  }, []);
+  const handleSelectCountry = (countryCode) => {
+    setSelectedCountry(countryCode);
+    if (typeof window !== "undefined") localStorage.setItem("selectedCountry", countryCode);
+    const country = SHOP_COUNTRIES.find((c) => c.code === countryCode);
+    // Auto-navigate to country's default language if it differs from current
+    if (country && country.defaultLocale !== locale) {
+      const base = pathname === "/" ? "" : pathname;
+      nextRouter.push(`/${country.defaultLocale}${base}`);
+    }
+    setLocaleDropdownOpen(false);
+  };
   const { openCartSidebar, itemCount } = useCart();
   const tLocale = useTranslations("locale");
   const locale = useLocale();
@@ -691,20 +742,44 @@ export default function ShopHeader() {
                     <path d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
                   </svg>
                 </MiddleBarLocaleBtn>
-                <LocaleDropdown $open={localeDropdownOpen} initial={false}>
-                  {routing.locales.map((loc) => (
-                    <LocaleOption
-                      key={loc}
-                      type="button"
-                      onClick={() => {
-                        setLocaleDropdownOpen(false);
-                        const base = pathname === "/" ? "" : pathname;
-                        nextRouter.push(`/${loc}${base}`);
-                      }}
-                    >
-                      {tLocale(loc)}
-                    </LocaleOption>
-                  ))}
+                <LocaleDropdown $open={localeDropdownOpen}>
+                  {/* Left: Country selector */}
+                  <div style={{ flex: 1, borderRight: "1px solid #e5e7eb", padding: "16px 0" }}>
+                    <div style={{ padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>Land</div>
+                    {SHOP_COUNTRIES.map((c) => (
+                      <LocaleOption
+                        key={c.code}
+                        type="button"
+                        data-active={selectedCountry === c.code ? "true" : "false"}
+                        onClick={() => handleSelectCountry(c.code)}
+                      >
+                        <span style={{ fontSize: 20 }}>{c.flag}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{c.label}</div>
+                          <div style={{ fontSize: 11, color: "#9ca3af" }}>{c.currency}</div>
+                        </div>
+                      </LocaleOption>
+                    ))}
+                  </div>
+                  {/* Right: Language selector */}
+                  <div style={{ flex: 1, padding: "16px 0" }}>
+                    <div style={{ padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>Sprache</div>
+                    {SHOP_LOCALES.map((l) => (
+                      <LocaleOption
+                        key={l.code}
+                        type="button"
+                        data-active={locale === l.code ? "true" : "false"}
+                        onClick={() => {
+                          setLocaleDropdownOpen(false);
+                          const base = pathname === "/" ? "" : pathname;
+                          nextRouter.push(`/${l.code}${base}`);
+                        }}
+                      >
+                        <span style={{ fontSize: 20 }}>{l.flag}</span>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{l.label}</div>
+                      </LocaleOption>
+                    ))}
+                  </div>
                 </LocaleDropdown>
               </LocaleCurrencyWrap>
               <MiddleBarAccountWrap data-user-menu>

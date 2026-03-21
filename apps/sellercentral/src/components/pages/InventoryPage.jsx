@@ -133,9 +133,10 @@ export default function InventoryPage() {
         meta.collection_id = undefined;
       }
       const variants = opt.variants ? stripSkuEanFromVariants(p.variants) : [];
+      const origTitle = (p.title || "").trim();
       const payload = {
-        title: opt.title ? (p.title || "").trim() + " (Copy)" : "Untitled",
-        handle: (p.title || p.handle || "product").toString().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 50) + "-" + Date.now().toString(36),
+        title: opt.title ? origTitle : "Untitled",
+        handle: (origTitle || p.handle || "produkt").toString().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 50) + "-" + Date.now().toString(36),
         sku: "",
         description: opt.description ? (p.description || "") : "",
         status: "draft",
@@ -412,7 +413,7 @@ export default function InventoryPage() {
             ) : (
               <BlockStack gap="300">
                 <Checkbox
-                  label="Title (with “(Copy)” suffix)"
+                  label={'Titel kopieren'}
                   checked={duplicateOptions.title}
                   onChange={(v) => setDuplicateOptions((o) => ({ ...o, title: v }))}
                 />

@@ -446,6 +446,48 @@ async function start() {
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS is_guest boolean DEFAULT true;`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS newsletter_opted_in boolean DEFAULT false;`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS customer_id uuid;`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS tracking_number varchar(200);`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS carrier_name varchar(100);`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS shipped_at timestamp;`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS notes text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_date timestamp;`).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_shipping_carriers (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name varchar(100) NOT NULL,
+            tracking_url_template text,
+            api_key text,
+            api_secret text,
+            is_active boolean DEFAULT true,
+            sort_order integer DEFAULT 0,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_integrations (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name varchar(100) NOT NULL,
+            slug varchar(100) NOT NULL UNIQUE,
+            logo_url text,
+            api_key text,
+            api_secret text,
+            webhook_url text,
+            config jsonb DEFAULT '{}',
+            is_active boolean DEFAULT false,
+            category varchar(50) DEFAULT 'other',
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `).catch(() => {})
+        // customer_number may be missing if table was created before this column was added
+        await client.query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='store_customers' AND column_name='customer_number') THEN
+              ALTER TABLE store_customers ADD COLUMN customer_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 10001 INCREMENT BY 1);
+            END IF;
+          END $$;
+        `).catch(() => {})
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS password_hash text;`).catch(() => {})
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS account_type varchar(20) DEFAULT 'privat';`).catch(() => {})
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS gender varchar(10);`).catch(() => {})
@@ -457,6 +499,84 @@ async function start() {
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS country varchar(100);`).catch(() => {})
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS company_name text;`).catch(() => {})
         await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS vat_number text;`).catch(() => {})
+        // Fix duplicate + NULL customer_numbers and restore identity sequence.
+        // Uses a row-by-row DO block so every assignment is guaranteed unique.
+        await client.query(`
+          DO $$
+          DECLARE
+            rec    RECORD;
+            new_num BIGINT;
+          BEGIN
+            -- 1. Drop GENERATED ALWAYS identity so we can write to the column directly
+            BEGIN
+              ALTER TABLE store_customers ALTER COLUMN customer_number DROP IDENTITY;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+
+            -- 2. Starting point = current max (or 100000 if table is empty)
+            SELECT COALESCE(MAX(customer_number), 100000) INTO new_num FROM store_customers;
+
+            -- 3. Assign fresh numbers to every duplicate (keep the earliest row's number)
+            FOR rec IN
+              SELECT id FROM (
+                SELECT id,
+                  ROW_NUMBER() OVER (PARTITION BY customer_number ORDER BY created_at ASC) AS rn
+                FROM store_customers
+                WHERE customer_number IS NOT NULL
+              ) t
+              WHERE rn > 1
+              ORDER BY rn
+            LOOP
+              new_num := new_num + 1;
+              UPDATE store_customers SET customer_number = new_num WHERE id = rec.id;
+            END LOOP;
+
+            -- 4. Also fill in any NULL customer_numbers
+            FOR rec IN
+              SELECT id FROM store_customers WHERE customer_number IS NULL ORDER BY created_at
+            LOOP
+              new_num := new_num + 1;
+              UPDATE store_customers SET customer_number = new_num WHERE id = rec.id;
+            END LOOP;
+
+            -- 5. Restore GENERATED ALWAYS AS IDENTITY starting after the new max
+            BEGIN
+              EXECUTE format(
+                'ALTER TABLE store_customers ALTER COLUMN customer_number ADD GENERATED ALWAYS AS IDENTITY (START WITH %s INCREMENT BY 1)',
+                new_num + 1
+              );
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+          END $$
+        `).catch(e => console.warn('customer_number dedup migration:', e?.message))
+        // Ensure uniqueness index exists (safe to run repeatedly)
+        await client.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS store_customers_customer_number_unique
+          ON store_customers(customer_number) WHERE customer_number IS NOT NULL;
+        `).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS notes text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS email_marketing_consent boolean DEFAULT false;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS bonus_points integer DEFAULT 0;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS billing_address_line1 text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS billing_address_line2 text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS billing_zip_code varchar(20);`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS billing_city text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS billing_country varchar(100);`).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_customer_discounts (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            customer_id uuid NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+            code varchar(100) NOT NULL,
+            type varchar(20) NOT NULL DEFAULT 'percentage',
+            value numeric(10,2) NOT NULL DEFAULT 0,
+            min_order_cents integer DEFAULT 0,
+            max_uses integer DEFAULT 1,
+            used_count integer DEFAULT 0,
+            expires_at timestamp,
+            notes text,
+            created_at timestamp DEFAULT now()
+          );
+        `).catch(() => {})
         await client.query(`
   CREATE TABLE IF NOT EXISTS store_customers (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -484,6 +604,12 @@ async function start() {
     updated_at timestamp DEFAULT now()
   );
 `).catch(() => {})
+        // Migrations: add refund fields to store_returns
+        await client.query(`ALTER TABLE store_returns ADD COLUMN IF NOT EXISTS refund_amount_cents integer`).catch(() => {})
+        await client.query(`ALTER TABLE store_returns ADD COLUMN IF NOT EXISTS refund_status varchar(50)`).catch(() => {})
+        await client.query(`ALTER TABLE store_returns ADD COLUMN IF NOT EXISTS refund_note text`).catch(() => {})
+        await client.query(`ALTER TABLE store_returns ADD COLUMN IF NOT EXISTS approved_at timestamp`).catch(() => {})
+        await client.query(`ALTER TABLE store_returns ADD COLUMN IF NOT EXISTS rejected_at timestamp`).catch(() => {})
 
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_order_items (
@@ -1647,25 +1773,31 @@ async function start() {
         params.push(limit, offset)
         const res = await client.query(sql, params)
         await client.end()
-        return (res.rows || []).map((r) => ({
-          id: r.id,
-          title: r.title,
-          handle: r.handle,
-          slug: r.handle,
-          sku: r.sku,
-          description: r.description,
-          status: r.status,
-          seller_id: r.seller_id,
-          seller: r.seller_id,
-          collection_id: r.collection_id,
-          price: r.price_cents != null ? r.price_cents / 100 : 0,
-          price_cents: r.price_cents,
-          inventory: r.inventory != null ? r.inventory : 0,
-          metadata: r.metadata,
-          variants: r.variants,
-          created_at: r.created_at,
-          updated_at: r.updated_at,
-        }))
+        return (res.rows || []).map((r) => {
+          const meta = r.metadata || {};
+          const mediaArr = Array.isArray(meta.media) ? meta.media : (meta.media ? [meta.media] : []);
+          const thumbnail = meta.thumbnail || (mediaArr[0] ? (typeof mediaArr[0] === 'string' ? mediaArr[0] : (mediaArr[0]?.url || null)) : null);
+          return {
+            id: r.id,
+            title: r.title,
+            handle: r.handle,
+            slug: r.handle,
+            sku: r.sku,
+            description: r.description,
+            status: r.status,
+            seller_id: r.seller_id,
+            seller: r.seller_id,
+            collection_id: r.collection_id,
+            price: r.price_cents != null ? r.price_cents / 100 : 0,
+            price_cents: r.price_cents,
+            inventory: r.inventory != null ? r.inventory : 0,
+            thumbnail,
+            metadata: r.metadata,
+            variants: r.variants,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+          }
+        })
       } catch (e) {
         try { await client.end() } catch (_) {}
         console.warn('listAdminHubProductsDb:', e && e.message)
@@ -2607,8 +2739,21 @@ async function start() {
         const { Client } = require('pg')
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const existing = await client.query('SELECT id FROM store_customers WHERE email = $1', [email])
-        if (existing.rows.length > 0) { await client.end(); return res.status(409).json({ message: 'An account with this email already exists' }) }
+        const existing = await client.query(
+          'SELECT id, password_hash FROM store_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))',
+          [email],
+        )
+        const rows = existing.rows || []
+        // Any row with a password = registered account (handles duplicate email rows from pre-normalization)
+        if (rows.some((r) => r.password_hash)) {
+          await client.end()
+          return res.status(409).json({ message: 'An account with this email already exists' })
+        }
+        // Multiple guest-only rows (e.g. same email different casing) — remove and insert one clean row
+        if (rows.length > 1) {
+          await client.query('DELETE FROM store_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))', [email])
+        }
+        const existingRow = rows.length === 1 ? rows[0] : null
         const password_hash = hashPassword(password)
         const first_name = (body.first_name || '').trim() || null
         const last_name = (body.last_name || '').trim() || null
@@ -2623,12 +2768,26 @@ async function start() {
         const country = (body.country || '').trim() || null
         const company_name = (body.company_name || '').trim() || null
         const vat_number = (body.vat_number || '').trim() || null
-        const r = await client.query(
-          `INSERT INTO store_customers (email, password_hash, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15)
-           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
-          [email, password_hash, first_name, last_name, phone, account_type, gender, birth_date || null, address_line1, address_line2, zip_code, city, country, company_name, vat_number]
-        )
+        let r
+        if (existingRow) {
+          // Guest entry exists — upgrade to registered account
+          r = await client.query(
+            `UPDATE store_customers SET password_hash=$1, first_name=$2, last_name=$3, phone=$4, account_type=$5,
+             gender=$6, birth_date=$7::date, address_line1=$8, address_line2=$9, zip_code=$10, city=$11,
+             country=$12, company_name=$13, vat_number=$14, updated_at=NOW()
+             WHERE id=$15
+             RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
+            [password_hash, first_name, last_name, phone, account_type, gender, birth_date || null,
+             address_line1, address_line2, zip_code, city, country, company_name, vat_number, existingRow.id]
+          )
+        } else {
+          r = await client.query(
+            `INSERT INTO store_customers (email, password_hash, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15)
+             RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
+            [email, password_hash, first_name, last_name, phone, account_type, gender, birth_date || null, address_line1, address_line2, zip_code, city, country, company_name, vat_number]
+          )
+        }
         const customer = { ...r.rows[0], customer_number: r.rows[0].customer_number ? Number(r.rows[0].customer_number) : null }
         await client.end()
         res.status(201).json({ customer })
@@ -2636,6 +2795,42 @@ async function start() {
         if (client) try { await client.end() } catch (_) {}
         if (e.code === '23505') return res.status(409).json({ message: 'An account with this email already exists' })
         res.status(500).json({ message: e?.message || 'Registration failed' })
+      }
+    }
+
+    // PATCH /store/customers/me — update own profile/address
+    const storeCustomerMePATCH = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload) return res.status(401).json({ message: 'Unauthorized' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const body = req.body || {}
+      const allowed = ['first_name','last_name','phone','account_type','address_line1','address_line2','zip_code','city','country','company_name','vat_number']
+      const sets = []
+      const vals = []
+      for (const key of allowed) {
+        if (key in body) { vals.push(body[key] || null); sets.push(`${key} = $${vals.length}`) }
+      }
+      if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
+      vals.push(payload.id)
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `UPDATE store_customers SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${vals.length}::uuid
+           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at`,
+          vals
+        )
+        await client.end()
+        const row = r.rows[0]
+        if (!row) return res.status(404).json({ message: 'Customer not found' })
+        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Update failed' })
       }
     }
 
@@ -2685,6 +2880,146 @@ async function start() {
         const row = r.rows[0]
         if (!row) return res.status(404).json({ message: 'Customer not found' })
         res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /store/orders/me — orders for authenticated customer
+    const storeOrdersMeGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!token) return res.status(401).json({ message: 'Unauthorized' })
+      let payload
+      try {
+        const { verifyCustomerToken } = require('./src/lib/jwt')
+        payload = verifyCustomerToken(token)
+      } catch {
+        try {
+          const jwt = require('jsonwebtoken')
+          payload = jwt.verify(token, process.env.JWT_SECRET || 'belucha_secret_key_2024')
+        } catch {
+          return res.status(401).json({ message: 'Invalid token' })
+        }
+      }
+      if (!payload?.email) return res.status(401).json({ message: 'Invalid token' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const ordersR = await client.query(
+          `SELECT id, order_number, order_status, payment_status, delivery_status,
+                  total_cents, subtotal_cents, shipping_cents, discount_cents, currency,
+                  first_name, last_name, phone, email,
+                  address_line1, address_line2, city, postal_code, country,
+                  billing_address_line1, billing_city, billing_postal_code, billing_country, billing_same_as_shipping,
+                  payment_method, tracking_number, carrier_name, shipped_at, delivery_date, notes,
+                  newsletter_opted_in, created_at, updated_at
+           FROM store_orders WHERE LOWER(email) = LOWER($1) ORDER BY created_at DESC`,
+          [payload.email]
+        )
+        const orderIds = (ordersR.rows || []).map(r => r.id)
+        let itemsMap = {}
+        if (orderIds.length > 0) {
+          const itemsR = await client.query(
+            `SELECT id, order_id, title, quantity, unit_price_cents, product_handle, thumbnail
+             FROM store_order_items WHERE order_id = ANY($1::uuid[])`,
+            [orderIds]
+          )
+          for (const it of (itemsR.rows || [])) {
+            if (!itemsMap[it.order_id]) itemsMap[it.order_id] = []
+            itemsMap[it.order_id].push(it)
+          }
+        }
+        // Also fetch return requests
+        let returnsMap = {}
+        if (orderIds.length > 0) {
+          try {
+            const returnsR = await client.query(
+              `SELECT id, order_id, status, reason, notes, return_number, created_at FROM store_returns WHERE order_id = ANY($1::uuid[]) ORDER BY created_at DESC`,
+              [orderIds]
+            )
+            for (const r of (returnsR.rows || [])) {
+              if (!returnsMap[r.order_id]) returnsMap[r.order_id] = []
+              returnsMap[r.order_id].push(r)
+            }
+          } catch (_) {}
+        }
+        await client.end()
+        const orders = (ordersR.rows || []).map(row => ({
+          ...row,
+          order_number: row.order_number ? Number(row.order_number) : null,
+          items: itemsMap[row.id] || [],
+          returns: returnsMap[row.id] || [],
+        }))
+        res.json({ orders })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // POST /store/orders/:id/return-request — customer requests a return
+    const storeReturnRequestPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!token) return res.status(401).json({ message: 'Unauthorized' })
+      const orderId = (req.params.id || '').trim()
+      if (!orderId) return res.status(400).json({ message: 'order id required' })
+      let payload
+      try {
+        const { verifyCustomerToken } = require('./src/lib/jwt')
+        payload = verifyCustomerToken(token)
+      } catch {
+        try {
+          const jwt = require('jsonwebtoken')
+          payload = jwt.verify(token, process.env.JWT_SECRET || 'belucha_secret_key_2024')
+        } catch {
+          return res.status(401).json({ message: 'Invalid token' })
+        }
+      }
+      if (!payload?.email) return res.status(401).json({ message: 'Invalid token' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        // Verify order belongs to customer
+        const orderR = await client.query(
+          'SELECT id, order_number, delivery_status, delivery_date, total_cents FROM store_orders WHERE id = $1::uuid AND LOWER(email) = LOWER($2)',
+          [orderId, payload.email]
+        )
+        if (!orderR.rows[0]) { await client.end(); return res.status(404).json({ message: 'Order not found' }) }
+        const order = orderR.rows[0]
+        // Check 14-day window
+        const deliveryDate = order.delivery_date ? new Date(order.delivery_date) : null
+        if (deliveryDate) {
+          const daysSince = (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24)
+          if (daysSince > 14) {
+            await client.end()
+            return res.status(400).json({ message: 'Rückgabefrist abgelaufen. Rückgabe ist nur innerhalb von 14 Tagen nach Lieferung möglich.' })
+          }
+        }
+        // Check for existing open return
+        const existR = await client.query(
+          "SELECT id FROM store_returns WHERE order_id = $1::uuid AND status NOT IN ('abgelehnt','abgeschlossen')",
+          [orderId]
+        )
+        if (existR.rows.length > 0) { await client.end(); return res.status(409).json({ message: 'Es gibt bereits eine offene Retouranfrage für diese Bestellung.' }) }
+        const { reason = '', notes = '', items } = req.body || {}
+        const r = await client.query(
+          `INSERT INTO store_returns (order_id, status, reason, notes, items)
+           VALUES ($1::uuid, 'offen', $2, $3, $4)
+           RETURNING id, return_number, status, created_at`,
+          [orderId, reason, notes||null, items ? JSON.stringify(items) : null]
+        )
+        await client.end()
+        const ret = r.rows[0]
+        res.json({ return_request: { ...ret, return_number: ret.return_number ? Number(ret.return_number) : null } })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Error' })
@@ -2744,12 +3079,28 @@ async function start() {
           }
         } catch (_) {}
 
-        // Look up customer by email (registered vs guest)
+        // Look up customer by email; auto-create guest record if not found
         let customerId = null
         let isGuest = true
         try {
-          const custRes = await client.query('SELECT id FROM store_customers WHERE email = $1', [email])
-          if (custRes.rows && custRes.rows[0]) { customerId = custRes.rows[0].id; isGuest = false }
+          const custRes = await client.query('SELECT id, account_type FROM store_customers WHERE LOWER(email) = LOWER($1)', [email])
+          if (custRes.rows && custRes.rows[0]) {
+            customerId = custRes.rows[0].id
+            isGuest = custRes.rows[0].account_type === 'gastkunde'
+          } else if (email) {
+            const insC = await client.query(
+              `INSERT INTO store_customers (email, first_name, last_name, phone, account_type, address_line1, zip_code, city, country)
+               VALUES ($1,$2,$3,$4,'gastkunde',$5,$6,$7,$8)
+               ON CONFLICT (email) DO UPDATE SET
+                 first_name = COALESCE(EXCLUDED.first_name, store_customers.first_name),
+                 last_name  = COALESCE(EXCLUDED.last_name,  store_customers.last_name),
+                 updated_at = now()
+               RETURNING id`,
+              [email, first_name, last_name, phone, address_line1, postal_code, city, country]
+            )
+            if (insC.rows && insC.rows[0]) customerId = insC.rows[0].id
+            isGuest = true
+          }
         } catch (_) {}
 
         // Get payment method from Stripe
@@ -3312,9 +3663,124 @@ async function start() {
       }
     }
 
-    httpApp.get('/admin-hub/v1/media', mediaListGET)
+    // Media folder migrations
+    const mediaFolderMigrClient = getDbClient()
+    if (mediaFolderMigrClient) {
+      mediaFolderMigrClient.connect().then(async () => {
+        await mediaFolderMigrClient.query(`CREATE TABLE IF NOT EXISTS admin_hub_media_folders (
+          id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+          name varchar(255) NOT NULL,
+          created_at timestamp DEFAULT now()
+        )`).catch(() => {})
+        await mediaFolderMigrClient.query(`ALTER TABLE admin_hub_media ADD COLUMN IF NOT EXISTS folder_id uuid REFERENCES admin_hub_media_folders(id) ON DELETE SET NULL`).catch(() => {})
+        await mediaFolderMigrClient.query(`ALTER TABLE admin_hub_media ADD COLUMN IF NOT EXISTS source_url text`).catch(() => {}) // for URL-added images
+        await mediaFolderMigrClient.end().catch(() => {})
+      }).catch(() => {})
+    }
+
+    // Media folder CRUD
+    const mediaFoldersGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.json({ folders: [] })
+      try {
+        await client.connect()
+        const r = await client.query('SELECT f.*, COUNT(m.id)::int AS media_count FROM admin_hub_media_folders f LEFT JOIN admin_hub_media m ON m.folder_id = f.id GROUP BY f.id ORDER BY f.name ASC')
+        res.json({ folders: r.rows })
+      } catch { res.json({ folders: [] }) } finally { await client.end().catch(() => {}) }
+    }
+    const mediaFoldersPOST = async (req, res) => {
+      const { name } = req.body || {}
+      if (!name) return res.status(400).json({ message: 'name required' })
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const r = await client.query('INSERT INTO admin_hub_media_folders (name) VALUES ($1) RETURNING *', [name.trim()])
+        res.status(201).json({ folder: r.rows[0] })
+      } catch (e) { res.status(500).json({ message: e?.message }) } finally { await client.end().catch(() => {}) }
+    }
+    const mediaFolderDELETE = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        await client.query('DELETE FROM admin_hub_media_folders WHERE id = $1', [req.params.id])
+        res.json({ success: true })
+      } catch (e) { res.status(500).json({ message: e?.message }) } finally { await client.end().catch(() => {}) }
+    }
+    // Move media to folder / update alt
+    const mediaPATCH = async (req, res) => {
+      const { folder_id, alt } = req.body || {}
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const sets = []; const params = []
+        if (folder_id !== undefined) { params.push(folder_id || null); sets.push(`folder_id = $${params.length}`) }
+        if (alt !== undefined) { params.push(alt || null); sets.push(`alt = $${params.length}`) }
+        if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
+        sets.push('updated_at = now()')
+        params.push(req.params.id)
+        await client.query(`UPDATE admin_hub_media SET ${sets.join(', ')} WHERE id = $${params.length}`, params)
+        const r = await client.query('SELECT * FROM admin_hub_media WHERE id = $1', [req.params.id])
+        res.json({ media: r.rows[0] })
+      } catch (e) { res.status(500).json({ message: e?.message }) } finally { await client.end().catch(() => {}) }
+    }
+    // Add media by URL
+    const mediaAddByUrlPOST = async (req, res) => {
+      const { url, alt, folder_id, filename } = req.body || {}
+      if (!url) return res.status(400).json({ message: 'url required' })
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const name = filename || url.split('/').pop()?.split('?')[0] || 'image'
+        const r = await client.query(
+          `INSERT INTO admin_hub_media (filename, url, source_url, mime_type, size, alt, folder_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+          [name, url, url, null, 0, alt || null, folder_id || null]
+        )
+        res.status(201).json({ media: r.rows[0] })
+      } catch (e) { res.status(500).json({ message: e?.message }) } finally { await client.end().catch(() => {}) }
+    }
+
+    // Update mediaListGET to support folder_id filter
+    const mediaListWithFolderGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 300)
+        const offset = parseInt(req.query.offset, 10) || 0
+        const folderId = req.query.folder_id || ''
+        const search = (req.query.search || '').trim()
+        const params = []
+        const where = []
+        if (folderId === 'none') { where.push('m.folder_id IS NULL') }
+        else if (folderId) { params.push(folderId); where.push(`m.folder_id = $${params.length}`) }
+        if (search) { params.push(`%${search}%`); where.push(`m.filename ILIKE $${params.length}`) }
+        const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+        const r = await client.query(
+          `SELECT m.id, m.filename, m.url, m.source_url, m.mime_type, m.size, m.alt, m.folder_id, f.name AS folder_name, m.created_at FROM admin_hub_media m LEFT JOIN admin_hub_media_folders f ON f.id = m.folder_id ${whereClause} ORDER BY m.created_at DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`,
+          [...params, limit, offset]
+        )
+        const countRes = await client.query(`SELECT COUNT(*)::int AS c FROM admin_hub_media m ${whereClause}`, params)
+        res.json({ media: r.rows, count: countRes.rows[0].c })
+      } catch (err) {
+        console.error('Media list error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      } finally {
+        await client.end().catch(() => {})
+      }
+    }
+
+    httpApp.get('/admin-hub/v1/media', mediaListWithFolderGET)
     httpApp.post('/admin-hub/v1/media', upload.single('file'), mediaUploadPOST)
+    httpApp.get('/admin-hub/v1/media/folders', mediaFoldersGET)
+    httpApp.post('/admin-hub/v1/media/folders', mediaFoldersPOST)
+    httpApp.delete('/admin-hub/v1/media/folders/:id', mediaFolderDELETE)
     httpApp.get('/admin-hub/v1/media/:id', mediaByIdGET)
+    httpApp.patch('/admin-hub/v1/media/:id', mediaPATCH)
+    httpApp.post('/admin-hub/v1/media/add-url', mediaAddByUrlPOST)
     httpApp.delete('/admin-hub/v1/media/:id', mediaByIdDELETE)
     console.log('Admin Hub routes: GET/POST /admin-hub/v1/media, GET/DELETE /admin-hub/v1/media/:id')
 
@@ -3342,7 +3808,7 @@ async function start() {
         const orderBy = sortMap[sort] || 'o.created_at DESC'
         const lim = Math.min(Number(limit) || 50, 200)
         const off = Number(offset) || 0
-        const r = await client.query(`SELECT o.id, o.order_number, o.order_status, o.payment_status, o.delivery_status, o.seller_id, o.email, o.first_name, o.last_name, o.phone, o.address_line1, o.address_line2, o.city, o.postal_code, o.country, o.subtotal_cents, o.total_cents, o.currency, o.payment_intent_id, o.cart_id, o.created_at, o.is_guest, c.customer_number FROM store_orders o LEFT JOIN store_customers c ON LOWER(c.email) = LOWER(o.email) ${where} ORDER BY ${orderBy} LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, lim, off])
+        const r = await client.query(`SELECT o.id, o.order_number, o.order_status, o.payment_status, o.delivery_status, o.seller_id, o.email, o.first_name, o.last_name, o.phone, o.address_line1, o.address_line2, o.city, o.postal_code, o.country, o.subtotal_cents, o.total_cents, o.currency, o.payment_intent_id, o.cart_id, o.created_at, o.is_guest, c.customer_number, c.id AS customer_id, (c.password_hash IS NOT NULL) AS c_is_registered FROM store_orders o LEFT JOIN store_customers c ON LOWER(c.email) = LOWER(o.email) ${where} ORDER BY ${orderBy} LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, lim, off])
         const countR = await client.query(`SELECT COUNT(*) FROM store_orders o ${where}`, params)
         const orders = (r.rows || []).map(row => ({
           id: row.id, order_number: row.order_number ? Number(row.order_number) : null,
@@ -3355,7 +3821,8 @@ async function start() {
           subtotal_cents: row.subtotal_cents, total_cents: row.total_cents, currency: row.currency,
           payment_intent_id: row.payment_intent_id, created_at: row.created_at,
           customer_number: row.customer_number ? Number(row.customer_number) : null,
-          is_guest: row.is_guest !== false,
+          customer_id: row.customer_id || null,
+          is_guest: !(row.c_is_registered === true || row.c_is_registered === 't'),
         }))
         await client.end()
         res.json({ orders, count: Number(countR.rows[0]?.count || 0) })
@@ -3403,12 +3870,16 @@ async function start() {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       const id = (req.params.id || '').trim()
       if (!id) return res.status(400).json({ message: 'id required' })
-      const { order_status, payment_status, delivery_status, notes } = req.body || {}
+      const { order_status, payment_status, delivery_status, notes, tracking_number, carrier_name, shipped_at, delivery_date } = req.body || {}
       const sets = []; const params = []
       if (order_status) { params.push(order_status); sets.push(`order_status = $${params.length}`) }
       if (payment_status) { params.push(payment_status); sets.push(`payment_status = $${params.length}`) }
       if (delivery_status) { params.push(delivery_status); sets.push(`delivery_status = $${params.length}`) }
       if (notes !== undefined) { params.push(notes); sets.push(`notes = $${params.length}`) }
+      if (tracking_number !== undefined) { params.push(tracking_number); sets.push(`tracking_number = $${params.length}`) }
+      if (carrier_name !== undefined) { params.push(carrier_name); sets.push(`carrier_name = $${params.length}`) }
+      if (shipped_at !== undefined) { params.push(shipped_at); sets.push(`shipped_at = $${params.length}`) }
+      if (delivery_date !== undefined) { params.push(delivery_date); sets.push(`delivery_date = $${params.length}`) }
       if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
       sets.push('updated_at = now()')
       params.push(id)
@@ -3448,6 +3919,71 @@ async function start() {
       }
     }
 
+    const adminHubOrderPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const {
+          email, first_name, last_name, phone, country,
+          address_line1, address_line2, zip_code, city,
+          items = [], shipping_cents = 0, discount_cents = 0,
+          order_status = 'offen', payment_status = 'offen', delivery_status = 'offen',
+          payment_method = '', currency = 'EUR', notes = '',
+          newsletter_opted_in = false,
+        } = req.body || {}
+        if (!email) return res.status(400).json({ message: 'email required' })
+        // Calculate total
+        const itemsTotal = items.reduce((s, it) => s + (Number(it.unit_price_cents||0) * Number(it.quantity||1)), 0)
+        const total_cents = itemsTotal + Number(shipping_cents||0) - Number(discount_cents||0)
+        const subtotal_cents = itemsTotal
+        // Insert order
+        const orderR = await client.query(
+          `INSERT INTO store_orders (email, first_name, last_name, phone, country, address_line1, address_line2, zip_code, city,
+            total_cents, subtotal_cents, shipping_cents, discount_cents,
+            order_status, payment_status, delivery_status, payment_method, currency, notes, newsletter_opted_in)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           RETURNING id, order_number`,
+          [email, first_name||null, last_name||null, phone||null, country||null,
+           address_line1||null, address_line2||null, zip_code||null, city||null,
+           total_cents, subtotal_cents, Number(shipping_cents||0), Number(discount_cents||0),
+           order_status, payment_status, delivery_status, payment_method||null, currency, notes||null, newsletter_opted_in]
+        )
+        const order = orderR.rows[0]
+        // Insert items
+        for (const it of items) {
+          await client.query(
+            `INSERT INTO store_order_items (order_id, title, quantity, unit_price_cents, product_handle, thumbnail)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [order.id, it.title||'', Number(it.quantity||1), Number(it.unit_price_cents||0), it.product_handle||null, it.thumbnail||null]
+          )
+        }
+        // Upsert customer
+        if (email) {
+          await client.query(
+            `INSERT INTO store_customers (email, first_name, last_name, phone, country, address_line1, address_line2, zip_code, city, account_type)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'gastkunde')
+             ON CONFLICT (email) DO UPDATE SET
+               first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+               phone = COALESCE(EXCLUDED.phone, store_customers.phone),
+               country = COALESCE(EXCLUDED.country, store_customers.country),
+               address_line1 = COALESCE(EXCLUDED.address_line1, store_customers.address_line1),
+               zip_code = COALESCE(EXCLUDED.zip_code, store_customers.zip_code),
+               city = COALESCE(EXCLUDED.city, store_customers.city),
+               updated_at = NOW()`,
+            [email, first_name||null, last_name||null, phone||null, country||null, address_line1||null, address_line2||null, zip_code||null, city||null]
+          )
+        }
+        await client.end()
+        res.json({ order: { id: order.id, order_number: order.order_number ? Number(order.order_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
     // ── Admin Hub Customers ───────────────────────────────────────
     const adminHubCustomersGET = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
@@ -3457,38 +3993,395 @@ async function start() {
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         const { search = '', limit = '50', offset = '0' } = req.query
-        // Derive customers from orders (unique emails) merged with store_customers if exists
-        let q, params = []
+        const lim = Math.min(Number(limit)||50, 200)
+        const off = Number(offset)||0
+        let whereParts = []
+        let params = []
         if (search) {
           params.push(`%${search}%`)
-          q = `SELECT email, first_name, last_name, phone, country, MIN(created_at) as first_order, MAX(created_at) as last_order, COUNT(*) as order_count, SUM(total_cents) as total_spent FROM store_orders WHERE email IS NOT NULL AND (email ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1) GROUP BY email, first_name, last_name, phone, country ORDER BY last_order DESC LIMIT $2 OFFSET $3`
-          params.push(Number(limit)||50, Number(offset)||0)
-        } else {
-          q = `SELECT email, first_name, last_name, phone, country, MIN(created_at) as first_order, MAX(created_at) as last_order, COUNT(*) as order_count, SUM(total_cents) as total_spent FROM store_orders WHERE email IS NOT NULL GROUP BY email, first_name, last_name, phone, country ORDER BY last_order DESC LIMIT $1 OFFSET $2`
-          params.push(Number(limit)||50, Number(offset)||0)
+          whereParts.push(`(c.email ILIKE $${params.length} OR c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length})`)
+          // Also search by customer_number if search looks numeric
+          const numSearch = search.replace(/^#/, '').trim()
+          if (/^\d+$/.test(numSearch)) {
+            params.push(Number(numSearch))
+            whereParts.push(`c.customer_number = $${params.length}`)
+          }
         }
+        const where = whereParts.length > 0 ? 'WHERE ' + whereParts.join(' OR ') : ''
+        const q = `
+          SELECT c.id, c.customer_number, c.email, c.first_name, c.last_name, c.phone, c.country,
+                 c.account_type, c.created_at,
+                 c.password_hash IS NOT NULL AS is_registered,
+                 COALESCE(s.order_count,0) AS order_count,
+                 COALESCE(s.total_spent,0) AS total_spent,
+                 s.first_order, s.last_order,
+                 COALESCE(s.newsletter_opted_in, false) AS newsletter_opted_in
+          FROM store_customers c
+          LEFT JOIN (
+            SELECT email, COUNT(*) AS order_count, SUM(total_cents) AS total_spent,
+                   MIN(created_at) AS first_order, MAX(created_at) AS last_order,
+                   BOOL_OR(newsletter_opted_in) AS newsletter_opted_in
+            FROM store_orders GROUP BY email
+          ) s ON LOWER(s.email) = LOWER(c.email)
+          ${where}
+          ORDER BY c.created_at DESC
+          LIMIT $${params.length+1} OFFSET $${params.length+2}
+        `
+        params.push(lim, off)
         const r = await client.query(q, params)
         await client.end()
-        res.json({ customers: r.rows || [] })
+        res.json({ customers: (r.rows || []).map(row => ({
+          ...row,
+          customer_number: row.customer_number ? Number(row.customer_number) : null,
+          is_registered: row.is_registered === true || row.is_registered === 't',
+          newsletter_opted_in: row.newsletter_opted_in === true || row.newsletter_opted_in === 't',
+        })) })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.json({ customers: [] })
       }
     }
 
-    const adminHubCustomerByEmailGET = async (req, res) => {
+    const adminHubCustomerPOST = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
-      const email = decodeURIComponent((req.params.email || '').trim())
-      if (!email) return res.status(400).json({ message: 'email required' })
       let client
       try {
         const { Client } = require('pg')
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const ordersR = await client.query('SELECT id, order_number, order_status, payment_status, delivery_status, total_cents, currency, created_at FROM store_orders WHERE email = $1 ORDER BY created_at DESC', [email])
-        const orders = (ordersR.rows || []).map(r => ({ ...r, order_number: r.order_number ? Number(r.order_number) : null }))
+        const { email, first_name, last_name, phone, account_type, address_line1, address_line2, zip_code, city, country, company_name, vat_number } = req.body || {}
+        if (!email) return res.status(400).json({ message: 'email required' })
+        const r = await client.query(
+          `INSERT INTO store_customers (email, first_name, last_name, phone, account_type, address_line1, address_line2, zip_code, city, country, company_name, vat_number)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at`,
+          [email, first_name||null, last_name||null, phone||null, account_type||'privat', address_line1||null, address_line2||null, zip_code||null, city||null, country||null, company_name||null, vat_number||null]
+        )
         await client.end()
-        res.json({ customer: { email, orders } })
+        const row = r.rows[0]
+        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const allowed = ['email','first_name','last_name','phone','account_type','address_line1','address_line2','zip_code','city','country','company_name','vat_number','billing_address_line1','billing_address_line2','billing_zip_code','billing_city','billing_country','gender','birth_date','notes','email_marketing_consent','bonus_points']
+        const body = req.body || {}
+        const sets = []
+        const vals = []
+        for (const key of allowed) {
+          if (key in body) { vals.push(body[key]); sets.push(`${key} = $${vals.length}`) }
+        }
+        if (sets.length === 0) return res.status(400).json({ message: 'no fields to update' })
+        vals.push(id)
+        const r = await client.query(
+          `UPDATE store_customers SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length}::uuid
+           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at, updated_at`,
+          vals
+        )
+        await client.end()
+        if (!r.rows[0]) return res.status(404).json({ message: 'Customer not found' })
+        const row = r.rows[0]
+        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const found = await client.query('SELECT email FROM store_customers WHERE id = $1::uuid', [id])
+        const emailRow = found.rows[0]
+        if (!emailRow) {
+          await client.end()
+          return res.status(404).json({ message: 'Customer not found' })
+        }
+        // UNIQUE(email) is case-sensitive in PostgreSQL; remove every row for this address so shop register works again
+        const del = await client.query(
+          'DELETE FROM store_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) RETURNING id',
+          [emailRow.email],
+        )
+        await client.end()
+        res.json({ success: true, deleted: (del.rows || []).length })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerDiscountPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const customerId = (req.params.id || '').trim()
+      if (!customerId) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const { code, type = 'percentage', value = 0, min_order_cents = 0, max_uses = 1, expires_at, notes } = req.body || {}
+        if (!code) return res.status(400).json({ message: 'code required' })
+        const r = await client.query(
+          `INSERT INTO store_customer_discounts (customer_id, code, type, value, min_order_cents, max_uses, expires_at, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           RETURNING id, code, type, value, min_order_cents, max_uses, used_count, expires_at, notes, created_at`,
+          [customerId, code.toUpperCase(), type, Number(value), Number(min_order_cents||0), Number(max_uses||1), expires_at||null, notes||null]
+        )
+        await client.end()
+        res.json({ discount: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerDiscountDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const { customerId, discountId } = req.params
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_customer_discounts WHERE id = $1::uuid AND customer_id = $2::uuid', [discountId, customerId])
+        await client.end()
+        res.json({ success: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerByIdGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const custR = await client.query(
+          `SELECT id, customer_number, email, first_name, last_name, phone, account_type,
+                  address_line1, address_line2, zip_code, city, country, company_name, vat_number,
+                  billing_address_line1, billing_address_line2, billing_zip_code, billing_city, billing_country,
+                  password_hash IS NOT NULL AS is_registered,
+                  gender, birth_date, notes, email_marketing_consent,
+                  COALESCE(bonus_points, 0) AS bonus_points,
+                  created_at, updated_at
+           FROM store_customers WHERE id = $1::uuid`,
+          [id]
+        )
+        if (!custR.rows || !custR.rows[0]) { await client.end(); return res.status(404).json({ message: 'Customer not found' }) }
+        const row = custR.rows[0]
+        const ordersR = await client.query(
+          `SELECT id, order_number, order_status, payment_status, delivery_status,
+                  total_cents, currency, newsletter_opted_in, created_at
+           FROM store_orders WHERE LOWER(email) = LOWER($1) ORDER BY created_at DESC`,
+          [row.email]
+        )
+        const orders = (ordersR.rows || []).map(r => ({ ...r, order_number: r.order_number ? Number(r.order_number) : null }))
+        const newsletterOptedIn = orders.some(o => o.newsletter_opted_in)
+        const discountsR = await client.query(
+          `SELECT id, code, type, value, min_order_cents, max_uses, used_count, expires_at, notes, created_at
+           FROM store_customer_discounts WHERE customer_id = $1 ORDER BY created_at DESC`,
+          [id]
+        )
+        const discounts = discountsR.rows || []
+        await client.end()
+        res.json({
+          customer: {
+            ...row,
+            customer_number: row.customer_number ? Number(row.customer_number) : null,
+            is_registered: row.is_registered === true || row.is_registered === 't',
+            newsletter_opted_in: newsletterOptedIn,
+            bonus_points: Number(row.bonus_points || 0),
+            birth_date: row.birth_date || null,
+            orders,
+            discounts,
+          }
+        })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCarriersGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('SELECT * FROM store_shipping_carriers ORDER BY sort_order ASC, created_at ASC')
+        await client.end()
+        res.json({ carriers: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ carriers: [] })
+      }
+    }
+
+    const adminHubCarrierPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const { name, tracking_url_template, api_key, api_secret, is_active = true, sort_order = 0 } = req.body || {}
+        if (!name) return res.status(400).json({ message: 'name required' })
+        const r = await client.query(
+          `INSERT INTO store_shipping_carriers (name, tracking_url_template, api_key, api_secret, is_active, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [name, tracking_url_template||null, api_key||null, api_secret||null, is_active, Number(sort_order||0)]
+        )
+        await client.end()
+        res.json({ carrier: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCarrierPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const allowed = ['name','tracking_url_template','api_key','api_secret','is_active','sort_order']
+        const body = req.body || {}
+        const sets = []; const vals = []
+        for (const key of allowed) { if (key in body) { vals.push(body[key]); sets.push(`${key} = $${vals.length}`) } }
+        if (sets.length === 0) return res.status(400).json({ message: 'no fields to update' })
+        vals.push(id)
+        const r = await client.query(
+          `UPDATE store_shipping_carriers SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length}::uuid RETURNING *`, vals
+        )
+        await client.end()
+        if (!r.rows[0]) return res.status(404).json({ message: 'Not found' })
+        res.json({ carrier: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCarrierDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_shipping_carriers WHERE id = $1::uuid', [id])
+        await client.end()
+        res.json({ success: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubIntegrationsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('SELECT id, name, slug, logo_url, is_active, category, created_at, updated_at FROM store_integrations ORDER BY name ASC')
+        await client.end()
+        res.json({ integrations: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ integrations: [] })
+      }
+    }
+
+    const adminHubIntegrationPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const { name, slug, logo_url, api_key, api_secret, webhook_url, config, is_active = false, category = 'other' } = req.body || {}
+        if (!name || !slug) return res.status(400).json({ message: 'name and slug required' })
+        const r = await client.query(
+          `INSERT INTO store_integrations (name, slug, logo_url, api_key, api_secret, webhook_url, config, is_active, category)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name, logo_url=EXCLUDED.logo_url, api_key=EXCLUDED.api_key, api_secret=EXCLUDED.api_secret, webhook_url=EXCLUDED.webhook_url, config=EXCLUDED.config, is_active=EXCLUDED.is_active, updated_at=NOW()
+           RETURNING id, name, slug, logo_url, is_active, category, created_at, updated_at`,
+          [name, slug, logo_url||null, api_key||null, api_secret||null, webhook_url||null, config ? JSON.stringify(config) : '{}', is_active, category]
+        )
+        await client.end()
+        res.json({ integration: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubIntegrationPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const allowed = ['name','logo_url','api_key','api_secret','webhook_url','config','is_active','category']
+        const body = req.body || {}
+        const sets = []; const vals = []
+        for (const key of allowed) { if (key in body) { vals.push(key === 'config' ? JSON.stringify(body[key]) : body[key]); sets.push(`${key} = $${vals.length}`) } }
+        if (sets.length === 0) return res.status(400).json({ message: 'no fields to update' })
+        vals.push(id)
+        const r = await client.query(
+          `UPDATE store_integrations SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length}::uuid RETURNING id, name, slug, logo_url, is_active, category, updated_at`, vals
+        )
+        await client.end()
+        if (!r.rows[0]) return res.status(404).json({ message: 'Not found' })
+        res.json({ integration: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubIntegrationDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_integrations WHERE id = $1::uuid', [id])
+        await client.end()
+        res.json({ success: true })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Error' })
@@ -3531,7 +4424,7 @@ async function start() {
         const { Client } = require('pg')
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
-        const r = await client.query(`SELECT r.*, o.order_number, o.email, o.first_name, o.last_name FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id ORDER BY r.created_at DESC LIMIT 100`)
+        const r = await client.query(`SELECT r.*, o.order_number, o.email, o.first_name, o.last_name, o.total_cents, o.payment_method FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id ORDER BY r.created_at DESC LIMIT 100`)
         await client.end()
         res.json({ returns: (r.rows || []).map(row => ({ ...row, return_number: row.return_number ? Number(row.return_number) : null, order_number: row.order_number ? Number(row.order_number) : null })) })
       } catch (e) {
@@ -3562,10 +4455,17 @@ async function start() {
     const adminHubReturnPATCH = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       const id = (req.params.id || '').trim()
-      const { status, notes } = req.body || {}
+      const { status, notes, refund_amount_cents, refund_status, refund_note } = req.body || {}
       const sets = []; const params = []
-      if (status) { params.push(status); sets.push(`status = $${params.length}`) }
+      if (status) {
+        params.push(status); sets.push(`status = $${params.length}`)
+        if (status === 'genehmigt') { sets.push('approved_at = now()') }
+        if (status === 'abgelehnt') { sets.push('rejected_at = now()') }
+      }
       if (notes !== undefined) { params.push(notes); sets.push(`notes = $${params.length}`) }
+      if (refund_amount_cents !== undefined) { params.push(refund_amount_cents); sets.push(`refund_amount_cents = $${params.length}`) }
+      if (refund_status !== undefined) { params.push(refund_status); sets.push(`refund_status = $${params.length}`) }
+      if (refund_note !== undefined) { params.push(refund_note); sets.push(`refund_note = $${params.length}`) }
       if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
       sets.push('updated_at = now()')
       params.push(id)
@@ -3575,7 +4475,7 @@ async function start() {
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         await client.query(`UPDATE store_returns SET ${sets.join(', ')} WHERE id = $${params.length}::uuid`, params)
-        const r = await client.query('SELECT r.*, o.order_number, o.email FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id WHERE r.id = $1::uuid', [id])
+        const r = await client.query(`SELECT r.*, o.order_number, o.email, o.first_name, o.last_name, o.total_cents, o.payment_method FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id WHERE r.id = $1::uuid`, [id])
         await client.end()
         const row = r.rows && r.rows[0]
         res.json({ return: { ...row, return_number: row?.return_number ? Number(row.return_number) : null, order_number: row?.order_number ? Number(row.order_number) : null } })
@@ -3588,13 +4488,30 @@ async function start() {
     httpApp.post('/store/customers', storeCustomerRegisterPOST)
     httpApp.post('/store/auth/token', storeAuthTokenPOST)
     httpApp.get('/store/customers/me', storeCustomersMeGET)
+    httpApp.patch('/store/customers/me', storeCustomerMePATCH)
+    httpApp.get('/store/orders/me', storeOrdersMeGET)
+    httpApp.post('/store/orders/:id/return-request', storeReturnRequestPOST)
 
     httpApp.get('/admin-hub/v1/orders', adminHubOrdersGET)
+    httpApp.post('/admin-hub/v1/orders', adminHubOrderPOST)
     httpApp.get('/admin-hub/v1/orders/:id', adminHubOrderByIdGET)
     httpApp.patch('/admin-hub/v1/orders/:id', adminHubOrderPATCH)
     httpApp.delete('/admin-hub/v1/orders/:id', adminHubOrderDELETE)
     httpApp.get('/admin-hub/v1/customers', adminHubCustomersGET)
-    httpApp.get('/admin-hub/v1/customers/:email', adminHubCustomerByEmailGET)
+    httpApp.post('/admin-hub/v1/customers', adminHubCustomerPOST)
+    httpApp.patch('/admin-hub/v1/customers/:id', adminHubCustomerPATCH)
+    httpApp.delete('/admin-hub/v1/customers/:id', adminHubCustomerDELETE)
+    httpApp.get('/admin-hub/v1/customers/:id', adminHubCustomerByIdGET)
+    httpApp.post('/admin-hub/v1/customers/:id/discounts', adminHubCustomerDiscountPOST)
+    httpApp.delete('/admin-hub/v1/customers/:customerId/discounts/:discountId', adminHubCustomerDiscountDELETE)
+    httpApp.get('/admin-hub/v1/shipping-carriers', adminHubCarriersGET)
+    httpApp.post('/admin-hub/v1/shipping-carriers', adminHubCarrierPOST)
+    httpApp.patch('/admin-hub/v1/shipping-carriers/:id', adminHubCarrierPATCH)
+    httpApp.delete('/admin-hub/v1/shipping-carriers/:id', adminHubCarrierDELETE)
+    httpApp.get('/admin-hub/v1/integrations', adminHubIntegrationsGET)
+    httpApp.post('/admin-hub/v1/integrations', adminHubIntegrationPOST)
+    httpApp.patch('/admin-hub/v1/integrations/:id', adminHubIntegrationPATCH)
+    httpApp.delete('/admin-hub/v1/integrations/:id', adminHubIntegrationDELETE)
     httpApp.get('/admin-hub/v1/abandoned-carts', adminHubAbandonedCartsGET)
     httpApp.get('/admin-hub/v1/returns', adminHubReturnsGET)
     httpApp.post('/admin-hub/v1/returns', adminHubReturnsPOST)

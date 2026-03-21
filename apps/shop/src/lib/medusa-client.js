@@ -250,7 +250,7 @@ class MedusaClient {
         ...extra,
       }),
     })
-    if (res?.__error) return { customer: null }
+    if (res?.__error) throw new Error(res.message || 'Registrierung fehlgeschlagen')
     return res
   }
 
@@ -273,6 +273,16 @@ class MedusaClient {
       },
     })
     if (res?.__error) return null
+    return res
+  }
+
+  async updateCustomerMe(token, data) {
+    const res = await this.request('/store/customers/me', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+    if (res?.__error) throw new Error(res.message || 'Update failed')
     return res
   }
 

@@ -1,0 +1,186 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+
+const CATALOG = [
+  { name: "billbee", slug: "billbee", logo: "🐝", category: "erp", description: "Multichannel-Auftragsabwicklung & Lagerverwaltung" },
+  { name: "xentral", slug: "xentral", logo: "⚡", category: "erp", description: "ERP-System für E-Commerce" },
+  { name: "JTL-Wawi", slug: "jtl-wawi", logo: "🏪", category: "erp", description: "Warenwirtschaft & Fulfillment" },
+  { name: "Shopify", slug: "shopify", logo: "🛍", category: "marketplace", description: "E-Commerce-Plattform" },
+  { name: "Amazon", slug: "amazon", logo: "📦", category: "marketplace", description: "Amazon Seller Central" },
+  { name: "eBay", slug: "ebay", logo: "🔵", category: "marketplace", description: "Auktions- und Handelsplattform" },
+  { name: "Stripe", slug: "stripe", logo: "💳", category: "payment", description: "Online-Zahlungsabwicklung" },
+  { name: "PayPal", slug: "paypal", logo: "🅿", category: "payment", description: "PayPal Zahlungen" },
+  { name: "Klarna", slug: "klarna", logo: "🛒", category: "payment", description: "BNPL & Zahlungsabwicklung" },
+  { name: "Mailchimp", slug: "mailchimp", logo: "🐒", category: "marketing", description: "E-Mail-Marketing" },
+  { name: "Klaviyo", slug: "klaviyo", logo: "📧", category: "marketing", description: "E-Commerce E-Mail & SMS" },
+  { name: "Google Analytics", slug: "google-analytics", logo: "📊", category: "analytics", description: "Web-Analyse" },
+  { name: "Slack", slug: "slack", logo: "💬", category: "communication", description: "Team-Kommunikation" },
+  { name: "Zapier", slug: "zapier", logo: "⚡", category: "automation", description: "Workflow-Automatisierung" },
+];
+
+const CATEGORIES = { erp: "ERP & Warenwirtschaft", marketplace: "Marktplätze", payment: "Zahlungen", marketing: "Marketing", analytics: "Analytics", automation: "Automatisierung", communication: "Kommunikation" };
+
+export default function IntegrationsSettingsPage() {
+  const [integrations, setIntegrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null); // { app, integration? }
+  const [form, setForm] = useState({ api_key: "", api_secret: "", webhook_url: "" });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [filter, setFilter] = useState("all");
+
+  const load = async () => {
+    setLoading(true);
+    const client = getMedusaAdminClient();
+    const data = await client.getIntegrations();
+    setIntegrations(data.integrations || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const getIntegration = (slug) => integrations.find(i => i.slug === slug);
+
+  const openModal = (app) => {
+    const existing = getIntegration(app.slug);
+    setForm({ api_key: "", api_secret: "", webhook_url: existing?.webhook_url || "" });
+    setModal({ app, integration: existing });
+    setErr("");
+  };
+
+  const handleSave = async () => {
+    setSaving(true); setErr("");
+    try {
+      const client = getMedusaAdminClient();
+      const payload = { name: modal.app.name, slug: modal.app.slug, logo_url: modal.app.logo, category: modal.app.category, is_active: true, ...form };
+      if (modal.integration) {
+        await client.updateIntegration(modal.integration.id, { api_key: form.api_key || undefined, api_secret: form.api_secret || undefined, webhook_url: form.webhook_url, is_active: true });
+      } else {
+        await client.saveIntegration(payload);
+      }
+      await load();
+      setModal(null);
+    } catch (e) { setErr(e?.message || "Fehler"); }
+    setSaving(false);
+  };
+
+  const handleToggle = async (integration) => {
+    const client = getMedusaAdminClient();
+    await client.updateIntegration(integration.id, { is_active: !integration.is_active });
+    setIntegrations(prev => prev.map(i => i.id === integration.id ? { ...i, is_active: !i.is_active } : i));
+  };
+
+  const handleDisconnect = async (integration) => {
+    if (!confirm(`${integration.name} wirklich trennen?`)) return;
+    const client = getMedusaAdminClient();
+    await client.deleteIntegration(integration.id);
+    setIntegrations(prev => prev.filter(i => i.id !== integration.id));
+  };
+
+  const inp = { padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, width: "100%", boxSizing: "border-box" };
+  const lbl = { fontSize: 12, fontWeight: 500, color: "#374151", display: "block", marginBottom: 3 };
+
+  const filteredCatalog = filter === "all" ? CATALOG : CATALOG.filter(a => a.category === filter);
+  const connected = integrations.filter(i => i.is_active);
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 4px" }}>Apps & Integrationen</h1>
+        <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Verbinde externe Dienste und Plattformen mit deinem Shop.</p>
+      </div>
+
+      {/* Connected apps */}
+      {connected.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Verbunden ({connected.length})</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+            {connected.map(i => {
+              const app = CATALOG.find(a => a.slug === i.slug) || { logo: "🔌", description: "" };
+              return (
+                <div key={i.id} style={{ background: "#fff", border: "1px solid #d1fae5", borderRadius: 10, padding: "14px 16px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ fontSize: 24, flexShrink: 0 }}>{app.logo}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{i.name}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280" }}>{app.description}</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#d1fae5", color: "#065f46", fontWeight: 600 }}>● Verbunden</span>
+                      <button onClick={() => openModal(app)} style={{ fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Einstellungen</button>
+                      <button onClick={() => handleDisconnect(i)} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Trennen</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Category filter */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <button onClick={() => setFilter("all")} style={{ padding: "5px 14px", borderRadius: 20, border: `1px solid ${filter === "all" ? "#2563eb" : "#e5e7eb"}`, background: filter === "all" ? "#eff6ff" : "#fff", color: filter === "all" ? "#1d4ed8" : "#374151", fontSize: 13, cursor: "pointer", fontWeight: filter === "all" ? 600 : 400 }}>Alle</button>
+        {Object.entries(CATEGORIES).map(([k, v]) => (
+          <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 14px", borderRadius: 20, border: `1px solid ${filter === k ? "#2563eb" : "#e5e7eb"}`, background: filter === k ? "#eff6ff" : "#fff", color: filter === k ? "#1d4ed8" : "#374151", fontSize: 13, cursor: "pointer", fontWeight: filter === k ? 600 : 400 }}>{v}</button>
+        ))}
+      </div>
+
+      {/* App catalog */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+        {filteredCatalog.map(app => {
+          const connected_integration = getIntegration(app.slug);
+          return (
+            <div key={app.slug} style={{ background: "#fff", border: `1px solid ${connected_integration ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 10, padding: "16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{ fontSize: 28, flexShrink: 0 }}>{app.logo}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{app.name}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2, marginBottom: 10 }}>{app.description}</div>
+                {connected_integration ? (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#d1fae5", color: "#065f46", fontWeight: 600 }}>✓ Verbunden</span>
+                    <button onClick={() => openModal(app)} style={{ fontSize: 12, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 500 }}>Bearbeiten</button>
+                  </div>
+                ) : (
+                  <button onClick={() => openModal(app)} style={{ padding: "5px 14px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Verbinden</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal */}
+      {modal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 12, width: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 12, alignItems: "center" }}>
+              <span style={{ fontSize: 28 }}>{modal.app.logo}</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{modal.app.name}</h3>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>{modal.app.description}</div>
+              </div>
+              <button onClick={() => setModal(null)} style={{ marginLeft: "auto", background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>×</button>
+            </div>
+            <div style={{ padding: 24, display: "grid", gap: 14 }}>
+              <div><label style={lbl}>API-Schlüssel</label><input style={inp} type="password" value={form.api_key} onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} placeholder={modal.integration ? "Neuen Key eingeben zum Ändern…" : "API Key eingeben…"} /></div>
+              <div><label style={lbl}>API-Geheimnis / Secret</label><input style={inp} type="password" value={form.api_secret} onChange={e => setForm(f => ({ ...f, api_secret: e.target.value }))} placeholder={modal.integration ? "Neues Secret eingeben zum Ändern…" : "API Secret eingeben…"} /></div>
+              <div><label style={lbl}>Webhook-URL <span style={{ color: "#9ca3af" }}>(optional)</span></label><input style={inp} value={form.webhook_url} onChange={e => setForm(f => ({ ...f, webhook_url: e.target.value }))} placeholder="https://..." /></div>
+              {modal.integration && (
+                <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 7, padding: "10px 14px", fontSize: 12, color: "#6b7280" }}>
+                  ✓ Bereits verbunden. Felder leer lassen um bestehende Zugangsdaten zu behalten.
+                </div>
+              )}
+            </div>
+            {err && <div style={{ margin: "0 24px 12px", color: "#ef4444", fontSize: 12 }}>{err}</div>}
+            <div style={{ padding: "12px 24px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setModal(null)} style={{ padding: "7px 16px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, cursor: "pointer" }}>Abbrechen</button>
+              <button onClick={handleSave} disabled={saving} style={{ padding: "7px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                {saving ? "…" : modal.integration ? "Aktualisieren" : "Verbinden"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

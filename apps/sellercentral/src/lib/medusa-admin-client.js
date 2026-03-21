@@ -62,11 +62,11 @@ class MedusaAdminClient {
       const out = new Error(friendlyMessage);
       out.statusCode = error?.statusCode;
       out.cause = error;
-      if (error?.statusCode === 404 || error?.statusCode === 503) {
+      if (error?.statusCode === 404 || error?.statusCode === 503 || isNetworkError) {
         console.warn(`Medusa Admin API (${endpoint}):`, error?.message || error?.statusCode);
       } else {
         const errMsg = error?.message ?? (typeof error === 'string' ? error : 'Request failed');
-        console.error(`Medusa Admin API Error (${endpoint}):`, errMsg);
+        console.warn(`Medusa Admin API (${endpoint}):`, errMsg);
       }
       throw out;
     }
@@ -498,11 +498,16 @@ class MedusaAdminClient {
     return res.json()
   }
 
-  async deleteMediaFolder(name) {
-    const base = (typeof getDefaultBaseUrl === 'function' ? getDefaultBaseUrl() : null) || this.baseURL
-    const res = await fetch(`${base}/admin-hub/v1/media/folders/${encodeURIComponent(name)}`, { method: 'DELETE' })
-    if (!res.ok) { const e = await res.json().catch(() => ({ message: res.statusText })); throw new Error(e.message || `HTTP ${res.status}`) }
-    return res.json()
+  async deleteMediaFolder(id) {
+    return this.request(`/admin-hub/v1/media/folders/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  }
+
+  async updateMedia(id, data) {
+    return this.request(`/admin-hub/v1/media/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async addMediaByUrl(data) {
+    return this.request('/admin-hub/v1/media/add-url', { method: 'POST', body: JSON.stringify(data) })
   }
 
   /**
@@ -560,8 +565,68 @@ class MedusaAdminClient {
     return this.request(`/admin-hub/v1/customers${queryParams ? `?${queryParams}` : ''}`)
   }
 
-  async getCustomer(email) {
-    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(email)}`)
+  async getCustomerById(id) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(id)}`)
+  }
+
+  async createCustomer(data) {
+    return this.request('/admin-hub/v1/customers', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateCustomer(id, data) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async deleteCustomer(id) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  }
+
+  async createCustomerDiscount(customerId, data) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(customerId)}/discounts`, {
+      method: 'POST', body: JSON.stringify(data)
+    })
+  }
+
+  async deleteCustomerDiscount(customerId, discountId) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(customerId)}/discounts/${encodeURIComponent(discountId)}`, {
+      method: 'DELETE'
+    })
+  }
+
+  async createOrder(data) {
+    return this.request('/admin-hub/v1/orders', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async getCarriers() {
+    return this.request('/admin-hub/v1/shipping-carriers').catch(() => ({ carriers: [] }))
+  }
+
+  async createCarrier(data) {
+    return this.request('/admin-hub/v1/shipping-carriers', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateCarrier(id, data) {
+    return this.request(`/admin-hub/v1/shipping-carriers/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async deleteCarrier(id) {
+    return this.request(`/admin-hub/v1/shipping-carriers/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  }
+
+  async getIntegrations() {
+    return this.request('/admin-hub/v1/integrations').catch(() => ({ integrations: [] }))
+  }
+
+  async saveIntegration(data) {
+    return this.request('/admin-hub/v1/integrations', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateIntegration(id, data) {
+    return this.request(`/admin-hub/v1/integrations/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async deleteIntegration(id) {
+    return this.request(`/admin-hub/v1/integrations/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
   async getAbandonedCarts() {
@@ -578,6 +643,18 @@ class MedusaAdminClient {
 
   async updateReturn(id, data) {
     return this.request(`/admin-hub/v1/returns/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async approveReturn(id) {
+    return this.updateReturn(id, { status: 'genehmigt' })
+  }
+
+  async rejectReturn(id) {
+    return this.updateReturn(id, { status: 'abgelehnt' })
+  }
+
+  async refundReturn(id, { refund_amount_cents, refund_note }) {
+    return this.updateReturn(id, { refund_amount_cents, refund_note, refund_status: 'erstattet' })
   }
 }
 

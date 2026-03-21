@@ -1,217 +1,439 @@
 "use client";
 
-"use client";
-
 import { useState, useEffect } from "react";
 import { useCustomerAuth as useAuth, useAuthGuard, getToken } from "@belucha/lib";
-import styled from "styled-components";
-import { Card, Button } from "@belucha/ui";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
+import ShopHeader from "@/components/ShopHeader";
+import Footer from "@/components/Footer";
 import { getMedusaClient } from "@/lib/medusa-client";
 
-const Container = styled.div`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 48px 24px;
-  min-height: 80vh;
-`;
+const ORANGE = "#ff971c";
+const DARK = "#1A1A1A";
+const GRAY = "#6b7280";
+const BORDER = "#e5e7eb";
+const BG_SOFT = "#fafafa";
 
-const Title = styled.h1`
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 32px;
-  color: #1f2937;
-`;
+const COUNTRIES = [
+  { code: "DE", name: "Deutschland" },
+  { code: "AT", name: "Österreich" },
+  { code: "CH", name: "Schweiz" },
+  { code: "FR", name: "Frankreich" },
+  { code: "IT", name: "Italien" },
+  { code: "ES", name: "Spanien" },
+  { code: "TR", name: "Türkei" },
+  { code: "GB", name: "Vereinigtes Königreich" },
+  { code: "US", name: "USA" },
+];
 
-const Section = styled(Card)`
-  padding: 24px;
-  margin-bottom: 24px;
-`;
+const inp = {
+  width: "100%",
+  padding: "10px 14px",
+  border: `1.5px solid ${BORDER}`,
+  borderRadius: 8,
+  fontSize: 14,
+  color: DARK,
+  background: "#fff",
+  boxSizing: "border-box",
+  outline: "none",
+  fontFamily: "inherit",
+};
 
-const SectionTitle = styled.h2`
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  color: #1f2937;
-`;
+const lbl = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: GRAY,
+  display: "block",
+  marginBottom: 4,
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+};
 
-const InfoGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-`;
+function InfoRow({ label, value }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={lbl}>{label}</div>
+      <div style={{ fontSize: 15, color: DARK, fontWeight: 500 }}>{value || "—"}</div>
+    </div>
+  );
+}
 
-const InfoItem = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-`;
+function Section({ title, children, action }) {
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${BORDER}`, padding: "24px 28px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: DARK }}>{title}</h2>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
 
-const InfoLabel = styled.span`
-  font-size: 14px;
-  color: #6b7280;
-  font-weight: 500;
-`;
+function EditButton({ onClick }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "7px 16px",
+        background: hover ? ORANGE : "#fff",
+        color: hover ? "#fff" : ORANGE,
+        border: `1.5px solid ${ORANGE}`,
+        borderRadius: 8,
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
+    >
+      Bearbeiten
+    </button>
+  );
+}
 
-const InfoValue = styled.span`
-  font-size: 16px;
-  color: #1f2937;
-  font-weight: 600;
-`;
-
-const ButtonGroup = styled.div`
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-`;
-
-const Loading = styled.div`
-  text-align: center;
-  padding: 48px;
-  color: #6b7280;
-`;
-
-const Error = styled.div`
-  text-align: center;
-  padding: 48px;
-  color: #ef4444;
-`;
+function SaveButton({ onClick, loading }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "10px 24px",
+        background: hover && !loading ? "#e6880e" : ORANGE,
+        color: "#fff",
+        border: "none",
+        borderRadius: 8,
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: loading ? "not-allowed" : "pointer",
+        opacity: loading ? 0.7 : 1,
+        transition: "background 0.15s",
+        boxShadow: "0 2px 0 2px #000",
+      }}
+    >
+      {loading ? "Speichern…" : "Speichern"}
+    </button>
+  );
+}
 
 export default function AccountPage() {
-  // Protect route
-  useAuthGuard({ requiredRole: 'customer', redirectTo: '/login' });
+  useAuthGuard({ requiredRole: "customer", redirectTo: "/login" });
 
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [editSection, setEditSection] = useState(null); // "personal" | "address" | null
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
 
   useEffect(() => {
     const fetchCustomer = async () => {
       if (!user?.id) return;
-      
       try {
         setLoading(true);
-        const token = getToken('customer');
-        if (!token) {
-          setError('No authentication token found');
-          return;
-        }
-        
+        const token = getToken("customer");
+        if (!token) { setError("Nicht angemeldet"); return; }
         const client = getMedusaClient();
         const result = await client.getCustomer(token);
-        setCustomer(result.customer);
+        if (result?.customer) setCustomer(result.customer);
+        else setError("Profil konnte nicht geladen werden.");
       } catch (err) {
-        console.error('Failed to fetch customer:', err);
-        setError(err.message);
+        setError(err?.message || "Fehler");
       } finally {
         setLoading(false);
       }
     };
-
     fetchCustomer();
   }, [user?.id]);
 
+  const startEdit = (section) => {
+    setForm({
+      first_name: customer?.first_name || "",
+      last_name: customer?.last_name || "",
+      phone: customer?.phone || "",
+      account_type: customer?.account_type || "privat",
+      company_name: customer?.company_name || "",
+      vat_number: customer?.vat_number || "",
+      address_line1: customer?.address_line1 || "",
+      address_line2: customer?.address_line2 || "",
+      zip_code: customer?.zip_code || "",
+      city: customer?.city || "",
+      country: customer?.country || "DE",
+    });
+    setSaveErr("");
+    setEditSection(section);
+  };
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const saveEdit = async () => {
+    setSaving(true);
+    setSaveErr("");
+    try {
+      const token = getToken("customer");
+      const client = getMedusaClient();
+      const result = await client.updateCustomerMe(token, form);
+      if (result?.customer) {
+        setCustomer(result.customer);
+        setEditSection(null);
+      }
+    } catch (e) {
+      setSaveErr(e?.message || "Fehler beim Speichern.");
+    }
+    setSaving(false);
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.push("/");
+  };
+
+  const accountTypeLabel = (t) => {
+    if (t === "gewerbe") return "Gewerbekunde";
+    if (t === "gastkunde") return "Gastkunde";
+    return "Privatkunde";
+  };
+
+  const countryName = (code) => COUNTRIES.find(c => c.code === code)?.name || code || "—";
+
   if (loading) {
     return (
-      <Container>
-        <Loading>Loading...</Loading>
-      </Container>
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fff" }}>
+        <ShopHeader />
+        <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ color: GRAY, fontSize: 15 }}>Laden…</div>
+        </main>
+        <Footer />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Container>
-        <Error>Error loading profile: {error.message}</Error>
-      </Container>
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fff" }}>
+        <ShopHeader />
+        <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ color: "#ef4444", fontSize: 15 }}>{error}</div>
+        </main>
+        <Footer />
+      </div>
     );
   }
 
   return (
-    <Container>
-        <Title>Mein Konto</Title>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fafafa" }}>
+      <ShopHeader />
 
-        <Section>
-          <SectionTitle>Persönliche Informationen</SectionTitle>
-          <InfoGrid>
-            <InfoItem>
-              <InfoLabel>Vorname</InfoLabel>
-              <InfoValue>{customer?.first_name || customer?.firstName || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Nachname</InfoLabel>
-              <InfoValue>{customer?.last_name || customer?.lastName || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Email</InfoLabel>
-              <InfoValue>{customer?.email || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Telefonnummer</InfoLabel>
-              <InfoValue>{customer?.phone || "-"}</InfoValue>
-            </InfoItem>
-            <InfoItem>
-              <InfoLabel>Kontotyp</InfoLabel>
-              <InfoValue>{customer?.account_type === 'business' ? 'Gewerbe' : 'Privat'}</InfoValue>
-            </InfoItem>
-            {customer?.company_name && (
-              <InfoItem>
-                <InfoLabel>Firmenname</InfoLabel>
-                <InfoValue>{customer.company_name}</InfoValue>
-              </InfoItem>
-            )}
-            {customer?.vat_number && (
-              <InfoItem>
-                <InfoLabel>USt-IdNr.</InfoLabel>
-                <InfoValue>{customer.vat_number}</InfoValue>
-              </InfoItem>
-            )}
-          </InfoGrid>
-        </Section>
+      <main style={{ flex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
+          {/* Page header */}
+          <div style={{ marginBottom: 32 }}>
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: DARK, margin: "0 0 4px" }}>Mein Belucha</h1>
+            <p style={{ fontSize: 14, color: GRAY, margin: 0 }}>
+              {customer?.customer_number ? `Kundennummer: #${customer.customer_number} · ` : ""}
+              {customer?.email}
+            </p>
+          </div>
 
-        {customer?.address_line1 && (
-          <Section>
-            <SectionTitle>Adresse</SectionTitle>
-            <InfoGrid>
-              <InfoItem>
-                <InfoLabel>Straße</InfoLabel>
-                <InfoValue>{customer.address_line1}</InfoValue>
-              </InfoItem>
-              {customer.address_line2 && (
-                <InfoItem>
-                  <InfoLabel>Adresszusatz</InfoLabel>
-                  <InfoValue>{customer.address_line2}</InfoValue>
-                </InfoItem>
-              )}
-              <InfoItem>
-                <InfoLabel>PLZ</InfoLabel>
-                <InfoValue>{customer.zip_code || "-"}</InfoValue>
-              </InfoItem>
-              <InfoItem>
-                <InfoLabel>Stadt</InfoLabel>
-                <InfoValue>{customer.city || "-"}</InfoValue>
-              </InfoItem>
-              <InfoItem>
-                <InfoLabel>Land</InfoLabel>
-                <InfoValue>{customer.country || "-"}</InfoValue>
-              </InfoItem>
-            </InfoGrid>
-          </Section>
-        )}
+          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "start" }}>
+            {/* Sidebar */}
+            <nav style={{ background: "#fff", borderRadius: 12, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+              {[
+                { label: "Übersicht", icon: "👤", href: "/account" },
+                { label: "Meine Bestellungen", icon: "📦", href: "/orders" },
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "14px 18px",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: item.href === "/account" ? ORANGE : DARK,
+                    background: item.href === "/account" ? "#fff7ed" : "transparent",
+                    borderLeft: item.href === "/account" ? `3px solid ${ORANGE}` : "3px solid transparent",
+                    textDecoration: "none",
+                    borderBottom: `1px solid ${BORDER}`,
+                    transition: "all 0.1s",
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+              <button
+                onClick={handleLogout}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "14px 18px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "#ef4444",
+                  background: "transparent",
+                  border: "none",
+                  borderLeft: "3px solid transparent",
+                  width: "100%",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 16 }}>🚪</span>
+                Abmelden
+              </button>
+            </nav>
 
-        <Section>
-          <SectionTitle>Aktionen</SectionTitle>
-          <ButtonGroup>
-            <Link href="/orders">
-              <Button variant="outline">Meine Bestellungen</Button>
-            </Link>
-            <Button variant="outline" onClick={logout}>
-              Abmelden
-            </Button>
-          </ButtonGroup>
-        </Section>
-      </Container>
+            {/* Main content */}
+            <div>
+              {/* Personal info */}
+              <Section
+                title="Persönliche Daten"
+                action={editSection !== "personal" && <EditButton onClick={() => startEdit("personal")} />}
+              >
+                {editSection === "personal" ? (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                      <div>
+                        <label style={lbl}>Vorname</label>
+                        <input style={inp} value={form.first_name} onChange={e => set("first_name", e.target.value)} />
+                      </div>
+                      <div>
+                        <label style={lbl}>Nachname</label>
+                        <input style={inp} value={form.last_name} onChange={e => set("last_name", e.target.value)} />
+                      </div>
+                      <div>
+                        <label style={lbl}>Telefon</label>
+                        <input style={inp} value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+49 123 456789" />
+                      </div>
+                      <div>
+                        <label style={lbl}>Kontotyp</label>
+                        <select style={inp} value={form.account_type} onChange={e => set("account_type", e.target.value)}>
+                          <option value="privat">Privatkunde</option>
+                          <option value="gewerbe">Gewerbekunde</option>
+                        </select>
+                      </div>
+                      {form.account_type === "gewerbe" && (
+                        <>
+                          <div>
+                            <label style={lbl}>Firmenname</label>
+                            <input style={inp} value={form.company_name} onChange={e => set("company_name", e.target.value)} />
+                          </div>
+                          <div>
+                            <label style={lbl}>USt-IdNr.</label>
+                            <input style={inp} value={form.vat_number} onChange={e => set("vat_number", e.target.value)} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {saveErr && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{saveErr}</p>}
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <SaveButton onClick={saveEdit} loading={saving} />
+                      <button onClick={() => setEditSection(null)} style={{ padding: "10px 20px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, cursor: "pointer", background: "#fff", color: GRAY }}>
+                        Abbrechen
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                    <InfoRow label="Vorname" value={customer?.first_name} />
+                    <InfoRow label="Nachname" value={customer?.last_name} />
+                    <InfoRow label="E-Mail" value={customer?.email} />
+                    <InfoRow label="Telefon" value={customer?.phone} />
+                    <InfoRow label="Kontotyp" value={accountTypeLabel(customer?.account_type)} />
+                    {customer?.company_name && <InfoRow label="Firma" value={customer.company_name} />}
+                    {customer?.vat_number && <InfoRow label="USt-IdNr." value={customer.vat_number} />}
+                  </div>
+                )}
+              </Section>
+
+              {/* Address */}
+              <Section
+                title="Lieferadresse"
+                action={editSection !== "address" && <EditButton onClick={() => startEdit("address")} />}
+              >
+                {editSection === "address" ? (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={lbl}>Straße & Hausnummer</label>
+                        <input style={inp} value={form.address_line1} onChange={e => set("address_line1", e.target.value)} placeholder="Musterstraße 12" />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={lbl}>Adresszusatz (optional)</label>
+                        <input style={inp} value={form.address_line2} onChange={e => set("address_line2", e.target.value)} placeholder="Apartment, Stock, c/o…" />
+                      </div>
+                      <div>
+                        <label style={lbl}>PLZ</label>
+                        <input style={inp} value={form.zip_code} onChange={e => set("zip_code", e.target.value)} placeholder="12345" />
+                      </div>
+                      <div>
+                        <label style={lbl}>Stadt</label>
+                        <input style={inp} value={form.city} onChange={e => set("city", e.target.value)} placeholder="Berlin" />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={lbl}>Land</label>
+                        <select style={inp} value={form.country} onChange={e => set("country", e.target.value)}>
+                          <option value="">Bitte wählen…</option>
+                          {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {saveErr && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{saveErr}</p>}
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <SaveButton onClick={saveEdit} loading={saving} />
+                      <button onClick={() => setEditSection(null)} style={{ padding: "10px 20px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, cursor: "pointer", background: "#fff", color: GRAY }}>
+                        Abbrechen
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  customer?.address_line1 ? (
+                    <div>
+                      <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK, fontWeight: 500 }}>{customer.address_line1}</p>
+                      {customer.address_line2 && <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK }}>{customer.address_line2}</p>}
+                      <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK }}>{[customer.zip_code, customer.city].filter(Boolean).join(" ")}</p>
+                      <p style={{ margin: 0, fontSize: 15, color: DARK }}>{countryName(customer.country)}</p>
+                    </div>
+                  ) : (
+                    <p style={{ color: GRAY, fontSize: 14, margin: 0 }}>Noch keine Adresse gespeichert.</p>
+                  )
+                )}
+              </Section>
+
+              {/* Quick links */}
+              <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${BORDER}`, padding: "20px 28px" }}>
+                <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: DARK }}>Schnellzugriff</h2>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <Link
+                    href="/orders"
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      padding: "10px 20px", background: ORANGE, color: "#fff",
+                      border: "2px solid #000", borderRadius: 10, fontSize: 14,
+                      fontWeight: 700, textDecoration: "none", boxShadow: "0 2px 0 2px #000",
+                    }}
+                  >
+                    📦 Meine Bestellungen
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <Footer />
+    </div>
   );
 }
-

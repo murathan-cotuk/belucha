@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 function fmtCents(c) {
@@ -8,151 +9,305 @@ function fmtCents(c) {
 }
 function fmtDate(d) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("de-DE");
+  return new Date(d).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-function CustomerModal({ email, onClose }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+function accountTypeLabel(type) {
+  if (type === "gastkunde") return "Gast";
+  if (type === "gewerbe") return "Gewerbe";
+  return "Privat";
+}
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const client = getMedusaAdminClient();
-        const res = await client.getCustomer(email);
-        setData(res);
-      } catch { }
-      setLoading(false);
-    })();
-  }, [email]);
+const ACCOUNT_TYPE_COLORS = {
+  gastkunde: { bg: "#f3f4f6", color: "#6b7280" },
+  gewerbe:   { bg: "#dbeafe", color: "#1e40af" },
+  privat:    { bg: "#d1fae5", color: "#065f46" },
+};
 
-  const customer = data?.customer;
-  const orders = data?.orders || [];
+const EMPTY_FORM = {
+  email: "", first_name: "", last_name: "", phone: "",
+  account_type: "privat", country: "",
+  address_line1: "", address_line2: "", zip_code: "", city: "",
+  company_name: "", vat_number: "",
+};
+
+function CustomerFormModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(initial || EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.email) { setErr("E-Mail ist erforderlich"); return; }
+    setSaving(true);
+    setErr("");
+    try {
+      await onSave(form);
+      onClose();
+    } catch (e) {
+      setErr(e?.message || "Fehler beim Speichern");
+    }
+    setSaving(false);
+  };
+
+  const inputStyle = { width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, boxSizing: "border-box" };
+  const labelStyle = { fontSize: 12, color: "#374151", fontWeight: 500, display: "block", marginBottom: 3 };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 12, width: 560, maxHeight: "80vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.2)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Kundendetails</h2>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderRadius: 12, width: 560, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{initial?.id ? "Kunde bearbeiten" : "Neuer Kunde"}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>×</button>
         </div>
-        <div style={{ padding: 24 }}>
-          {loading ? (
-            <p style={{ color: "#9ca3af", textAlign: "center" }}>Laden…</p>
-          ) : !customer ? (
-            <p style={{ color: "#9ca3af" }}>Nicht gefunden</p>
-          ) : (
+        <div style={{ padding: 24, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={labelStyle}>E-Mail *</label>
+            <input style={inputStyle} value={form.email} onChange={e => set("email", e.target.value)} placeholder="kunde@beispiel.de" />
+          </div>
+          <div>
+            <label style={labelStyle}>Vorname</label>
+            <input style={inputStyle} value={form.first_name} onChange={e => set("first_name", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Nachname</label>
+            <input style={inputStyle} value={form.last_name} onChange={e => set("last_name", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Telefon</label>
+            <input style={inputStyle} value={form.phone} onChange={e => set("phone", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Kundentyp</label>
+            <select style={inputStyle} value={form.account_type} onChange={e => set("account_type", e.target.value)}>
+              <option value="privat">Privatkunde</option>
+              <option value="gewerbe">Gewerbekunde</option>
+              <option value="gastkunde">Gastkunde</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={labelStyle}>Straße</label>
+            <input style={inputStyle} value={form.address_line1} onChange={e => set("address_line1", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>PLZ</label>
+            <input style={inputStyle} value={form.zip_code} onChange={e => set("zip_code", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Stadt</label>
+            <input style={inputStyle} value={form.city} onChange={e => set("city", e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Land (Code)</label>
+            <input style={inputStyle} value={form.country} onChange={e => set("country", e.target.value)} placeholder="DE" />
+          </div>
+          {form.account_type === "gewerbe" && (
             <>
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
-                  {[customer.first_name, customer.last_name].filter(Boolean).join(" ") || customer.email}
-                </div>
-                <div style={{ fontSize: 13, color: "#6b7280" }}>{customer.email}</div>
-                {customer.phone && <div style={{ fontSize: 13, color: "#6b7280" }}>{customer.phone}</div>}
-                {customer.country && <div style={{ fontSize: 13, color: "#6b7280" }}>{customer.country}</div>}
+              <div>
+                <label style={labelStyle}>Firmenname</label>
+                <input style={inputStyle} value={form.company_name} onChange={e => set("company_name", e.target.value)} />
               </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-                {[
-                  { label: "Bestellungen", value: customer.order_count || 0 },
-                  { label: "Gesamtumsatz", value: fmtCents(customer.total_spent) },
-                  { label: "Letzter Kauf", value: fmtDate(customer.last_order) },
-                ].map((s, i) => (
-                  <div key={i} style={{ background: "#f9fafb", borderRadius: 8, padding: "12px 16px", textAlign: "center" }}>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{s.value}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{s.label}</div>
-                  </div>
-                ))}
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={labelStyle}>USt-IdNr.</label>
+                <input style={inputStyle} value={form.vat_number} onChange={e => set("vat_number", e.target.value)} />
               </div>
-
-              <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Bestellhistorie</h3>
-              {orders.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#9ca3af" }}>Keine Bestellungen</p>
-              ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ color: "#6b7280", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
-                      <th style={{ textAlign: "left", padding: "4px 0 8px" }}>#</th>
-                      <th style={{ textAlign: "left", padding: "4px 0 8px" }}>Status</th>
-                      <th style={{ textAlign: "right", padding: "4px 0 8px" }}>Betrag</th>
-                      <th style={{ textAlign: "right", padding: "4px 0 8px" }}>Datum</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map((o, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                        <td style={{ padding: "8px 0", fontWeight: 600 }}>#{o.order_number}</td>
-                        <td style={{ padding: "8px 0" }}>
-                          <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 20, background: "#f3f4f6", color: "#6b7280" }}>
-                            {o.order_status}
-                          </span>
-                        </td>
-                        <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 600 }}>{fmtCents(o.total_cents)}</td>
-                        <td style={{ padding: "8px 0", textAlign: "right", color: "#6b7280" }}>{fmtDate(o.created_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </>
           )}
+        </div>
+        {err && <div style={{ margin: "0 24px 12px", color: "#ef4444", fontSize: 12 }}>{err}</div>}
+        <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onClose} style={{ padding: "8px 18px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, cursor: "pointer", background: "#fff" }}>Abbrechen</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding: "8px 18px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+            {saving ? "Speichern…" : "Speichern"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
+function ActionMenu({ customer, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, bottom: "auto", right: 0 });
+  const ref = useRef(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 120;
+      setPos({
+        top: openUp ? "auto" : rect.bottom + 4,
+        bottom: openUp ? (window.innerHeight - rect.top + 4) : "auto",
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setOpen(o => !o);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }} onClick={e => e.stopPropagation()}>
+      <button
+        ref={btnRef}
+        onClick={handleToggle}
+        style={{ background: "none", border: "1px solid transparent", borderRadius: 5, padding: "3px 7px", cursor: "pointer", fontSize: 16, color: "#6b7280", lineHeight: 1 }}
+        onMouseEnter={e => e.currentTarget.style.background = "#f3f4f6"}
+        onMouseLeave={e => e.currentTarget.style.background = "none"}
+      >
+        ···
+      </button>
+      {open && (
+        <div ref={menuRef} style={{ position: "fixed", top: pos.top, bottom: pos.bottom, right: pos.right, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", zIndex: 9999, minWidth: 150, overflow: "hidden" }}>
+          <button
+            onClick={() => { setOpen(false); onEdit(customer); }}
+            style={{ display: "block", width: "100%", padding: "9px 16px", textAlign: "left", background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#111827" }}
+            onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
+            onMouseLeave={e => e.currentTarget.style.background = "none"}
+          >
+            Bearbeiten
+          </button>
+          <button
+            onClick={() => { setOpen(false); onDelete(customer); }}
+            style={{ display: "block", width: "100%", padding: "9px 16px", textAlign: "left", background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#ef4444" }}
+            onMouseEnter={e => e.currentTarget.style.background = "#fef2f2"}
+            onMouseLeave={e => e.currentTarget.style.background = "none"}
+          >
+            Löschen
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CustomersPage() {
+  const router = useRouter();
+
+
+
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
+  const [modal, setModal] = useState(null); // null | { mode: "create" } | { mode: "edit", customer }
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const fetch = async (q) => {
+  const fetchCustomers = async (q) => {
     setLoading(true);
     try {
       const client = getMedusaAdminClient();
-      const params = {};
-      if (q) params.search = q;
-      const data = await client.getCustomers(params);
+      const p = {};
+      if (q) p.search = q;
+      const data = await client.getCustomers(p);
       setCustomers(data.customers || []);
     } catch { setCustomers([]); }
     setLoading(false);
   };
 
-  useEffect(() => { fetch(""); }, []);
+  useEffect(() => { fetchCustomers(""); }, []);
 
   const handleSearch = (e) => {
     const val = e.target.value;
     setSearch(val);
-    const timeout = setTimeout(() => fetch(val), 400);
-    return () => clearTimeout(timeout);
+    const t = setTimeout(() => fetchCustomers(val), 400);
+    return () => clearTimeout(t);
   };
 
-  const COLS = ["Name", "Email", "Land", "Bestellungen", "Gesamtumsatz", "Erster Kauf", "Letzter Kauf"];
+  const handleSaveCustomer = async (form) => {
+    const client = getMedusaAdminClient();
+    if (modal?.mode === "edit" && modal.customer?.id) {
+      const res = await client.updateCustomer(modal.customer.id, form);
+      const updated = res?.customer;
+      if (updated) setCustomers(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
+    } else {
+      const res = await client.createCustomer(form);
+      const created = res?.customer;
+      if (created) setCustomers(prev => [created, ...prev]);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmDelete) return;
+    try {
+      const client = getMedusaAdminClient();
+      await client.deleteCustomer(confirmDelete.id);
+      setCustomers(prev => prev.filter(c => c.id !== confirmDelete.id));
+    } catch (e) {
+      alert(e?.message || "Kunde konnte nicht gelöscht werden. Bitte Konsole/Netzwerk prüfen.");
+    }
+    setConfirmDelete(null);
+  };
+
+  const COLS = ["Kundennr.", "Name", "Email", "Typ", "Registriert", "Newsletter", "Land", "Bestellungen", "Gesamtumsatz", "Letzter Kauf", ""];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, background: "#fff", minHeight: "100%" }}>
+      {/* Modals */}
+      {modal && (
+        <CustomerFormModal
+          initial={modal.mode === "edit" ? modal.customer : null}
+          onClose={() => setModal(null)}
+          onSave={handleSaveCustomer}
+        />
+      )}
+      {confirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 28, maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: 16, fontWeight: 700 }}>Kunde löschen?</h3>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "#6b7280" }}>
+              {[confirmDelete.first_name, confirmDelete.last_name].filter(Boolean).join(" ") || confirmDelete.email} wird dauerhaft gelöscht.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmDelete(null)} style={{ padding: "8px 16px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, cursor: "pointer", background: "#fff" }}>Abbrechen</button>
+              <button onClick={handleDeleteConfirm} style={{ padding: "8px 16px", background: "#ef4444", color: "#fff", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Löschen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Kunden</h1>
-        <span style={{ fontSize: 13, color: "#6b7280" }}>{customers.length} Kunden</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 13, color: "#6b7280" }}>{customers.length} Kunden</span>
+          <button
+            onClick={() => setModal({ mode: "create" })}
+            style={{ padding: "8px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            + Neuer Kunde
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: 16 }}>
         <input
-          placeholder="Suche nach Name oder Email…"
+          placeholder="Suche nach Name, Email oder #Kundennr…"
           value={search}
           onChange={handleSearch}
-          style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, width: 300 }}
+          style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, width: 340 }}
         />
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", overflow: "auto" }}>
+      <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
               {COLS.map((c, i) => (
-                <th key={i} style={{ padding: "10px 12px", textAlign: i >= 3 ? "center" : "left", fontWeight: 600, fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+                <th key={i} style={{ padding: "10px 12px", textAlign: i >= 7 && i <= 9 ? "center" : "left", fontWeight: 600, fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
                   {c}
                 </th>
               ))}
@@ -160,40 +315,69 @@ export default function CustomersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Laden…</td></tr>
+              <tr><td colSpan={11} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Laden…</td></tr>
             )}
             {!loading && customers.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: "60px 20px", textAlign: "center", color: "#9ca3af" }}>
+                <td colSpan={11} style={{ padding: "60px 20px", textAlign: "center", color: "#9ca3af" }}>
                   <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
                   <div>Keine Kunden gefunden</div>
                 </td>
               </tr>
             )}
-            {customers.map((c, i) => (
-              <tr
-                key={i}
-                style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
-                onClick={() => setSelected(c.email)}
-                onMouseEnter={e => e.currentTarget.style.background = "#fafafa"}
-                onMouseLeave={e => e.currentTarget.style.background = ""}
-              >
-                <td style={{ padding: "10px 12px", fontWeight: 500 }}>
-                  {[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}
-                </td>
-                <td style={{ padding: "10px 12px", color: "#6b7280" }}>{c.email}</td>
-                <td style={{ padding: "10px 12px", color: "#6b7280" }}>{c.country || "—"}</td>
-                <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>{c.order_count || 0}</td>
-                <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>{fmtCents(c.total_spent)}</td>
-                <td style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "#6b7280" }}>{fmtDate(c.first_order)}</td>
-                <td style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "#6b7280" }}>{fmtDate(c.last_order)}</td>
-              </tr>
-            ))}
+            {customers.map((c, i) => {
+              const typeColor = ACCOUNT_TYPE_COLORS[c.account_type] || ACCOUNT_TYPE_COLORS.privat;
+              return (
+                <tr
+                  key={i}
+                  style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
+                  onClick={() => router.push(`/customers/${c.id}`)}
+                  onMouseEnter={e => e.currentTarget.style.background = "#fafafa"}
+                  onMouseLeave={e => e.currentTarget.style.background = ""}
+                >
+                  <td style={{ padding: "10px 12px", fontWeight: 700, color: "#6b7280", fontSize: 12 }}>
+                    {c.customer_number ? `#${c.customer_number}` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px", fontWeight: 500 }}>
+                    {[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px", color: "#6b7280" }}>{c.email}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: typeColor.bg, color: typeColor.color, fontWeight: 600 }}>
+                      {accountTypeLabel(c.account_type)}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {c.is_registered ? (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#d1fae5", color: "#065f46", fontWeight: 600 }}>Registriert</span>
+                    ) : (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#f3f4f6", color: "#6b7280", fontWeight: 600 }}>Gast</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {c.newsletter_opted_in ? (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#ede9fe", color: "#6d28d9", fontWeight: 600 }}>✓ Abonniert</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>—</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "10px 12px", color: "#6b7280" }}>{c.country || "—"}</td>
+                  <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>{c.order_count || 0}</td>
+                  <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 600 }}>{fmtCents(c.total_spent)}</td>
+                  <td style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "#6b7280" }}>{fmtDate(c.last_order)}</td>
+                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                    <ActionMenu
+                      customer={c}
+                      onEdit={(cust) => setModal({ mode: "edit", customer: cust })}
+                      onDelete={(cust) => setConfirmDelete(cust)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-
-      {selected && <CustomerModal email={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

@@ -1,104 +1,5 @@
 20.03.
-----------------------------------
-1. PRODUCT PAGE SCROLL (UX FIX)
------------------------------------
-- Ürün sayfasında aşağı scroll yapılınca ürün görseli hemen kaymamalı
-- Görsel belirli bir süre (sticky gibi) sabit kalmalı
-- Sağ taraftaki bilgiler scroll edebilir
-- Modern e-commerce siteleri (Apple, eBay) gibi davranmalı
 
------------------------------------
-2. PRODUCT PAGE DESIGN
------------------------------------
-- Yerleşim doğru ama tasarım kötü ve minimal değil
-- UI tamamen yeniden düzenle:
-  - Daha fazla white-space
-  - Daha sade font ve spacing
-  - Butonlar ve varyasyonlar daha küçük ve modern
-- Referans: eBay product page
-
------------------------------------
-3. VARIATION SYSTEM (CRITICAL BUG)
------------------------------------
-Şu an varyasyon sistemi yanlış çalışıyor.
-
-İSTENEN DAVRANIŞ:
-- Kullanıcı Color = Red seçti
-- Sonra Size = S seçti
-→ Sonuç: Red + S aynı anda seçili kalmalı
-
-ŞU ANKİ HATA:
-- Size seçince Color sıfırlanıyor
-
-DOĞRU LOGIC:
-- Seçimler birbirini silmemeli
-- Her grup kendi state’ini korumalı
-- Seçilen kombinasyona göre variant bulunmalı
-
-EK:
-- Stok yoksa seçenek:
-  - disabled + üstü çizili
-- Varyasyonlar:
-  - Daha küçük
-  - Yuvarlak (pill değil, compact)
-
------------------------------------
-4. VARIATION UI (SELLERCENTRAL)
------------------------------------
-
-Yeni yapı şu şekilde olmalı:
-
-GROUP SETUP:
-Add Group +
-
-Group A: Color
-- Schwarz
-- Red
-
-Group B: Größe
-- S
-- M
-- L
-
-AUTO MATRIX:
-Schwarz:
-  S
-  M
-  L
-
-Red:
-  S
-  M
-  L
-
-ÖZELLİKLER:
-- Gruplar reorder edilebilir olmalı
-- Her varyasyona:
-  - görsel (upload + URL)
-  - SKU
-  - EAN
-  - stok
-  - fiyat
-  - UVP
-  - indirim fiyatı
-- Eğer sadece “Red” için görsel eklendiyse:
-  → tüm Red varyantlarına otomatik uygulanmalı
-- Ama istersek her varyant ayrı override edilebilir
-
-KURAL:
-- Ana ürün fiyatı kullanılmaz
-- Her zaman varyant fiyatı baz alınır
-
------------------------------------
-5. SWATCH SYSTEM
------------------------------------
-- Color için swatch image kullanılmalı
-- Shop’ta:
-  - küçük görsel olarak göster
-- Cart’ta:
-  - seçilen varyantın swatch’ı görünmeli
-
------------------------------------
 6. DUPLICATE PRODUCT + URL FIX
 -----------------------------------
 
@@ -120,56 +21,6 @@ DUPLICATE:
 - Asla eski slug/copy kalmamalı
 
 -----------------------------------
-7. PRODUCT NAME BUG
------------------------------------
-- Sellercentral’da ürün isimleri farklı
-- Shop’ta hepsi aynı gözüküyor
-
-→ Bu mapping hatasını düzelt
-
------------------------------------
-8. RECOMMENDATION SYSTEM
------------------------------------
-
-“Sizin için önerilenler”:
-
-ŞU AN:
-- Random / collection bazlı
-
-İSTENEN:
-- Kullanıcının en çok ziyaret ettiği ürünlere göre
-
-Eğer veri yoksa:
-- fallback olabilir
-
------------------------------------
-9. RELATED PRODUCTS LOGIC
------------------------------------
-
-ŞU AN:
-- Boş olsa bile carousel çıkıyor
-
-İSTENEN:
-- Eğer related products yoksa:
-  → bu section hiç render edilmesin
-
------------------------------------
-10. SEARCH (SELLERCENTRAL)
------------------------------------
-
-ŞU AN:
-- Çalışmıyor
-
-İSTENEN:
-- Global search:
-  - ürünler
-  - kategoriler
-  - menüler
-  - ayarlar
-  - pluginler
-- Sonuçlar kategorize edilmiş şekilde gösterilmeli
-
------------------------------------
 11. MEDIA MANAGEMENT (SELLERCENTRAL)
 -----------------------------------
 
@@ -183,21 +34,6 @@ Eğer veri yoksa:
 EK:
 - URL ile eklenen görseller de media’da görünmeli
 
------------------------------------
-12. SHOP IMPROVEMENTS
------------------------------------
-
-- Ürün sayfasında görseller daha büyük olsun
-- Category / collection sayfalarında:
-  - yayınlanma tarihine göre sıralama ekle
-- Search suggestions:
-  - görseller görünmeli
-- Cart:
-  - varyasyonlar düzgün formatta gösterilmeli:
-
-ÖRNEK:
-COLOR: Schwarz
-SIZE: M
 
 -----------------------------------
 13. INVENTORY IMAGE BUG
@@ -207,31 +43,37 @@ SIZE: M
   - küçük image preview boş
 → ürün görselleri burada görünmeli
 
------------------------------------
-14. COMING SOON TEXT
------------------------------------
 
-- “Pek yakında”:
-  - butonun altında olmalı
-  - aktif dile göre değişmeli
-  - yanında yayınlanma tarihi olmalı
-
------------------------------------
-
-SON:
-Her şeyi yaptıktan sonra:
-- Edge case’leri kontrol et
-- State bug kalmadığından emin ol
-- UI’yi gerçekten minimal yap (şu an değil)
-
-Yarım iş istemiyorum.
-
-- shoptaki search bar bir tik daha kücülsün ve o bar incelsin bir tik. second bar bir tik kalin olsun ve oradaki menüler daha büyük puntolu yazilsin. 
 - sellercentralde bir varyasyon optionuna swatch image ekleyince onu varyasyon ürününün ilk fotografi olarak da kabul ediyor. ürün fotosu size in sagindaki yer oldugu icin oraya etki etmemeli. oraya tiklayarak ürün eklenmeli. o kisimdan eklenen görselleri silebilme sansimiz da olmali.
 - sellercentralde ürüne girdigimde ya da database de olan herhangi bir seye girdigimde (kategori, kolkesiyon, ürün, fotograf vs.) database de ne sekilde tanimlaniyorsa o gözükmeli. yani ID si yazmali sellercentralde urlde. yani bunu lütfen atlama burasi cok kritik. isim tanimli su anda ancak ben sürekli isim degistiriyorum urlde güncellenmiyor. database ile sürekli iletisim halinde kalinmasi lazim. o yüzde id kullanalim id hep sabittir.
+
+YENI
+-+siparisler sayfasinda fiyat gösterilirken vat de gözüksün. satis fiyati brüt yaziyoruz ya  
+orada brüt fiyat/1,19 gözüksün zwischen netto preis olarak. sonra +steuer ya da her ülkede   
+ne deniyorsa ve her ülkenin vergi orani ne ise ona göre + vergi eklensin. zaten ürünlerin    
+fiyatlarini da ülkelere göre belirleyecegiz. ürünler sayfasinda ürünlerin icindeki           
+fiyatlandirma bölümünü bence tab seklinde yapalim. yan yana ülkeler olsun. bastiginda kdv    
+orani yazsin ve yan yana netto - brutto fiyatlar kismi olsun. aralarinda bir kilit olsun.    
+bunlari birbirine baglayabilelim. mesela almanya icin konusuyorum. eger baglarsak birbirine  
+netto fiyat yazdiginda otomatik olarak brüt fiyati netto*1,19 olarak güncellenecek. hepsinin kendi icinde indirimli fiyati, uvp fiyati falan gözüksün. tabii bu varyasyonlar icin de     
+ayni olmali, varyasyonlarda belirlenen sku ya tiklandiginda ürünün icine girilmeli orada da  
+görünmeli, overviweda da ayarlanabilmeli. ürün ismi, aciklamasi, bullet pointi, görseli,     
+metafieldleri, yani acikcasi her yerde tab olmali ülke ülke. o yüzden simdi düsündüm de      
+hepsinde ayri ayri olmasi yerine ürünün icine girdiginde en üstte view in shop kisminin      
+soluna mevcut hangi dillerimiz var ise onlari yan yana yaz. bir ürün icin hangi dil          
+secildiyse o veriler ona göre güncellensin. fiyatttir isimdir carttir curttur ayri ayri      
+depolansin database de ve shopta da secilen dile göre hangi taba girdiysek o gözüksün.       
+mesela ülke olarak ispanya secildi shopta hemen ispanyolca dil gözükecek, es tabi altinda    
+girilen ürün bilgileri ve ispanya vergi orani falan gözükecek. ona göre brüt fiyat           
+gözükecek. tabi shoptaki globe a basinda dropdown güncellenmeli artik. genis büyük bir       
+dropdown insin söyle heybetli. solda country secici olsun, sagda language secici olsun.      
+mesela isvicre icin isvicre frangi olmali sellercentraldeki ürün verisi para birimi. shopta  
+dil almanca, para birimi frank olmali ülke isvicre secilince. 
+- Siparis sayfasinda siparis listelerinin sagindaki 3 noktada iki tane markieren var. onlarin olmasini istemedim. ben direkt "Versenden" diye bir buton istedim siparisi göndermek icin. ayrica birden fazla siparis secilebilsin ve toplu bir sekilde gönderim yapilabilsin.
++
 - Shopta register yaparken lieferadresse ve rechnungsadresse secenegi yok daha önceden anlattigim gibi.
-- shopta siparislerim sayfasinda siparislerin yaninda faturayi görmek istiyorum. kargoya verildiginde kargo takip numarasi da siparisin orada yer alsin.
-- sellercentralde siprisi versenden yapabilelim. versenden yaptigimizda kargo etiketi basilsin ve lieferschein basilsin. bunlari print edebilelim. kargo etiketi basildiktan sonra kargo takip numarasi hem sellercentralde ilgili orderda yazsin hem de shopta müsteriye fatura ve takip numarasi gitsin.
+- shopta siparislerim sayfasinda siparislerin yaninda faturayi görmek istiyorum. kargoya verildiginde kargo takip numarasi da siparisin orada yer alsin. fatura olusturma modülü falan var stripe ta nasil yapilacaksa yap. yapmam gerekeni söyle. fatura icin nasil template hazirlayalim vs.
+- sellercentralde siprisi versenden yapabilelim. versenden yaptigimizda kargo etiketi basilsin ve lieferschein basilsin. bunlari print edebilelim. kargo etiketi basildiktan sonra kargo takip numarasi hem sellercentralde ilgili orderda yazsin hem de shopta müsteriye fatura ve takip numarasi gitsin. toplu siparis versenden yapildiginda verandzentrum gibi bir sayfa acilsin ve orada sirayla siparisler ciksin. atiyorum ilk siparisin icinde 3 farkli ürün var. o 3 farkli ürünün barkodu scanlendiginde ya da manuel olarak eklendi, siradaki ürün tarzi bir butona basmak sureti ile siparisler islensin. billbee ve xentral tarzi.
 - shopta müsteri siparisi iade et butonuna basabilsin. siparisin teslim edilme tarihi siparisin icinde olsun. teslimattan sonra 14 gün icinde retoure edebilir. 14 günü gecti ise maalesef iade edemezsin gibisinden bi uyari ciksin. 14 gün icindeyse de iade talebi bana gelsin sellercentralde retoure sayfasina düssün, talep incelendikten sonra onaylanirsa kargo etiketi basalim ve retourenschein ya da iade faturasi ya da yasal olarak gereklilik ne ise onlar basilsin. iade numarasi da basilsin ve gözüksün orderin icinde. bunlar tabii shopta müsterinin kontosunda görüntüleyebilecegi seyler olsun. 
 - siparis tutarini iade etme butonu da olsun sellercentralde retoure de. paket bana ulastiktan sonra iade secenegini secelim. tam ya da kismi iade icin gerekli tutari girelim. iade et dedigimizde ödeme yapilan kaynaga tutar aninda iade olsun.
 - kargo etiketi olusturmak icin vs tabii ki bir kargo saglayicisi entegre etmek gerekecek. https://belucha-sellercentral.vercel.app/tr/settings/shipping sayfasindan kargo saglayicisi eklenebilsin. DHL, DPD, GLS, UPS, FedEx, USPS, Go Exppress ya da saticinin istedigi özel bir kargo saglayicisi eklenebilsin. buraya ilgili apiler eklendikten sonra etiket basma, takip numarasi girme, kargoyu takip edip status güncelleme ve bildirme adimlari uygulanabilecek tabii ki.

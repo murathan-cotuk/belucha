@@ -262,6 +262,8 @@ export default function RegisterPage() {
     gender: "", birthDate: "",
     address: "", addressLine2: "", zipCode: "", city: "", country: "DE",
     companyName: "", vatNumber: "",
+    billingSameAsShipping: true,
+    billingAddress: "", billingZipCode: "", billingCity: "", billingCountry: "DE",
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -292,6 +294,10 @@ export default function RegisterPage() {
         country: formData.country,
         company_name: formData.companyName || undefined,
         vat_number: formData.vatNumber || undefined,
+        billing_address_line1: formData.billingSameAsShipping !== false ? undefined : (formData.billingAddress || undefined),
+        billing_zip_code: formData.billingSameAsShipping !== false ? undefined : (formData.billingZipCode || undefined),
+        billing_city: formData.billingSameAsShipping !== false ? undefined : (formData.billingCity || undefined),
+        billing_country: formData.billingSameAsShipping !== false ? undefined : (formData.billingCountry || undefined),
       };
       const registerResult = await registerMedusa(formData.email, formData.password, formData.firstName, formData.lastName, extra);
       if (!registerResult?.customer) { setError("Registrierung fehlgeschlagen. Bitte versuchen Sie es erneut."); return; }
@@ -388,6 +394,7 @@ export default function RegisterPage() {
           </FormGroup>
 
           {/* Address */}
+          <SectionLabel>Lieferadresse</SectionLabel>
           <FormGroup>
             <Label htmlFor="address">Straße und Hausnummer</Label>
             <Input id="address" value={formData.address} onChange={set("address")} placeholder="Musterstraße 1" autoComplete="street-address" />
@@ -418,6 +425,54 @@ export default function RegisterPage() {
               <option value="US">United States</option>
             </Select>
           </FormGroup>
+
+          {/* Billing address */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+            <input
+              type="checkbox"
+              id="billingSame"
+              checked={formData.billingSameAsShipping !== false}
+              onChange={e => setFormData(f => ({ ...f, billingSameAsShipping: e.target.checked }))}
+              style={{ width: 16, height: 16, cursor: "pointer" }}
+            />
+            <label htmlFor="billingSame" style={{ fontSize: 14, color: "#374151", cursor: "pointer" }}>
+              Rechnungsadresse = Lieferadresse
+            </label>
+          </div>
+
+          {formData.billingSameAsShipping === false && (
+            <>
+              <SectionLabel>Rechnungsadresse</SectionLabel>
+              <FormGroup>
+                <Label htmlFor="billingAddress">Straße und Hausnummer</Label>
+                <Input id="billingAddress" value={formData.billingAddress || ""} onChange={set("billingAddress")} placeholder="Musterstraße 1" />
+              </FormGroup>
+              <Row>
+                <FormGroup>
+                  <Label htmlFor="billingZipCode">PLZ</Label>
+                  <Input id="billingZipCode" value={formData.billingZipCode || ""} onChange={set("billingZipCode")} placeholder="12345" />
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="billingCity">Stadt</Label>
+                  <Input id="billingCity" value={formData.billingCity || ""} onChange={set("billingCity")} placeholder="Berlin" />
+                </FormGroup>
+              </Row>
+              <FormGroup>
+                <Label htmlFor="billingCountry">Land</Label>
+                <Select id="billingCountry" value={formData.billingCountry || "DE"} onChange={set("billingCountry")}>
+                  <option value="DE">Deutschland</option>
+                  <option value="AT">Österreich</option>
+                  <option value="CH">Schweiz</option>
+                  <option value="TR">Türkiye</option>
+                  <option value="FR">France</option>
+                  <option value="IT">Italia</option>
+                  <option value="ES">España</option>
+                  <option value="GB">United Kingdom</option>
+                  <option value="US">United States</option>
+                </Select>
+              </FormGroup>
+            </>
+          )}
 
           {/* Password */}
           <FormGroup>

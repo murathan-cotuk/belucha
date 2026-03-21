@@ -42,7 +42,20 @@
       "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/.env* 2>/dev/null)",
       "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/sellercentral/src/app/[locale]/orders/)",
       "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/sellercentral/src/app/[locale]/orders/[id]/)",
-      "Bash(node -e \"const d=require\\('/c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/messages/en.json'\\); console.log\\(Object.keys\\(d\\)\\)\")"
+      "Bash(node -e \"const d=require\\('/c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/messages/en.json'\\); console.log\\(Object.keys\\(d\\)\\)\")",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/sellercentral/src -name \"*roduct*\" -type f 2>/dev/null | head -20)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src -name \"*[Ss]witch*\" -type f 2>/dev/null | grep -i locale)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend -name \"*migrations*\" -o -name \"*migration*\" 2>/dev/null | head -10)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/migrations -name \"*.ts\" -o -name \"*.js\" 2>/dev/null | head -5)",
+      "Bash(ls -la /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/\\\\[locale\\\\]/ 2>/dev/null | grep -E \"product|produkt\")",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/\\\\[locale\\\\]/product -type f -name \"*.jsx\" | head -10)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/\\\\[locale\\\\]/produkt -type f -name \"*.jsx\" | head -10)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('apps/sellercentral/src/components/pages/InventoryPage.jsx','utf8'\\);const line=c.split\\('\\\\n'\\)[415];const codes=[...line].map\\(ch=>ch.charCodeAt\\(0\\)\\);console.log\\(JSON.stringify\\(line\\)\\);console.log\\(codes.slice\\(0,30\\).join\\(','\\)\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('apps/sellercentral/src/components/pages/InventoryPage.jsx','utf8'\\);const matches=[...c].map\\(\\(ch,i\\)=>{const code=ch.charCodeAt\\(0\\);if\\(code===0x201C||code===0x201D||code===0x2018||code===0x2019\\){const line=c.substring\\(0,i\\).split\\('\\\\n'\\).length;return 'L'+line+': '+JSON.stringify\\(ch\\)+' \\(U+'+code.toString\\(16\\).toUpperCase\\(\\)+'\\)';}return null;}\\).filter\\(Boolean\\);console.log\\(matches.join\\('\\\\n'\\)||'No smart quotes found'\\);\")",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/components -type f -name \"*.jsx\" -o -name \"*.tsx\" 2>/dev/null | head -30)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src -path \"*api*\" -type f -name \"*.js\" -o -name \"*.ts\" 2>/dev/null | head -20)",
+      "Bash(find /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha -path \"*/node_modules\" -prune -o -path \"*belucha/lib*\" -type f -name \"*.js\" -o -name \"*.ts\" -o -name \"*.tsx\" 2>/dev/null | grep -v node_modules | head -20)",
+      "Bash(ls -la /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/[locale]/ | grep -E \"^d\")"
     ]
   }
 }
