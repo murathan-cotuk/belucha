@@ -39,7 +39,10 @@
       "Bash(curl -s -X POST \"https://belucha-medusa-backend.onrender.com/store/payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"test-cart-123\"}' 2>/dev/null)",
       "Bash(curl -s -X POST \"https://belucha-medusa-backend.onrender.com/store/payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"00000000-0000-0000-0000-000000000001\"}' 2>/dev/null)",
       "Bash(curl -s -X POST \"http://localhost:3000/api/store-payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"00000000-0000-0000-0000-000000000001\"}' 2>/dev/null)",
-      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/.env* 2>/dev/null)"
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/.env* 2>/dev/null)",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/sellercentral/src/app/[locale]/orders/)",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/sellercentral/src/app/[locale]/orders/[id]/)",
+      "Bash(node -e \"const d=require\\('/c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/messages/en.json'\\); console.log\\(Object.keys\\(d\\)\\)\")"
     ]
   }
 }
