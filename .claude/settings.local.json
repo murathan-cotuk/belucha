@@ -34,7 +34,12 @@
       "Bash(curl -s \"http://localhost:9000/store/products?limit=5\" 2>/dev/null | python -c \"\nimport sys,json\nd=json.load\\(sys.stdin\\)\nfor p in d.get\\('products',[]\\):\n  v = \\(p.get\\('variants'\\) or [{}]\\)[0]\n  print\\('Product:', p.get\\('title','?'\\)\\)\n  print\\('  inventory_quantity:', v.get\\('inventory_quantity'\\)\\)\n  print\\('  manage_inventory:', v.get\\('manage_inventory'\\)\\)\n  print\\('  allow_backorder:', v.get\\('allow_backorder'\\)\\)\n  print\\('  rabattpreis_cents:', \\(p.get\\('metadata'\\) or {}\\).get\\('rabattpreis_cents'\\)\\)\n  print\\(\\)\n\" 2>/dev/null)",
       "Bash(curl -s \"https://belucha-medusa-backend.onrender.com/store/products?limit=5\" 2>/dev/null | python -c \"\nimport sys,json\nd=json.load\\(sys.stdin\\)\nfor p in d.get\\('products',[]\\):\n  v = \\(p.get\\('variants'\\) or [{}]\\)[0]\n  print\\('Product:', p.get\\('title','?'\\)\\)\n  print\\('  inventory_quantity:', v.get\\('inventory_quantity'\\)\\)\n  print\\('  manage_inventory:', v.get\\('manage_inventory'\\)\\)\n  print\\('  rabattpreis_cents:', \\(p.get\\('metadata'\\) or {}\\).get\\('rabattpreis_cents'\\)\\)\n  print\\(\\)\n\" 2>/dev/null)",
       "Bash(find C:UsersmuratDesktopMCMCECECECProjeleribelucha -type f -name *rand*)",
-      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/[locale]/checkout/)"
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/shop/src/app/[locale]/checkout/)",
+      "Bash(curl -s -X POST \"http://localhost:9000/store/payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"test-cart-123\"}' 2>/dev/null)",
+      "Bash(curl -s -X POST \"https://belucha-medusa-backend.onrender.com/store/payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"test-cart-123\"}' 2>/dev/null)",
+      "Bash(curl -s -X POST \"https://belucha-medusa-backend.onrender.com/store/payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"00000000-0000-0000-0000-000000000001\"}' 2>/dev/null)",
+      "Bash(curl -s -X POST \"http://localhost:3000/api/store-payment-intent\" \\\\\n  -H \"Content-Type: application/json\" \\\\\n  -d '{\"cart_id\":\"00000000-0000-0000-0000-000000000001\"}' 2>/dev/null)",
+      "Bash(ls /c/Users/Lenovo/Desktop/Ortam/Yazilim/belucha/apps/medusa-backend/.env* 2>/dev/null)"
     ]
   }
 }

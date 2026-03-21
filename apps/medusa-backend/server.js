@@ -421,6 +421,9 @@ async function start() {
             updated_at timestamp DEFAULT now()
           );
         `)
+        await client.query(`
+          ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS order_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 100001 INCREMENT BY 1);
+        `).catch(() => {})
 
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_order_items (
@@ -2432,7 +2435,7 @@ async function start() {
     // --- Store Orders (Stripe payment success sonrası) ---
     const getOrderWithItems = async (client, orderId) => {
       const oRes = await client.query(
-        'SELECT id, cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
+        'SELECT id, order_number, cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
         [orderId]
       )
       const oRow = oRes.rows && oRes.rows[0]
@@ -2455,6 +2458,7 @@ async function start() {
 
       return {
         id: oRow.id,
+        order_number: oRow.order_number ? Number(oRow.order_number) : null,
         cart_id: oRow.cart_id,
         payment_intent_id: oRow.payment_intent_id,
         status: oRow.status,
@@ -2514,12 +2518,25 @@ async function start() {
           `INSERT INTO store_orders
             (cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency)
            VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'eur')
-           RETURNING id`,
+           RETURNING id, order_number`,
           [cartId, paymentIntentId, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotalCents, totalCents]
         )
 
         const orderId = ins.rows && ins.rows[0] ? ins.rows[0].id : null
+        const orderNumber = ins.rows && ins.rows[0] ? ins.rows[0].order_number : null
         if (!orderId) { await client.end(); return res.status(500).json({ message: 'Order insert failed' }) }
+
+        // Stripe payment intent'e sipariş numarasını ekle
+        const secretKey = (process.env.STRIPE_SECRET_KEY || '').toString().trim()
+        if (secretKey && orderNumber) {
+          try {
+            const stripe = new (require('stripe'))(secretKey)
+            await stripe.paymentIntents.update(paymentIntentId, {
+              description: `Siparis #${orderNumber}`,
+              metadata: { order_number: String(orderNumber), order_id: orderId },
+            })
+          } catch (_) {}
+        }
 
         for (const it of items) {
           await client.query(
