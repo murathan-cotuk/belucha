@@ -3342,7 +3342,7 @@ async function start() {
         const orderBy = sortMap[sort] || 'o.created_at DESC'
         const lim = Math.min(Number(limit) || 50, 200)
         const off = Number(offset) || 0
-        const r = await client.query(`SELECT o.id, o.order_number, o.order_status, o.payment_status, o.delivery_status, o.seller_id, o.email, o.first_name, o.last_name, o.phone, o.address_line1, o.address_line2, o.city, o.postal_code, o.country, o.subtotal_cents, o.total_cents, o.currency, o.payment_intent_id, o.cart_id, o.created_at FROM store_orders o ${where} ORDER BY ${orderBy} LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, lim, off])
+        const r = await client.query(`SELECT o.id, o.order_number, o.order_status, o.payment_status, o.delivery_status, o.seller_id, o.email, o.first_name, o.last_name, o.phone, o.address_line1, o.address_line2, o.city, o.postal_code, o.country, o.subtotal_cents, o.total_cents, o.currency, o.payment_intent_id, o.cart_id, o.created_at, o.is_guest, c.customer_number FROM store_orders o LEFT JOIN store_customers c ON LOWER(c.email) = LOWER(o.email) ${where} ORDER BY ${orderBy} LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, lim, off])
         const countR = await client.query(`SELECT COUNT(*) FROM store_orders o ${where}`, params)
         const orders = (r.rows || []).map(row => ({
           id: row.id, order_number: row.order_number ? Number(row.order_number) : null,
@@ -3354,6 +3354,8 @@ async function start() {
           postal_code: row.postal_code, country: row.country,
           subtotal_cents: row.subtotal_cents, total_cents: row.total_cents, currency: row.currency,
           payment_intent_id: row.payment_intent_id, created_at: row.created_at,
+          customer_number: row.customer_number ? Number(row.customer_number) : null,
+          is_guest: row.is_guest !== false,
         }))
         await client.end()
         res.json({ orders, count: Number(countR.rows[0]?.count || 0) })

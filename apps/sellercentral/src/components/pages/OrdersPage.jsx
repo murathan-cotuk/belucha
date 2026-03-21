@@ -294,8 +294,12 @@ export default function OrdersPage() {
                     </button>
                   </td>
                   {/* Customer */}
-                  <td style={{ padding: "10px 12px", maxWidth: 160 }}>
-                    <div style={{ fontWeight: 500 }}>{[order.first_name, order.last_name].filter(Boolean).join(" ") || "—"}</div>
+                  <td style={{ padding: "10px 12px", maxWidth: 180 }}>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>
+                      {order.customer_number
+                        ? `${order.customer_number} – ${[order.first_name, order.last_name].filter(Boolean).join(" ") || "—"}`
+                        : `(Gastkunde) ${[order.first_name, order.last_name].filter(Boolean).join(" ") || "—"}`}
+                    </div>
                     <div style={{ fontSize: 11, color: "#9ca3af" }}>{order.email || ""}</div>
                   </td>
                   {/* Address */}
