@@ -436,6 +436,17 @@ async function start() {
         await client.query(`
   ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS seller_id varchar(255) DEFAULT 'default';
 `).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS password_hash text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS account_type varchar(20) DEFAULT 'privat';`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS gender varchar(10);`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS birth_date date;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS address_line1 text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS address_line2 text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS zip_code varchar(20);`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS city text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS country varchar(100);`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS company_name text;`).catch(() => {})
+        await client.query(`ALTER TABLE store_customers ADD COLUMN IF NOT EXISTS vat_number text;`).catch(() => {})
         await client.query(`
   CREATE TABLE IF NOT EXISTS store_customers (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -2522,6 +2533,144 @@ async function start() {
       }
     }
 
+    // ── Customer Auth Helpers ─────────────────────────────────────────────
+    const _crypto = require('crypto')
+    const CUSTOMER_JWT_SECRET = (process.env.JWT_SECRET || 'belucha-jwt-secret-change-in-prod')
+
+    function hashPassword(password) {
+      const salt = _crypto.randomBytes(16).toString('hex')
+      const hash = _crypto.scryptSync(password, salt, 64).toString('hex')
+      return `${salt}:${hash}`
+    }
+
+    function verifyPassword(password, stored) {
+      try {
+        const [salt, hash] = stored.split(':')
+        if (!salt || !hash) return false
+        const attempt = _crypto.scryptSync(password, salt, 64).toString('hex')
+        return attempt === hash
+      } catch { return false }
+    }
+
+    function signCustomerToken(payload) {
+      const header = Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url')
+      const body = Buffer.from(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 30 * 24 * 3600 })).toString('base64url')
+      const sig = _crypto.createHmac('sha256', CUSTOMER_JWT_SECRET).update(`${header}.${body}`).digest('base64url')
+      return `${header}.${body}.${sig}`
+    }
+
+    function verifyCustomerToken(token) {
+      if (!token) return null
+      try {
+        const parts = token.split('.')
+        if (parts.length !== 3) return null
+        const [header, body, sig] = parts
+        const expected = _crypto.createHmac('sha256', CUSTOMER_JWT_SECRET).update(`${header}.${body}`).digest('base64url')
+        if (sig !== expected) return null
+        const payload = JSON.parse(Buffer.from(body, 'base64url').toString())
+        if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null
+        return payload
+      } catch { return null }
+    }
+
+    // POST /store/customers — register customer
+    const storeCustomerRegisterPOST = async (req, res) => {
+      const body = req.body || {}
+      const email = (body.email || '').trim().toLowerCase()
+      const password = (body.password || '').toString()
+      if (!email || !password) return res.status(400).json({ message: 'Email and password are required' })
+      if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const existing = await client.query('SELECT id FROM store_customers WHERE email = $1', [email])
+        if (existing.rows.length > 0) { await client.end(); return res.status(409).json({ message: 'An account with this email already exists' }) }
+        const password_hash = hashPassword(password)
+        const first_name = (body.first_name || '').trim() || null
+        const last_name = (body.last_name || '').trim() || null
+        const phone = (body.phone || '').trim() || null
+        const account_type = ['privat', 'gewerbe'].includes(body.account_type) ? body.account_type : 'privat'
+        const gender = (body.gender || '').trim() || null
+        const birth_date = (body.birth_date || '').trim() || null
+        const address_line1 = (body.address_line1 || '').trim() || null
+        const address_line2 = (body.address_line2 || '').trim() || null
+        const zip_code = (body.zip_code || '').trim() || null
+        const city = (body.city || '').trim() || null
+        const country = (body.country || '').trim() || null
+        const company_name = (body.company_name || '').trim() || null
+        const vat_number = (body.vat_number || '').trim() || null
+        const r = await client.query(
+          `INSERT INTO store_customers (email, password_hash, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15)
+           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
+          [email, password_hash, first_name, last_name, phone, account_type, gender, birth_date || null, address_line1, address_line2, zip_code, city, country, company_name, vat_number]
+        )
+        const customer = { ...r.rows[0], customer_number: r.rows[0].customer_number ? Number(r.rows[0].customer_number) : null }
+        await client.end()
+        res.status(201).json({ customer })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        if (e.code === '23505') return res.status(409).json({ message: 'An account with this email already exists' })
+        res.status(500).json({ message: e?.message || 'Registration failed' })
+      }
+    }
+
+    // POST /store/auth/token — login customer
+    const storeAuthTokenPOST = async (req, res) => {
+      const body = req.body || {}
+      const email = (body.email || '').trim().toLowerCase()
+      const password = (body.password || '').toString()
+      if (!email || !password) return res.status(400).json({ message: 'Email and password are required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('SELECT * FROM store_customers WHERE email = $1', [email])
+        await client.end()
+        const row = r.rows[0]
+        if (!row || !row.password_hash) return res.status(401).json({ message: 'Invalid email or password' })
+        if (!verifyPassword(password, row.password_hash)) return res.status(401).json({ message: 'Invalid email or password' })
+        const token = signCustomerToken({ id: row.id, email: row.email, role: 'customer' })
+        const customer = { id: row.id, customer_number: row.customer_number ? Number(row.customer_number) : null, email: row.email, first_name: row.first_name, last_name: row.last_name, phone: row.phone, account_type: row.account_type, company_name: row.company_name }
+        res.json({ customer, token, access_token: token })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Login failed' })
+      }
+    }
+
+    // GET /store/customers/me — current customer by JWT
+    const storeCustomersMeGET = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload) return res.status(401).json({ message: 'Unauthorized' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          'SELECT id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at FROM store_customers WHERE id = $1',
+          [payload.id]
+        )
+        await client.end()
+        const row = r.rows[0]
+        if (!row) return res.status(404).json({ message: 'Customer not found' })
+        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
     const storeOrdersPOST = async (req, res) => {
       const body = req.body || {}
       const cartId = (body.cart_id || body.cartId || '').toString().trim()
@@ -3362,6 +3511,10 @@ async function start() {
         res.status(500).json({ message: e?.message || 'Error' })
       }
     }
+
+    httpApp.post('/store/customers', storeCustomerRegisterPOST)
+    httpApp.post('/store/auth/token', storeAuthTokenPOST)
+    httpApp.get('/store/customers/me', storeCustomersMeGET)
 
     httpApp.get('/admin-hub/v1/orders', adminHubOrdersGET)
     httpApp.get('/admin-hub/v1/orders/:id', adminHubOrderByIdGET)

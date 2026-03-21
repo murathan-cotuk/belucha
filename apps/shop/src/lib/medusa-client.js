@@ -239,7 +239,7 @@ class MedusaClient {
   /**
    * Customers
    */
-  async registerCustomer(email, password, firstName, lastName) {
+  async registerCustomer(email, password, firstName, lastName, extra = {}) {
     const res = await this.request('/store/customers', {
       method: 'POST',
       body: JSON.stringify({
@@ -247,6 +247,7 @@ class MedusaClient {
         password,
         first_name: firstName,
         last_name: lastName,
+        ...extra,
       }),
     })
     if (res?.__error) return { customer: null }
