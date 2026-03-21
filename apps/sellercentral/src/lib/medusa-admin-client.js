@@ -540,11 +540,44 @@ class MedusaAdminClient {
    */
   async getOrders(params = {}) {
     const queryParams = new URLSearchParams(params).toString()
-    return this.request(`/admin/orders${queryParams ? `?${queryParams}` : ''}`)
+    return this.request(`/admin-hub/v1/orders${queryParams ? `?${queryParams}` : ''}`)
   }
 
   async getOrder(id) {
-    return this.request(`/admin/orders/${id}`)
+    return this.request(`/admin-hub/v1/orders/${id}`)
+  }
+
+  async updateOrder(id, data) {
+    return this.request(`/admin-hub/v1/orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  async deleteOrder(id) {
+    return this.request(`/admin-hub/v1/orders/${id}`, { method: 'DELETE' })
+  }
+
+  async getCustomers(params = {}) {
+    const queryParams = new URLSearchParams(params).toString()
+    return this.request(`/admin-hub/v1/customers${queryParams ? `?${queryParams}` : ''}`)
+  }
+
+  async getCustomer(email) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(email)}`)
+  }
+
+  async getAbandonedCarts() {
+    return this.request('/admin-hub/v1/abandoned-carts')
+  }
+
+  async getReturns() {
+    return this.request('/admin-hub/v1/returns')
+  }
+
+  async createReturn(data) {
+    return this.request('/admin-hub/v1/returns', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateReturn(id, data) {
+    return this.request(`/admin-hub/v1/returns/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   }
 }
 

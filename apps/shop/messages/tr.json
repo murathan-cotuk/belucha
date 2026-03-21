@@ -86,6 +86,17 @@
     "freeShipping": "Ücretsiz",
     "total": "Toplam"
   },
+  "order": {
+    "loading": "Yükleniyor…",
+    "notFound": "Sipariş bulunamadı.",
+    "confirmationTitle": "Siparişiniz için teşekkürler!",
+    "confirmationSubtitle": "Siparişiniz başarıyla alındı. Yakında bir onay alacaksınız.",
+    "orderNumber": "Sipariş numarası",
+    "orderDate": "Sipariş tarihi",
+    "items": "Ürünler",
+    "total": "Toplam",
+    "continueShopping": "Alışverişe devam et"
+  },
   "pages": {
     "orders": {
       "back": "Hesaba dön",

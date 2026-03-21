@@ -86,6 +86,17 @@
     "freeShipping": "Gratis",
     "total": "Total"
   },
+  "order": {
+    "loading": "Cargando…",
+    "notFound": "Pedido no encontrado.",
+    "confirmationTitle": "¡Gracias por tu pedido!",
+    "confirmationSubtitle": "Tu pedido se ha realizado correctamente. Recibirás una confirmación en breve.",
+    "orderNumber": "Número de pedido",
+    "orderDate": "Fecha del pedido",
+    "items": "Artículos",
+    "total": "Total",
+    "continueShopping": "Seguir comprando"
+  },
   "pages": {
     "orders": {
       "back": "Volver a la cuenta",

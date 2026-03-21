@@ -1,12 +1,12 @@
 "use client";
 
 import DashboardLayout from "@/components/DashboardLayout";
-import MinimalPage from "@/components/MinimalPage";
+import AbandonedCheckoutsPage from "@/components/pages/orders/AbandonedCheckoutsPage";
 
 export default function AbandonedCheckouts() {
   return (
     <DashboardLayout>
-      <MinimalPage title="Abandoned checkouts" subtitle="Recover abandoned carts" />
+      <AbandonedCheckoutsPage />
     </DashboardLayout>
   );
 }

@@ -86,6 +86,17 @@
     "freeShipping": "Kostenlos",
     "total": "Gesamt"
   },
+  "order": {
+    "loading": "Laden…",
+    "notFound": "Bestellung nicht gefunden.",
+    "confirmationTitle": "Vielen Dank für Ihre Bestellung!",
+    "confirmationSubtitle": "Ihre Bestellung wurde erfolgreich aufgegeben. Sie erhalten in Kürze eine Bestätigung.",
+    "orderNumber": "Bestellnummer",
+    "orderDate": "Bestelldatum",
+    "items": "Artikel",
+    "total": "Gesamt",
+    "continueShopping": "Weiter einkaufen"
+  },
   "pages": {
     "orders": {
       "back": "Zurück zum Konto",

@@ -1,12 +1,12 @@
 "use client";
 
 import DashboardLayout from "@/components/DashboardLayout";
-import CustomersPage from "@/components/pages/CustomersPage";
+import OrderDetailPage from "@/components/pages/OrderDetailPage";
 
-export default function Customers() {
+export default function OrderDetail() {
   return (
     <DashboardLayout>
-      <CustomersPage />
+      <OrderDetailPage />
     </DashboardLayout>
   );
 }

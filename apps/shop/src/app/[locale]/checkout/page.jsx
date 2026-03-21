@@ -19,6 +19,7 @@ import { formatPriceCents } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { Link } from "@/i18n/navigation";
 import { tokens } from "@/design-system/tokens";
+import PayNowButton from "@/components/ui/PayNowButton";
 
 const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 
@@ -577,12 +578,13 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents }) {
           }}
         />
         {error && <ErrorBox>{error}</ErrorBox>}
-        <PayBtn
+        <PayNowButton
           type="submit"
           disabled={!stripe || !elements || !paymentElementReady || processing}
+          style={{ width: "100%", marginTop: 20 }}
         >
           {processing ? t("processing") : `${t("placeOrder")} – ${formatPriceCents(subtotalCents)} €`}
-        </PayBtn>
+        </PayNowButton>
       </FormCard>
     </form>
   );

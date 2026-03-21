@@ -239,3 +239,163 @@ Save → Shop yenilendikten sonra aynı veri yansır (tek kaynak, DRY).
 - **Koleksiyon:** `/kollektion/{handle}`. Route: `apps/shop/src/app/kollektion/[handle]/page.jsx`. Canonical: `/kollektion/{handle}`.
 - Türkçe karakter slug: Backend’te handle/slug mevcut yapı ile; gerekirse slugify genişletilebilir.
 - Eski route’lar (`/product/[slug]`, `/collections/[slug]`) duruyor; redirect eklenmedi.
+
+---
+
+## 9. Sipariş Yönetim Sistemi (Orders Management)
+
+### 9.1 İstek
+
+Seller Central’da sipariş yönetimi tamamen olmadığı için kapsamlı bir sipariş paneli kurulması istendi:
+
+- **Orders:** Excel benzeri tablo — sipariş numarası, müşteri adı, adres, tutar, bestellstatus, zahlungsstatus, lieferstatus, tarih, ülke, aksiyonlar
+- Sipariş numarasına tıklanınca ayrı detay sayfası açılsın
+- **Customers:** Müşteri listesi, müşteri detayları, sipariş geçmişi
+- **Drafts:** Taslak siparişler
+- **Abandoned Checkouts:** Tamamlanmamış sepetler
+- **Returns:** İade talepleri — yeni iade oluştur, durum güncelle
+
+Ayrıca:
+- Siparişlere **100001’den başlayan sıralı sipariş numarası** eklenmesi
+- Stripe’taki ödeme açıklamasına sipariş numarasının eklenmesi (`Siparis #100001`)
+- Sipariş durum değişiklikleri (Bestellstatus, Zahlungsstatus, Lieferstatus) seller central’dan yönetilebilir olsun
+
+---
+
+### 9.2 Backend Değişiklikleri (`apps/medusa-backend/server.js`)
+
+#### Yeni Veritabanı Sütunları — `store_orders`
+```sql
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS order_number
+  BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 100001 INCREMENT BY 1);
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS payment_status varchar(50) NOT NULL DEFAULT ‘bezahlt’;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_status varchar(50) NOT NULL DEFAULT ‘offen’;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS order_status varchar(50) NOT NULL DEFAULT ‘offen’;
+```
+
+#### Yeni Veritabanı Tablosu — `store_customers`
+```sql
+CREATE TABLE IF NOT EXISTS store_customers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text UNIQUE NOT NULL,
+  first_name text, last_name text, phone text,
+  customer_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 10001 INCREMENT BY 1),
+  created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+);
+```
+
+#### Yeni Veritabanı Tablosu — `store_returns`
+```sql
+CREATE TABLE IF NOT EXISTS store_returns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  return_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 200001 INCREMENT BY 1),
+  order_id uuid REFERENCES store_orders(id) ON DELETE SET NULL,
+  reason text, notes text, status varchar(50) DEFAULT ‘offen’,
+  items jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+);
+```
+
+#### Stripe Entegrasyonu
+Sipariş oluşturulduğunda (POST `/api/store-orders`) Stripe PaymentIntent güncelleniyor:
+```js
+await stripe.paymentIntents.update(paymentIntentId, {
+  description: `Siparis #${orderNumber}`,
+  metadata: { order_number: String(orderNumber), order_id: orderId },
+})
+```
+
+#### Yeni Admin Hub Endpoint’leri
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/admin-hub/v1/orders` | Tüm siparişler. Query: `search`, `order_status`, `payment_status`, `delivery_status`, `sort`, `limit`, `offset`. |
+| GET | `/admin-hub/v1/orders/:id` | Tek sipariş + line items (store_order_items JOIN). |
+| PATCH | `/admin-hub/v1/orders/:id` | `order_status`, `payment_status`, `delivery_status` güncelle. |
+| DELETE | `/admin-hub/v1/orders/:id` | Siparişi sil. |
+| GET | `/admin-hub/v1/customers` | Siparişlerden türetilen müşteri listesi. Query: `search`, `limit`, `offset`. |
+| GET | `/admin-hub/v1/customers/:email` | Tek müşteri + sipariş geçmişi. |
+| GET | `/admin-hub/v1/abandoned-carts` | Sepeti var ama siparişi olmayan sepetler. |
+| GET | `/admin-hub/v1/returns` | Tüm iade talepleri (order bilgileriyle JOIN). |
+| POST | `/admin-hub/v1/returns` | Yeni iade oluştur. Body: `order_id`, `reason`, `notes`, `items`. |
+| PATCH | `/admin-hub/v1/returns/:id` | İade durumu güncelle. |
+
+---
+
+### 9.3 Frontend Değişiklikleri (Seller Central)
+
+#### `apps/sellercentral/src/lib/medusa-admin-client.js`
+Eklenen metodlar: `getOrders(params)`, `getOrder(id)`, `updateOrder(id, data)`, `deleteOrder(id)`, `getCustomers(params)`, `getCustomer(email)`, `getAbandonedCarts()`, `getReturns()`, `createReturn(data)`, `updateReturn(id, data)`
+
+#### `apps/sellercentral/src/components/pages/OrdersPage.jsx` — Tamamen Yeniden Yazıldı
+- Excel benzeri tablo: expand toggle, #sipariş, Kunde, Adresse, Betrag, Bestellstatus, Zahlungsstatus, Lieferstatus, Datum, Land, aksiyonlar
+- Arama input + 4 filtre dropdown (order_status, payment_status, delivery_status, sıralama)
+- `StatusBadge` — renk kodlu durum etiketleri
+- `ExpandedRow` — satır genişletince lazy-load ile ürün listesi + toplam
+- `ActionMenu` (3 nokta) — versendet, zugestellt, abschließen, stornieren, löschen
+- Inline durum güncelleme: `updateOrder` API çağrısı
+
+#### `apps/sellercentral/src/components/pages/OrderDetailPage.jsx` — Tamamen Yeniden Yazıldı
+- 2 sütunlu düzen: sol (ürün tablosu + durum yönetimi), sağ (müşteri kartı + adres + özet)
+- 3 dropdown ile status güncelleme + "Status speichern" butonu
+- Ürün tablosu: thumbnail, ürün adı, miktar, birim fiyat, toplam
+- Stripe payment intent bilgisi
+- Sipariş silme (kırmızı danger zone)
+- Yeni route: `apps/sellercentral/src/app/[locale]/orders/[id]/page.jsx`
+
+#### `apps/sellercentral/src/components/pages/CustomersPage.jsx` — Yeni
+- Müşteri tablosu: Name, Email, Land, Bestellungen, Gesamtumsatz, Erster Kauf, Letzter Kauf
+- 400ms debounce arama
+- Satıra tıklayınca modal: müşteri detayları + istatistikler (order_count, total_spent) + sipariş geçmişi tablosu
+
+#### `apps/sellercentral/src/components/pages/orders/AbandonedCheckoutsPage.jsx` — Yeni
+- Tablo: Kunde, Email, Artikel sayısı, Wert, Erstellt, Zuletzt aktiv
+- Satır genişletince ürün listesi (thumbnail + qty + fiyat)
+
+#### `apps/sellercentral/src/components/pages/orders/OrdersReturnsPage.jsx` — Yeniden Yazıldı
+- Tablo: return_number, order_number, müşteri, reason/notes, status badge, tarih, durum dropdown
+- "Neue Rückgabe" butonu → modal form (Bestell-ID, Grund, Notizen)
+- Satır bazlı anlık durum güncelleme
+
+---
+
+### 9.4 Durum Değerleri
+
+| Alan | Değerler |
+|------|---------|
+| `order_status` | `offen`, `in_bearbeitung`, `abgeschlossen`, `storniert` |
+| `payment_status` | `offen`, `bezahlt`, `teil_erstattet`, `erstattet` |
+| `delivery_status` | `offen`, `versendet`, `zugestellt` |
+| `return.status` | `offen`, `genehmigt`, `abgelehnt`, `abgeschlossen` |
+
+---
+
+### 9.5 Sipariş Numarası Akışı
+
+```
+[Müşteri] Checkout → Stripe ödeme tamamlandı
+        │
+        ▼
+POST /api/store-orders  (shop backend proxy → medusa backend)
+        │
+        ▼
+INSERT INTO store_orders → RETURNING order_number
+  (IDENTITY sütunu otomatik 100001, 100002, ... verir)
+        │
+        ▼
+stripe.paymentIntents.update(paymentIntentId, {
+  description: "Siparis #100001",
+  metadata: { order_number: "100001", order_id: "uuid" }
+})
+        │
+        ▼
+[Seller Central] Orders → tabloda #100001 görünür
+  Siparis numarasına tıkla → /orders/{uuid} detay sayfası
+```
+
+---
+
+### 9.6 Checkout Butonu Güncellemesi
+
+`apps/shop/src/app/[locale]/checkout/page.jsx` içindeki "Place Order" butonu (`PayBtn`) kaldırıldı; yerine cart sayfasındaki `PayNowButton` bileşeni kullanıldı.
+
+- **PayNowButton:** `apps/shop/src/components/ui/PayNowButton.jsx` — siyah (#1a1a1a) arka plan, hover’da yukarı kalkar, dönen ödeme ikonları animasyonu (kredi kartı → POS → para → cüzdan → ✓)
+- `type="submit"` ve `style={{ width: "100%", marginTop: 20 }}` ile form submit butonu olarak kullanıldı

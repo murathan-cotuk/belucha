@@ -424,6 +424,45 @@ async function start() {
         await client.query(`
           ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS order_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 100001 INCREMENT BY 1);
         `).catch(() => {})
+        await client.query(`
+  ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS payment_status varchar(50) NOT NULL DEFAULT 'bezahlt';
+`).catch(() => {})
+        await client.query(`
+  ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_status varchar(50) NOT NULL DEFAULT 'offen';
+`).catch(() => {})
+        await client.query(`
+  ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS order_status varchar(50) NOT NULL DEFAULT 'offen';
+`).catch(() => {})
+        await client.query(`
+  ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS seller_id varchar(255) DEFAULT 'default';
+`).catch(() => {})
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS store_customers (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    customer_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 10001 INCREMENT BY 1),
+    email text UNIQUE NOT NULL,
+    first_name text,
+    last_name text,
+    phone text,
+    email_marketing_consent boolean DEFAULT false,
+    notes text,
+    created_at timestamp DEFAULT now(),
+    updated_at timestamp DEFAULT now()
+  );
+`).catch(() => {})
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS store_returns (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    return_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 200001 INCREMENT BY 1),
+    order_id uuid REFERENCES store_orders(id) ON DELETE SET NULL,
+    status varchar(50) NOT NULL DEFAULT 'offen',
+    reason text,
+    notes text,
+    items jsonb,
+    created_at timestamp DEFAULT now(),
+    updated_at timestamp DEFAULT now()
+  );
+`).catch(() => {})
 
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_order_items (
@@ -2435,7 +2474,7 @@ async function start() {
     // --- Store Orders (Stripe payment success sonrası) ---
     const getOrderWithItems = async (client, orderId) => {
       const oRes = await client.query(
-        'SELECT id, order_number, cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
+        'SELECT id, order_number, cart_id, payment_intent_id, status, order_status, payment_status, delivery_status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
         [orderId]
       )
       const oRow = oRes.rows && oRes.rows[0]
@@ -2462,6 +2501,9 @@ async function start() {
         cart_id: oRow.cart_id,
         payment_intent_id: oRow.payment_intent_id,
         status: oRow.status,
+        order_status: oRow.order_status,
+        payment_status: oRow.payment_status,
+        delivery_status: oRow.delivery_status,
         email: oRow.email,
         first_name: oRow.first_name,
         last_name: oRow.last_name,
@@ -2502,7 +2544,7 @@ async function start() {
         if (!items.length) { await client.end(); return res.status(400).json({ message: 'Cart is empty' }) }
 
         const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
-        const totalCents = subtotalCents // shipping burada yok (checkout mevcut)
+        const totalCents = subtotalCents
 
         const email = (body.email || '').toString().trim() || null
         const first_name = (body.first_name || '').toString().trim() || null
@@ -2514,26 +2556,38 @@ async function start() {
         const postal_code = (body.postal_code || '').toString().trim() || null
         const country = (body.country || '').toString().trim() || null
 
+        // Determine seller_id from the first cart item's product
+        let sellerId = 'default'
+        try {
+          const firstItem = items[0]
+          if (firstItem && firstItem.product_id) {
+            const sellerRow = await client.query('SELECT seller_id FROM admin_hub_products WHERE id = $1', [firstItem.product_id])
+            if (sellerRow.rows && sellerRow.rows[0] && sellerRow.rows[0].seller_id) {
+              sellerId = sellerRow.rows[0].seller_id
+            }
+          }
+        } catch (_) {}
+
         const ins = await client.query(
           `INSERT INTO store_orders
-            (cart_id, payment_intent_id, status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency)
-           VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'eur')
+            (cart_id, payment_intent_id, status, seller_id, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotal_cents, total_cents, currency)
+           VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'eur')
            RETURNING id, order_number`,
-          [cartId, paymentIntentId, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotalCents, totalCents]
+          [cartId, paymentIntentId, sellerId, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, subtotalCents, totalCents]
         )
 
         const orderId = ins.rows && ins.rows[0] ? ins.rows[0].id : null
         const orderNumber = ins.rows && ins.rows[0] ? ins.rows[0].order_number : null
         if (!orderId) { await client.end(); return res.status(500).json({ message: 'Order insert failed' }) }
 
-        // Stripe payment intent'e sipariş numarasını ekle
+        // Update Stripe payment intent with order number and seller id
         const secretKey = (process.env.STRIPE_SECRET_KEY || '').toString().trim()
         if (secretKey && orderNumber) {
           try {
             const stripe = new (require('stripe'))(secretKey)
             await stripe.paymentIntents.update(paymentIntentId, {
-              description: `Siparis #${orderNumber}`,
-              metadata: { order_number: String(orderNumber), order_id: orderId },
+              description: `Order #${orderNumber} - ${sellerId}`,
+              metadata: { order_number: String(orderNumber), order_id: orderId, seller_id: sellerId },
             })
           } catch (_) {}
         }
@@ -3055,6 +3109,271 @@ async function start() {
     httpApp.get('/admin-hub/v1/media/:id', mediaByIdGET)
     httpApp.delete('/admin-hub/v1/media/:id', mediaByIdDELETE)
     console.log('Admin Hub routes: GET/POST /admin-hub/v1/media, GET/DELETE /admin-hub/v1/media/:id')
+
+    // ── Admin Hub Orders ──────────────────────────────────────────
+    const adminHubOrdersGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl) return res.json({ orders: [], count: 0 })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const { search = '', order_status = '', payment_status = '', delivery_status = '', sort = 'created_at_desc', limit = '50', offset = '0' } = req.query
+        const conditions = []
+        const params = []
+        if (search) {
+          params.push(`%${search}%`)
+          conditions.push(`(o.email ILIKE $${params.length} OR o.first_name ILIKE $${params.length} OR o.last_name ILIKE $${params.length} OR CAST(o.order_number AS TEXT) ILIKE $${params.length})`)
+        }
+        if (order_status) { params.push(order_status); conditions.push(`o.order_status = $${params.length}`) }
+        if (payment_status) { params.push(payment_status); conditions.push(`o.payment_status = $${params.length}`) }
+        if (delivery_status) { params.push(delivery_status); conditions.push(`o.delivery_status = $${params.length}`) }
+        const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
+        const sortMap = { created_at_desc: 'o.created_at DESC', created_at_asc: 'o.created_at ASC', order_number_desc: 'o.order_number DESC', total_desc: 'o.total_cents DESC' }
+        const orderBy = sortMap[sort] || 'o.created_at DESC'
+        const lim = Math.min(Number(limit) || 50, 200)
+        const off = Number(offset) || 0
+        const r = await client.query(`SELECT o.id, o.order_number, o.order_status, o.payment_status, o.delivery_status, o.seller_id, o.email, o.first_name, o.last_name, o.phone, o.address_line1, o.address_line2, o.city, o.postal_code, o.country, o.subtotal_cents, o.total_cents, o.currency, o.payment_intent_id, o.cart_id, o.created_at FROM store_orders o ${where} ORDER BY ${orderBy} LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, lim, off])
+        const countR = await client.query(`SELECT COUNT(*) FROM store_orders o ${where}`, params)
+        const orders = (r.rows || []).map(row => ({
+          id: row.id, order_number: row.order_number ? Number(row.order_number) : null,
+          order_status: row.order_status || 'offen', payment_status: row.payment_status || 'bezahlt',
+          delivery_status: row.delivery_status || 'offen',
+          seller_id: row.seller_id || 'default',
+          email: row.email, first_name: row.first_name, last_name: row.last_name, phone: row.phone,
+          address_line1: row.address_line1, address_line2: row.address_line2, city: row.city,
+          postal_code: row.postal_code, country: row.country,
+          subtotal_cents: row.subtotal_cents, total_cents: row.total_cents, currency: row.currency,
+          payment_intent_id: row.payment_intent_id, created_at: row.created_at,
+        }))
+        await client.end()
+        res.json({ orders, count: Number(countR.rows[0]?.count || 0) })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ orders: [], count: 0 })
+      }
+    }
+
+    const adminHubOrderByIdGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const oRes = await client.query('SELECT * FROM store_orders WHERE id = $1::uuid', [id])
+        const row = oRes.rows && oRes.rows[0]
+        if (!row) { await client.end(); return res.status(404).json({ message: 'Order not found' }) }
+        const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [id])
+        const items = (iRes.rows || []).map(r => ({ id: r.id, variant_id: r.variant_id, product_id: r.product_id, quantity: r.quantity, unit_price_cents: r.unit_price_cents, title: r.title, thumbnail: r.thumbnail, product_handle: r.product_handle }))
+        await client.end()
+        res.json({ order: { ...row, order_number: row.order_number ? Number(row.order_number) : null, items } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubOrderPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      const { order_status, payment_status, delivery_status, notes } = req.body || {}
+      const sets = []; const params = []
+      if (order_status) { params.push(order_status); sets.push(`order_status = $${params.length}`) }
+      if (payment_status) { params.push(payment_status); sets.push(`payment_status = $${params.length}`) }
+      if (delivery_status) { params.push(delivery_status); sets.push(`delivery_status = $${params.length}`) }
+      if (notes !== undefined) { params.push(notes); sets.push(`notes = $${params.length}`) }
+      if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
+      sets.push('updated_at = now()')
+      params.push(id)
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query(`UPDATE store_orders SET ${sets.join(', ')} WHERE id = $${params.length}::uuid`, params)
+        const oRes = await client.query('SELECT * FROM store_orders WHERE id = $1::uuid', [id])
+        const row = oRes.rows && oRes.rows[0]
+        const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [id])
+        const items = (iRes.rows || []).map(r => ({ id: r.id, variant_id: r.variant_id, product_id: r.product_id, quantity: r.quantity, unit_price_cents: r.unit_price_cents, title: r.title, thumbnail: r.thumbnail, product_handle: r.product_handle }))
+        await client.end()
+        res.json({ order: { ...row, order_number: row.order_number ? Number(row.order_number) : null, items } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubOrderDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_orders WHERE id = $1::uuid', [id])
+        await client.end()
+        res.json({ success: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // ── Admin Hub Customers ───────────────────────────────────────
+    const adminHubCustomersGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const { search = '', limit = '50', offset = '0' } = req.query
+        // Derive customers from orders (unique emails) merged with store_customers if exists
+        let q, params = []
+        if (search) {
+          params.push(`%${search}%`)
+          q = `SELECT email, first_name, last_name, phone, country, MIN(created_at) as first_order, MAX(created_at) as last_order, COUNT(*) as order_count, SUM(total_cents) as total_spent FROM store_orders WHERE email IS NOT NULL AND (email ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1) GROUP BY email, first_name, last_name, phone, country ORDER BY last_order DESC LIMIT $2 OFFSET $3`
+          params.push(Number(limit)||50, Number(offset)||0)
+        } else {
+          q = `SELECT email, first_name, last_name, phone, country, MIN(created_at) as first_order, MAX(created_at) as last_order, COUNT(*) as order_count, SUM(total_cents) as total_spent FROM store_orders WHERE email IS NOT NULL GROUP BY email, first_name, last_name, phone, country ORDER BY last_order DESC LIMIT $1 OFFSET $2`
+          params.push(Number(limit)||50, Number(offset)||0)
+        }
+        const r = await client.query(q, params)
+        await client.end()
+        res.json({ customers: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ customers: [] })
+      }
+    }
+
+    const adminHubCustomerByEmailGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const email = decodeURIComponent((req.params.email || '').trim())
+      if (!email) return res.status(400).json({ message: 'email required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const ordersR = await client.query('SELECT id, order_number, order_status, payment_status, delivery_status, total_cents, currency, created_at FROM store_orders WHERE email = $1 ORDER BY created_at DESC', [email])
+        const orders = (ordersR.rows || []).map(r => ({ ...r, order_number: r.order_number ? Number(r.order_number) : null }))
+        await client.end()
+        res.json({ customer: { email, orders } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // ── Admin Hub Abandoned Carts ─────────────────────────────────
+    const adminHubAbandonedCartsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        // Carts that have items but no corresponding order
+        const r = await client.query(`
+      SELECT c.id, c.created_at, c.updated_at,
+        json_agg(json_build_object('id',ci.id,'title',ci.title,'quantity',ci.quantity,'unit_price_cents',ci.unit_price_cents,'thumbnail',ci.thumbnail,'product_handle',ci.product_handle)) as items,
+        SUM(ci.unit_price_cents * ci.quantity) as total_cents
+      FROM store_carts c
+      JOIN store_cart_items ci ON ci.cart_id = c.id
+      WHERE NOT EXISTS (SELECT 1 FROM store_orders o WHERE o.cart_id = c.id)
+      GROUP BY c.id, c.created_at, c.updated_at
+      ORDER BY c.updated_at DESC
+      LIMIT 100
+    `)
+        await client.end()
+        res.json({ carts: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ carts: [] })
+      }
+    }
+
+    // ── Admin Hub Returns ─────────────────────────────────────────
+    const adminHubReturnsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(`SELECT r.*, o.order_number, o.email, o.first_name, o.last_name FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id ORDER BY r.created_at DESC LIMIT 100`)
+        await client.end()
+        res.json({ returns: (r.rows || []).map(row => ({ ...row, return_number: row.return_number ? Number(row.return_number) : null, order_number: row.order_number ? Number(row.order_number) : null })) })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ returns: [] })
+      }
+    }
+
+    const adminHubReturnsPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const { order_id, reason, notes, items } = req.body || {}
+      if (!order_id) return res.status(400).json({ message: 'order_id required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('INSERT INTO store_returns (order_id, reason, notes, items) VALUES ($1::uuid, $2, $3, $4) RETURNING *', [order_id, reason || null, notes || null, items ? JSON.stringify(items) : null])
+        const row = r.rows && r.rows[0]
+        await client.end()
+        res.status(201).json({ return: { ...row, return_number: row?.return_number ? Number(row.return_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubReturnPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      const { status, notes } = req.body || {}
+      const sets = []; const params = []
+      if (status) { params.push(status); sets.push(`status = $${params.length}`) }
+      if (notes !== undefined) { params.push(notes); sets.push(`notes = $${params.length}`) }
+      if (!sets.length) return res.status(400).json({ message: 'Nothing to update' })
+      sets.push('updated_at = now()')
+      params.push(id)
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query(`UPDATE store_returns SET ${sets.join(', ')} WHERE id = $${params.length}::uuid`, params)
+        const r = await client.query('SELECT r.*, o.order_number, o.email FROM store_returns r LEFT JOIN store_orders o ON o.id = r.order_id WHERE r.id = $1::uuid', [id])
+        await client.end()
+        const row = r.rows && r.rows[0]
+        res.json({ return: { ...row, return_number: row?.return_number ? Number(row.return_number) : null, order_number: row?.order_number ? Number(row.order_number) : null } })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    httpApp.get('/admin-hub/v1/orders', adminHubOrdersGET)
+    httpApp.get('/admin-hub/v1/orders/:id', adminHubOrderByIdGET)
+    httpApp.patch('/admin-hub/v1/orders/:id', adminHubOrderPATCH)
+    httpApp.delete('/admin-hub/v1/orders/:id', adminHubOrderDELETE)
+    httpApp.get('/admin-hub/v1/customers', adminHubCustomersGET)
+    httpApp.get('/admin-hub/v1/customers/:email', adminHubCustomerByEmailGET)
+    httpApp.get('/admin-hub/v1/abandoned-carts', adminHubAbandonedCartsGET)
+    httpApp.get('/admin-hub/v1/returns', adminHubReturnsGET)
+    httpApp.post('/admin-hub/v1/returns', adminHubReturnsPOST)
+    httpApp.patch('/admin-hub/v1/returns/:id', adminHubReturnPATCH)
+    console.log('Admin Hub routes: orders, customers, abandoned-carts, returns')
 
     // --- Admin Hub Pages (CRUD) + Store pages (published only) ---
     const pagesListGET = async (req, res) => {
