@@ -593,6 +593,27 @@ class MedusaAdminClient {
     })
   }
 
+  async addCustomerBonusLedgerEntry(customerId, data) {
+    return this.request(`/admin-hub/v1/customers/${encodeURIComponent(customerId)}/bonus-ledger`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    })
+  }
+
+  async updateCustomerBonusLedgerEntry(customerId, entryId, data) {
+    return this.request(
+      `/admin-hub/v1/customers/${encodeURIComponent(customerId)}/bonus-ledger/${encodeURIComponent(entryId)}`,
+      { method: 'PATCH', body: JSON.stringify(data || {}) },
+    )
+  }
+
+  async deleteCustomerBonusLedgerEntry(customerId, entryId) {
+    return this.request(
+      `/admin-hub/v1/customers/${encodeURIComponent(customerId)}/bonus-ledger/${encodeURIComponent(entryId)}`,
+      { method: 'DELETE' },
+    )
+  }
+
   async createOrder(data) {
     return this.request('/admin-hub/v1/orders', { method: 'POST', body: JSON.stringify(data) })
   }

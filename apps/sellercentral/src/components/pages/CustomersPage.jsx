@@ -1,7 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Page,
+  Layout,
+  Card,
+  Text,
+  BlockStack,
+  InlineStack,
+  Box,
+  TextField,
+} from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 function fmtCents(c) {
@@ -205,8 +215,9 @@ export default function CustomersPage() {
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null); // null | { mode: "create" } | { mode: "edit", customer }
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const searchDebounceRef = useRef(null);
 
-  const fetchCustomers = async (q) => {
+  const fetchCustomers = useCallback(async (q) => {
     setLoading(true);
     try {
       const client = getMedusaAdminClient();
@@ -214,18 +225,24 @@ export default function CustomersPage() {
       if (q) p.search = q;
       const data = await client.getCustomers(p);
       setCustomers(data.customers || []);
-    } catch { setCustomers([]); }
+    } catch {
+      setCustomers([]);
+    }
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { fetchCustomers(""); }, []);
+  useEffect(() => {
+    fetchCustomers("");
+  }, [fetchCustomers]);
 
-  const handleSearch = (e) => {
-    const val = e.target.value;
-    setSearch(val);
-    const t = setTimeout(() => fetchCustomers(val), 400);
-    return () => clearTimeout(t);
-  };
+  const onSearchChange = useCallback(
+    (val) => {
+      setSearch(val);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => fetchCustomers(val), 400);
+    },
+    [fetchCustomers]
+  );
 
   const handleSaveCustomer = async (form) => {
     const client = getMedusaAdminClient();
@@ -255,7 +272,13 @@ export default function CustomersPage() {
   const COLS = ["Kundennr.", "Name", "Email", "Typ", "Registriert", "Newsletter", "Land", "Bestellungen", "Gesamtumsatz", "Letzter Kauf", ""];
 
   return (
-    <div style={{ padding: 24, background: "#fff", minHeight: "100%" }}>
+    <Page
+      title="Kunden"
+      primaryAction={{
+        content: "Neuer Kunde",
+        onAction: () => setModal({ mode: "create" }),
+      }}
+    >
       {/* Modals */}
       {modal && (
         <CustomerFormModal
@@ -279,30 +302,29 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Kunden</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 13, color: "#6b7280" }}>{customers.length} Kunden</span>
-          <button
-            onClick={() => setModal({ mode: "create" })}
-            style={{ padding: "8px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-          >
-            + Neuer Kunde
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <input
-          placeholder="Suche nach Name, Email oder #Kundennr…"
-          value={search}
-          onChange={handleSearch}
-          style={{ padding: "7px 12px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, width: 340 }}
-        />
-      </div>
-
-      <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", overflowX: "auto" }}>
+      <Layout>
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center" wrap>
+                <Text as="h2" variant="headingSm">
+                  Alle Kunden
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  {customers.length} {customers.length === 1 ? "Kunde" : "Kunden"}
+                </Text>
+              </InlineStack>
+              <Box maxWidth="400px">
+                <TextField
+                  label="Suche"
+                  labelHidden
+                  placeholder="Suche nach Name, Email oder #Kundennr…"
+                  value={search}
+                  onChange={onSearchChange}
+                  autoComplete="off"
+                />
+              </Box>
+              <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
@@ -377,7 +399,11 @@ export default function CustomersPage() {
             })}
           </tbody>
         </table>
-      </div>
-    </div>
+              </div>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Page>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Modal, BlockStack, TextField, Text } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 function fmtCents(c) {
@@ -19,6 +20,16 @@ function fmtDateShort(d) {
 function fmtBirthDate(d) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("de-DE", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function bonusSourceLabel(source) {
+  const m = {
+    registration: "Registrierung",
+    order_earn: "Bestellung (Gutschrift)",
+    order_redeem: "Bestellung (Einlösung)",
+    manual: "Manuell",
+  };
+  return m[source] || source || "—";
 }
 
 const STATUS_COLORS = {
@@ -55,8 +66,20 @@ function Card({ title, action, children }) {
 function InfoRow({ label, value, mono }) {
   return (
     <div style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid #f9fafb", alignItems: "flex-start" }}>
-      <span style={{ width: 175, flexShrink: 0, fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: 13, color: "#111827", flex: 1, fontFamily: mono ? "monospace" : undefined }}>{value ?? "—"}</span>
+      <span style={{ width: 160, flexShrink: 0, fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{label}</span>
+      <span
+        style={{
+          fontSize: 13,
+          color: "#111827",
+          flex: 1,
+          minWidth: 0,
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          fontFamily: mono ? "ui-monospace, monospace" : undefined,
+        }}
+      >
+        {value ?? "—"}
+      </span>
     </div>
   );
 }
@@ -65,8 +88,8 @@ function AddressBlock({ label, line1, line2, zip, city, country }) {
   if (!line1 && !city) return <InfoRow label={label} value={null} />;
   return (
     <div style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid #f9fafb" }}>
-      <span style={{ width: 175, flexShrink: 0, fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{label}</span>
-      <div style={{ fontSize: 13, color: "#111827" }}>
+      <span style={{ width: 160, flexShrink: 0, fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{label}</span>
+      <div style={{ fontSize: 13, color: "#111827", flex: 1, minWidth: 0, wordBreak: "break-word", overflowWrap: "anywhere" }}>
         {line1 && <div>{line1}</div>}
         {line2 && <div>{line2}</div>}
         {(zip || city) && <div>{[zip, city].filter(Boolean).join(" ")}</div>}
@@ -159,6 +182,93 @@ function DiscountModal({ customerId, onClose, onAdded }) {
   );
 }
 
+function BonusLedgerAddModal({ open, onClose, customerId, onAdded }) {
+  const [description, setDescription] = useState("");
+  const [points, setPoints] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setDescription("");
+      setPoints("");
+      setErr("");
+    }
+  }, [open]);
+
+  const handleAdd = async () => {
+    const desc = description.trim();
+    const pts = parseInt(String(points).replace(/[^\d-]/g, ""), 10);
+    if (!desc) {
+      setErr("Beschreibung ist erforderlich");
+      return;
+    }
+    if (!Number.isFinite(pts) || pts === 0) {
+      setErr("Punkte müssen eine von 0 verschiedene ganze Zahl sein");
+      return;
+    }
+    setSaving(true);
+    setErr("");
+    try {
+      const client = getMedusaAdminClient();
+      const res = await client.addCustomerBonusLedgerEntry(customerId, {
+        description: desc,
+        points_delta: pts,
+      });
+      if (res?.entry) {
+        onAdded(res);
+        onClose();
+      }
+    } catch (e) {
+      setErr(e?.message || "Fehler");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => !saving && onClose()}
+      title="Bonuspunkte buchen"
+      primaryAction={{
+        content: "Hinzufügen",
+        onAction: handleAdd,
+        loading: saving,
+      }}
+      secondaryActions={[{ content: "Abbrechen", onAction: () => !saving && onClose() }]}
+    >
+      <Modal.Section>
+        <BlockStack gap="400">
+          <Text as="p" tone="subdued">
+            Das Buchungsdatum ist automatisch der heutige Tag. Positive Zahlen gutschreiben, negative zum Abziehen.
+          </Text>
+          <TextField
+            label="Beschreibung"
+            value={description}
+            onChange={setDescription}
+            autoComplete="off"
+            placeholder="z. B. Kulanz, Korrektur …"
+          />
+          <TextField
+            label="Bonuspunkte"
+            value={points}
+            onChange={setPoints}
+            autoComplete="off"
+            placeholder="+50 oder −20"
+            helpText="Ganze Zahl, nicht 0"
+            inputMode="numeric"
+          />
+          {err ? (
+            <Text as="p" tone="critical">
+              {err}
+            </Text>
+          ) : null}
+        </BlockStack>
+      </Modal.Section>
+    </Modal>
+  );
+}
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -169,12 +279,15 @@ export default function CustomerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [showBonusLedgerModal, setShowBonusLedgerModal] = useState(false);
   const [editNotes, setEditNotes] = useState(false);
   const [notesVal, setNotesVal] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [editBonus, setEditBonus] = useState(false);
   const [bonusVal, setBonusVal] = useState("");
   const [savingBonus, setSavingBonus] = useState(false);
+  const [ledgerSaving, setLedgerSaving] = useState(false);
+  const [ledgerEdit, setLedgerEdit] = useState(null);
 
   const loadCustomer = async () => {
     try {
@@ -196,6 +309,7 @@ export default function CustomerDetailPage() {
 
   const orders = customer?.orders || [];
   const discounts = customer?.discounts || [];
+  const bonusLedger = Array.isArray(customer?.bonus_ledger) ? customer.bonus_ledger : [];
   const totalSpent = orders.reduce((s, o) => s + Number(o.total_cents || 0), 0);
   const avgOrder = orders.length > 0 ? totalSpent / orders.length : 0;
   const firstOrder = orders.length > 0 ? orders[orders.length - 1]?.created_at : null;
@@ -239,12 +353,61 @@ export default function CustomerDetailPage() {
     } catch { }
   };
 
+  const handleBonusLedgerAdded = (res) => {
+    if (!res?.entry) return;
+    setCustomer((c) => ({
+      ...c,
+      bonus_points: res.bonus_points != null ? res.bonus_points : c.bonus_points,
+      bonus_ledger: [res.entry, ...(c.bonus_ledger || [])],
+    }));
+    setBonusVal(String(res.bonus_points ?? ""));
+  };
+
+  const handleSaveLedgerEdit = async () => {
+    if (!ledgerEdit?.id) return;
+    const pts = parseInt(String(ledgerEdit.points_delta).replace(/[^\d-]/g, ""), 10);
+    if (!ledgerEdit.description?.trim() || !Number.isFinite(pts) || pts === 0) return;
+    setLedgerSaving(true);
+    try {
+      const client = getMedusaAdminClient();
+      const res = await client.updateCustomerBonusLedgerEntry(id, ledgerEdit.id, {
+        description: ledgerEdit.description.trim(),
+        points_delta: pts,
+      });
+      if (res?.entry) {
+        setCustomer((c) => ({
+          ...c,
+          bonus_points: res.bonus_points != null ? res.bonus_points : c.bonus_points,
+          bonus_ledger: (c.bonus_ledger || []).map((e) => (e.id === res.entry.id ? res.entry : e)),
+        }));
+        setBonusVal(String(res.bonus_points ?? ""));
+        setLedgerEdit(null);
+      }
+    } catch { }
+    setLedgerSaving(false);
+  };
+
+  const handleDeleteLedgerEntry = async (entryId) => {
+    if (!window.confirm("Diesen Bonuspunkt-Eintrag wirklich löschen? Der Kontostand wird angepasst.")) return;
+    try {
+      const client = getMedusaAdminClient();
+      const res = await client.deleteCustomerBonusLedgerEntry(id, entryId);
+      setCustomer((c) => ({
+        ...c,
+        bonus_points: res.bonus_points != null ? res.bonus_points : c.bonus_points,
+        bonus_ledger: (c.bonus_ledger || []).filter((e) => e.id !== entryId),
+      }));
+      setBonusVal(String(res.bonus_points ?? ""));
+      if (ledgerEdit?.id === entryId) setLedgerEdit(null);
+    } catch { }
+  };
+
   // --- Billing address: prefer stored customer billing address, fallback to last order billing ---
   const billingFromOrders = orders.find(o => o.billing_address_line1);
   const hasStoredBilling = customer?.billing_address_line1 || customer?.billing_city;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 1320, margin: "0 auto", boxSizing: "border-box" }}>
       {showDiscountModal && (
         <DiscountModal
           customerId={id}
@@ -252,6 +415,12 @@ export default function CustomerDetailPage() {
           onAdded={() => { loadCustomer(); }}
         />
       )}
+      <BonusLedgerAddModal
+        open={showBonusLedgerModal}
+        onClose={() => setShowBonusLedgerModal(false)}
+        customerId={id}
+        onAdded={handleBonusLedgerAdded}
+      />
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 24 }}>
@@ -303,7 +472,7 @@ export default function CustomerDetailPage() {
       )}
 
       {!loading && !error && customer && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(400px, 440px)", gap: 20, alignItems: "start" }}>
           {/* LEFT COLUMN */}
           <div>
             {/* Stats */}
@@ -464,6 +633,122 @@ export default function CustomerDetailPage() {
                 </p>
               )}
             </Card>
+
+            {/* Bonus ledger */}
+            <Card
+              title="Bonuspunkte — Verlauf"
+              action={
+                <button
+                  type="button"
+                  onClick={() => setShowBonusLedgerModal(true)}
+                  style={{ fontSize: 12, padding: "4px 12px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}
+                >
+                  + Hinzufügen
+                </button>
+              }
+            >
+              {bonusLedger.length === 0 ? (
+                <p style={{ fontSize: 13, color: "#9ca3af", padding: "8px 0" }}>Noch keine Einträge im Verlauf.</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ color: "#6b7280", fontSize: 11, textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>
+                        <th style={{ textAlign: "left", padding: "6px 8px 10px", width: 110 }}>Datum</th>
+                        <th style={{ textAlign: "left", padding: "6px 8px 10px" }}>Beschreibung</th>
+                        <th style={{ textAlign: "right", padding: "6px 8px 10px", width: 100 }}>Bonuspunkte</th>
+                        <th style={{ textAlign: "right", padding: "6px 8px 10px", width: 1 }} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bonusLedger.map((row) => {
+                        const isEdit = ledgerEdit?.id === row.id;
+                        return (
+                          <tr key={row.id} style={{ borderBottom: "1px solid #f3f4f6", verticalAlign: "top" }}>
+                            <td style={{ padding: "10px 8px", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
+                              {fmtDateShort(row.occurred_at)}
+                            </td>
+                            <td style={{ padding: "10px 8px", minWidth: 180 }}>
+                              {isEdit ? (
+                                <input
+                                  value={ledgerEdit.description}
+                                  onChange={(e) => setLedgerEdit((le) => ({ ...le, description: e.target.value }))}
+                                  style={{ width: "100%", padding: "4px 8px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12, boxSizing: "border-box" }}
+                                />
+                              ) : (
+                                <div>
+                                  <span style={{ color: "#111827" }}>{row.description}</span>
+                                  {row.source && row.source !== "manual" && (
+                                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{bonusSourceLabel(row.source)}</div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: "10px 8px", textAlign: "right", fontWeight: 700, color: row.points_delta >= 0 ? "#065f46" : "#991b1b" }}>
+                              {isEdit ? (
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={ledgerEdit.points_delta}
+                                  onChange={(e) => setLedgerEdit((le) => ({ ...le, points_delta: e.target.value }))}
+                                  style={{ width: 72, padding: "4px 6px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12, textAlign: "right" }}
+                                />
+                              ) : (
+                                `${row.points_delta > 0 ? "+" : ""}${row.points_delta}`
+                              )}
+                            </td>
+                            <td style={{ padding: "10px 8px", textAlign: "right", whiteSpace: "nowrap" }}>
+                              {isEdit ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveLedgerEdit}
+                                    disabled={ledgerSaving}
+                                    style={{ marginRight: 6, padding: "4px 10px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+                                  >
+                                    Speichern
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLedgerEdit(null)}
+                                    style={{ padding: "4px 10px", border: "1px solid #e5e7eb", background: "#fff", borderRadius: 6, fontSize: 11, cursor: "pointer" }}
+                                  >
+                                    Abbrechen
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setLedgerEdit({
+                                        id: row.id,
+                                        description: row.description,
+                                        points_delta: String(row.points_delta),
+                                      })
+                                    }
+                                    style={{ marginRight: 8, background: "none", border: "none", cursor: "pointer", color: "#2563eb", fontSize: 12 }}
+                                  >
+                                    Bearbeiten
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteLedgerEntry(row.id)}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 12 }}
+                                  >
+                                    Löschen
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* RIGHT COLUMN */}
@@ -530,8 +815,14 @@ export default function CustomerDetailPage() {
                   />
                   <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>Aus letzter Bestellung</p>
                 </>
+              ) : (customer.address_line1 || customer.city) ? (
+                <p style={{ fontSize: 13, color: "#6b7280", margin: "10px 0 4px", lineHeight: 1.5 }}>
+                  Entspricht der Lieferadresse (keine abweichende Rechnungsadresse).
+                </p>
               ) : (
-                <p style={{ fontSize: 13, color: "#9ca3af", margin: "10px 0 4px" }}>Keine Rechnungsadresse</p>
+                <p style={{ fontSize: 13, color: "#9ca3af", margin: "10px 0 4px" }}>
+                  Keine Rechnungsadresse hinterlegt.
+                </p>
               )}
             </Card>
 

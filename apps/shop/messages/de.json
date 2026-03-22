@@ -86,7 +86,15 @@
     "freeShipping": "Kostenlos",
     "total": "Gesamt",
     "billingSameAsShipping": "Rechnungsadresse ist gleich Lieferadresse",
-    "billingAddress": "Rechnungsadresse"
+    "billingAddress": "Rechnungsadresse",
+    "bonusTitle": "Bonuspunkte",
+    "bonusBalance": "Ihr Kontostand: {points} Punkte",
+    "bonusHint": "25 Punkte = 1 € Rabatt. Nur in 25er-Schritten einlösbar. Nach Registrierung erhalten Sie 100 Willkommenspunkte.",
+    "bonusPlaceholder": "Punkte (z. B. 50, 75, 100)",
+    "bonusApply": "Anwenden",
+    "bonusDiscount": "Bonus-Rabatt",
+    "bonusLogin": "Melden Sie sich an, um Bonuspunkte einzulösen.",
+    "bonusError": "Bonuspunkte konnten nicht angewendet werden."
   },
   "order": {
     "loading": "Laden…",

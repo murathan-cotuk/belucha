@@ -140,6 +140,19 @@ class MedusaClient {
     return res
   }
 
+  /** Bonus einlösen: 25 Punkte = 1 € Rabatt (nur mit Kunden-Token). */
+  async patchStoreCart(cartId, body, authToken) {
+    const headers = {}
+    if (authToken) headers.Authorization = `Bearer ${authToken}`
+    const res = await this.request(`/store/carts/${cartId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body || {}),
+    })
+    if (res?.__error) return { cart: null, ...res }
+    return res
+  }
+
   async updateCart(cartId, data) {
     const res = await this.request(`/store/carts/${cartId}`, {
       method: 'POST',

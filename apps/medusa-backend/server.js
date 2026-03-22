@@ -381,6 +381,7 @@ async function start() {
             updated_at timestamp DEFAULT now()
           );
         `)
+        await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS bonus_points_reserved integer NOT NULL DEFAULT 0`).catch(() => {})
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_cart_items (
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -451,6 +452,8 @@ async function start() {
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS shipped_at timestamp;`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS notes text;`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_date timestamp;`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS discount_cents integer NOT NULL DEFAULT 0`).catch(() => {})
+        await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS bonus_points_redeemed integer NOT NULL DEFAULT 0`).catch(() => {})
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_shipping_carriers (
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -577,6 +580,20 @@ async function start() {
             created_at timestamp DEFAULT now()
           );
         `).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_customer_bonus_ledger (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            customer_id uuid NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+            occurred_at timestamptz NOT NULL DEFAULT now(),
+            points_delta integer NOT NULL,
+            description text NOT NULL,
+            source varchar(40) NOT NULL DEFAULT 'manual',
+            order_id uuid REFERENCES store_orders(id) ON DELETE SET NULL,
+            created_at timestamptz DEFAULT now(),
+            updated_at timestamptz DEFAULT now()
+          );
+        `).catch(() => {})
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_customer_bonus_ledger_customer ON store_customer_bonus_ledger(customer_id)').catch(() => {})
         await client.query(`
   CREATE TABLE IF NOT EXISTS store_customers (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -2390,8 +2407,70 @@ async function start() {
       const idx = variantId.indexOf('-v-')
       return idx > 0 ? variantId.slice(0, idx) : variantId
     }
+
+    const BONUS_POINTS_PER_EURO_DISCOUNT = 25
+    const BONUS_SIGNUP_POINTS = 100
+    const STRIPE_MIN_CHARGE_CENTS_EUR = 50
+
+    const discountCentsFromBonusPoints = (points) => {
+      const blocks = Math.floor(Number(points || 0) / BONUS_POINTS_PER_EURO_DISCOUNT)
+      return blocks * 100
+    }
+
+    const bonusPointsEarnedFromOrderPaidCents = (paidCents) =>
+      Math.ceil(Number(paidCents || 0) / 100)
+
+    const clampCartBonusRedemption = (requestedPoints, balance, subtotalCents) => {
+      let p = Math.max(0, Math.min(Number(requestedPoints) || 0, Number(balance) || 0))
+      p = Math.floor(p / BONUS_POINTS_PER_EURO_DISCOUNT) * BONUS_POINTS_PER_EURO_DISCOUNT
+      if (subtotalCents < STRIPE_MIN_CHARGE_CENTS_EUR) return 0
+      let disc = discountCentsFromBonusPoints(p)
+      const maxDiscount = subtotalCents - STRIPE_MIN_CHARGE_CENTS_EUR
+      if (disc > maxDiscount) {
+        const maxBlocks = Math.floor(maxDiscount / 100)
+        p = maxBlocks * BONUS_POINTS_PER_EURO_DISCOUNT
+      }
+      return p
+    }
+
+    const clearCartBonusReserve = async (client, cartId) => {
+      await client.query('UPDATE store_carts SET bonus_points_reserved = 0, updated_at = now() WHERE id = $1', [cartId]).catch(() => {})
+    }
+
+    /**
+     * @param {import('pg').Client} client
+     * @param {{ customerId: string, pointsDelta: number, description: string, source?: string, orderId?: string|null, occurredAt?: string|Date|null, skipBalanceUpdate?: boolean }} opts
+     */
+    const appendBonusLedger = async (client, opts) => {
+      const {
+        customerId,
+        pointsDelta,
+        description,
+        source = 'manual',
+        orderId = null,
+        occurredAt = null,
+        skipBalanceUpdate = false,
+      } = opts
+      if (!customerId || !Number.isFinite(Number(pointsDelta))) return
+      const at = occurredAt ? new Date(occurredAt).toISOString() : null
+      await client.query(
+        `INSERT INTO store_customer_bonus_ledger (customer_id, occurred_at, points_delta, description, source, order_id)
+         VALUES ($1::uuid, COALESCE($2::timestamptz, NOW()), $3, $4, $5, $6::uuid)`,
+        [customerId, at, Number(pointsDelta), String(description || '').trim() || '—', String(source).slice(0, 40), orderId || null],
+      )
+      if (!skipBalanceUpdate) {
+        await client.query(
+          `UPDATE store_customers SET bonus_points = COALESCE(bonus_points, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+          [Number(pointsDelta), customerId],
+        )
+      }
+    }
+
     const getCartWithItems = async (client, cartId) => {
-      const cartRes = await client.query('SELECT id, created_at, updated_at FROM store_carts WHERE id = $1', [cartId])
+      const cartRes = await client.query(
+        'SELECT id, created_at, updated_at, COALESCE(bonus_points_reserved, 0) AS bonus_points_reserved FROM store_carts WHERE id = $1',
+        [cartId],
+      )
       const cartRow = cartRes.rows && cartRes.rows[0]
       if (!cartRow) return null
       const itemsRes = await client.query(
@@ -2408,7 +2487,13 @@ async function start() {
         thumbnail: r.thumbnail,
         product_handle: r.product_handle,
       }))
-      return { id: cartRow.id, created_at: cartRow.created_at, updated_at: cartRow.updated_at, items }
+      return {
+        id: cartRow.id,
+        created_at: cartRow.created_at,
+        updated_at: cartRow.updated_at,
+        bonus_points_reserved: Number(cartRow.bonus_points_reserved || 0),
+        items,
+      }
     }
     const storeCartsPOST = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
@@ -2450,6 +2535,66 @@ async function start() {
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
       }
     }
+
+    /** PATCH /store/carts/:id — bonus_points_reserved (25 pts = €1 off); requires auth if &gt; 0 */
+    const storeCartPATCH = async (req, res) => {
+      const cartId = (req.params.id || req.params.cartId || '').toString().trim()
+      if (!cartId) return res.status(400).json({ message: 'Cart id required' })
+      const body = req.body || {}
+      const rawReq = body.bonus_points_reserved ?? body.bonus_points_to_redeem
+      const requested = Math.max(0, parseInt(rawReq, 10) || 0)
+
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
+
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const cart = await getCartWithItems(client, cartId)
+        if (!cart) {
+          await client.end()
+          return res.status(404).json({ message: 'Cart not found' })
+        }
+        const items = Array.isArray(cart.items) ? cart.items : []
+        const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
+
+        let reserved = 0
+        if (requested > 0) {
+          const authHeader = req.headers.authorization || ''
+          const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+          const payload = verifyCustomerToken(token)
+          if (!payload?.id) {
+            await client.end()
+            return res.status(401).json({ message: 'Anmeldung erforderlich, um Bonuspunkte einzulösen' })
+          }
+          const balR = await client.query(
+            'SELECT COALESCE(bonus_points, 0) AS bp FROM store_customers WHERE id = $1::uuid',
+            [payload.id],
+          )
+          const balance = Number(balR.rows?.[0]?.bp || 0)
+          reserved = clampCartBonusRedemption(requested, balance, subtotalCents)
+        }
+
+        await client.query('UPDATE store_carts SET bonus_points_reserved = $1, updated_at = now() WHERE id = $2', [
+          reserved,
+          cartId,
+        ])
+        const updated = await getCartWithItems(client, cartId)
+        await client.end()
+        res.json({
+          cart: updated,
+          bonus_discount_cents: discountCentsFromBonusPoints(reserved),
+          bonus_points_reserved: reserved,
+        })
+      } catch (err) {
+        if (client) try { await client.end() } catch (_) {}
+        console.error('Store cart PATCH:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      }
+    }
+
     const storeCartLineItemsPOST = async (req, res) => {
       const cartId = (req.params.id || req.params.cartId || '').toString().trim()
       if (!cartId) return res.status(400).json({ message: 'Cart id required' })
@@ -2505,6 +2650,7 @@ async function start() {
             [cartId, variantId, productId, quantity, unitPriceCents, title, thumb, handle]
           )
         }
+        await clearCartBonusReserve(client, cartId)
         const cart = await getCartWithItems(client, cartId)
         await client.end()
         res.json({ cart })
@@ -2532,6 +2678,7 @@ async function start() {
           const up = await client.query('UPDATE store_cart_items SET quantity = $1, updated_at = now() WHERE cart_id = $2 AND id = $3 RETURNING id', [quantity, cartId, lineId])
           if (!up.rows || !up.rows[0]) { await client.end(); return res.status(404).json({ message: 'Line item not found' }) }
         }
+        await clearCartBonusReserve(client, cartId)
         const cart = await getCartWithItems(client, cartId)
         await client.end()
         res.json({ cart })
@@ -2554,6 +2701,7 @@ async function start() {
         await client.connect()
         const del = await client.query('DELETE FROM store_cart_items WHERE cart_id = $1 AND id = $2 RETURNING id', [cartId, lineId])
         if (!del.rows || !del.rows[0]) { await client.end(); return res.status(404).json({ message: 'Line item not found' }) }
+        await clearCartBonusReserve(client, cartId)
         const cart = await getCartWithItems(client, cartId)
         await client.end()
         res.json({ cart })
@@ -2579,6 +2727,7 @@ async function start() {
         const cartExists = await client.query('SELECT id FROM store_carts WHERE id = $1', [cartId])
         if (!cartExists.rows || !cartExists.rows[0]) { await client.end(); return res.status(404).json({ message: 'Cart not found' }) }
         await client.query('DELETE FROM store_cart_items WHERE cart_id = $1', [cartId])
+        await clearCartBonusReserve(client, cartId)
         const cart = await getCartWithItems(client, cartId)
         await client.end()
         res.json({ cart })
@@ -2590,11 +2739,12 @@ async function start() {
     }
     httpApp.post('/store/carts', storeCartsPOST)
     httpApp.get('/store/carts/:id', storeCartGET)
+    httpApp.patch('/store/carts/:id', storeCartPATCH)
     httpApp.post('/store/carts/:id/line-items', storeCartLineItemsPOST)
     httpApp.patch('/store/carts/:id/line-items/:lineId', storeCartLineItemPATCH)
     httpApp.delete('/store/carts/:id/line-items/:lineId', storeCartLineItemDELETE)
     httpApp.delete('/store/carts/:id/line-items', storeCartClearDELETE)
-    console.log('Store routes: POST/GET /store/carts, POST/PATCH/DELETE line-items')
+    console.log('Store routes: POST/GET /store/carts, PATCH cart, POST/PATCH/DELETE line-items')
 
     // --- Store Payment Intent (Stripe) ---
     const storePaymentIntentPOST = async (req, res) => {
@@ -2621,20 +2771,38 @@ async function start() {
         if (!items.length) return res.status(400).json({ message: 'Cart is empty' })
 
         const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
+        const reservedPts = Number(cart.bonus_points_reserved || 0)
+        const discountCents = discountCentsFromBonusPoints(reservedPts)
+        const payCents = Math.max(0, subtotalCents - discountCents)
+        if (payCents <= 0) {
+          await client.end()
+          return res.status(400).json({
+            message:
+              'Der Bestellbetrag ist 0 €. Vollständige Bezahlung nur mit Bonuspunkten ist derzeit nicht möglich — bitte Punkte reduzieren oder Artikel hinzufügen.',
+          })
+        }
         const stripe = new (require('stripe'))(secretKey)
 
         // PaymentElement uyumu için automatic_payment_methods kullanıyoruz
         const paymentIntent = await stripe.paymentIntents.create({
-          amount: subtotalCents,
+          amount: payCents,
           currency: 'eur',
           automatic_payment_methods: { enabled: true },
-          metadata: { cart_id: cartId },
+          metadata: {
+            cart_id: cartId,
+            subtotal_cents: String(subtotalCents),
+            discount_cents: String(discountCents),
+            bonus_points_redeemed: String(reservedPts),
+          },
         })
 
         res.json({
           client_secret: paymentIntent.client_secret,
           payment_intent_id: paymentIntent.id,
-          amount_cents: subtotalCents,
+          amount_cents: payCents,
+          subtotal_cents: subtotalCents,
+          bonus_discount_cents: discountCents,
+          bonus_points_reserved: reservedPts,
         })
       } catch (err) {
         if (client) try { await client.end() } catch (_) {}
@@ -2646,7 +2814,7 @@ async function start() {
     // --- Store Orders (Stripe payment success sonrası) ---
     const getOrderWithItems = async (client, orderId) => {
       const oRes = await client.query(
-        'SELECT id, order_number, cart_id, payment_intent_id, status, order_status, payment_status, delivery_status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, billing_address_line1, billing_address_line2, billing_city, billing_postal_code, billing_country, billing_same_as_shipping, payment_method, customer_id, is_guest, newsletter_opted_in, subtotal_cents, total_cents, currency, created_at, updated_at FROM store_orders WHERE id = $1',
+        'SELECT id, order_number, cart_id, payment_intent_id, status, order_status, payment_status, delivery_status, email, first_name, last_name, phone, address_line1, address_line2, city, postal_code, country, billing_address_line1, billing_address_line2, billing_city, billing_postal_code, billing_country, billing_same_as_shipping, payment_method, customer_id, is_guest, newsletter_opted_in, subtotal_cents, total_cents, COALESCE(discount_cents,0) AS discount_cents, COALESCE(bonus_points_redeemed,0) AS bonus_points_redeemed, currency, created_at, updated_at FROM store_orders WHERE id = $1',
         [orderId]
       )
       const oRow = oRes.rows && oRes.rows[0]
@@ -2696,6 +2864,8 @@ async function start() {
         postal_code: oRow.postal_code,
         country: oRow.country,
         subtotal_cents: oRow.subtotal_cents,
+        discount_cents: Number(oRow.discount_cents || 0),
+        bonus_points_redeemed: Number(oRow.bonus_points_redeemed || 0),
         total_cents: oRow.total_cents,
         currency: oRow.currency,
         created_at: oRow.created_at,
@@ -2793,7 +2963,8 @@ async function start() {
           r = await client.query(
             `UPDATE store_customers SET password_hash=$1, first_name=$2, last_name=$3, phone=$4, account_type=$5,
              gender=$6, birth_date=$7::date, address_line1=$8, address_line2=$9, zip_code=$10, city=$11,
-             country=$12, company_name=$13, vat_number=$14, updated_at=NOW()
+             country=$12, company_name=$13, vat_number=$14,
+             bonus_points = COALESCE(bonus_points, 0) + ${BONUS_SIGNUP_POINTS}, updated_at=NOW()
              WHERE id=$15
              RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
             [password_hash, first_name, last_name, phone, account_type, gender, birth_date || null,
@@ -2803,13 +2974,25 @@ async function start() {
         // UPDATE 0 rows (satır silinmiş / yarış) → INSERT; misafir yokken de INSERT
         if (!existingRow || !r.rows[0]) {
           r = await client.query(
-            `INSERT INTO store_customers (email, password_hash, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15)
+            `INSERT INTO store_customers (email, password_hash, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, bonus_points)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12,$13,$14,$15,$16)
              RETURNING id, customer_number, email, first_name, last_name, phone, account_type, company_name, created_at`,
-            [email, password_hash, first_name, last_name, phone, account_type, gender, birth_date || null, address_line1, address_line2, zip_code, city, country, company_name, vat_number]
+            [email, password_hash, first_name, last_name, phone, account_type, gender, birth_date || null, address_line1, address_line2, zip_code, city, country, company_name, vat_number, BONUS_SIGNUP_POINTS]
           )
         }
         const customer = { ...r.rows[0], customer_number: r.rows[0].customer_number ? Number(r.rows[0].customer_number) : null }
+        const cid = r.rows[0].id
+        try {
+          await appendBonusLedger(client, {
+            customerId: cid,
+            pointsDelta: BONUS_SIGNUP_POINTS,
+            description: `Registrierung — Willkommensbonus (+${BONUS_SIGNUP_POINTS} Punkte)`,
+            source: 'registration',
+            skipBalanceUpdate: true,
+          })
+        } catch (le) {
+          console.warn('bonus ledger registration:', le?.message || le)
+        }
         await client.end()
         res.status(201).json({ customer })
       } catch (e) {
@@ -2842,13 +3025,19 @@ async function start() {
         await client.connect()
         const r = await client.query(
           `UPDATE store_customers SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${vals.length}::uuid
-           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at`,
+           RETURNING id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, COALESCE(bonus_points,0) AS bonus_points, created_at`,
           vals
         )
         await client.end()
         const row = r.rows[0]
         if (!row) return res.status(404).json({ message: 'Customer not found' })
-        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+        res.json({
+          customer: {
+            ...row,
+            customer_number: row.customer_number ? Number(row.customer_number) : null,
+            bonus_points: Number(row.bonus_points || 0),
+          },
+        })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Update failed' })
@@ -2894,13 +3083,19 @@ async function start() {
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         const r = await client.query(
-          'SELECT id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, created_at FROM store_customers WHERE id = $1',
+          'SELECT id, customer_number, email, first_name, last_name, phone, account_type, gender, birth_date, address_line1, address_line2, zip_code, city, country, company_name, vat_number, COALESCE(bonus_points,0) AS bonus_points, created_at FROM store_customers WHERE id = $1',
           [payload.id]
         )
         await client.end()
         const row = r.rows[0]
         if (!row) return res.status(404).json({ message: 'Customer not found' })
-        res.json({ customer: { ...row, customer_number: row.customer_number ? Number(row.customer_number) : null } })
+        res.json({
+          customer: {
+            ...row,
+            customer_number: row.customer_number ? Number(row.customer_number) : null,
+            bonus_points: Number(row.bonus_points || 0),
+          },
+        })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Error' })
@@ -3069,7 +3264,10 @@ async function start() {
         if (!items.length) { await client.end(); return res.status(400).json({ message: 'Cart is empty' }) }
 
         const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
-        const totalCents = subtotalCents
+        const reservedPts = Number(cart.bonus_points_reserved || 0)
+        const discountCents = discountCentsFromBonusPoints(reservedPts)
+        const totalCents = Math.max(0, subtotalCents - discountCents)
+        const bonusPointsRedeemed = reservedPts
 
         const email = (body.email || '').toString().trim() || null
         const first_name = (body.first_name || '').toString().trim() || null
@@ -3124,13 +3322,19 @@ async function start() {
           }
         } catch (_) {}
 
-        // Get payment method from Stripe
+        // Get payment method from Stripe + verify paid amount matches cart (incl. bonus discount)
         const secretKey = (process.env.STRIPE_SECRET_KEY || '').toString().trim()
         let paymentMethod = 'card'
+        let stripeInst = null
         if (secretKey) {
           try {
-            const stripeInst = new (require('stripe'))(secretKey)
+            stripeInst = new (require('stripe'))(secretKey)
             const pi = await stripeInst.paymentIntents.retrieve(paymentIntentId, { expand: ['payment_method'] })
+            const paidCents = Number(pi.amount)
+            if (paidCents !== totalCents) {
+              await client.end()
+              return res.status(400).json({ message: 'Zahlungsbetrag stimmt nicht mit dem Warenkorb überein. Bitte Checkout neu laden.' })
+            }
             const pm = pi.payment_method
             if (pm && typeof pm === 'object') {
               if (pm.type === 'card' && pm.card && pm.card.brand) { paymentMethod = pm.card.brand }
@@ -3138,7 +3342,21 @@ async function start() {
             } else if (pi.payment_method_types && pi.payment_method_types[0]) {
               paymentMethod = pi.payment_method_types[0]
             }
-          } catch (_) {}
+          } catch (e) {
+            await client.end()
+            return res.status(400).json({ message: e?.message || 'Zahlung konnte nicht verifiziert werden' })
+          }
+        } else if (totalCents > 0) {
+          console.warn('storeOrdersPOST: STRIPE_SECRET_KEY missing — skipping PaymentIntent amount verification')
+        }
+
+        if (bonusPointsRedeemed > 0 && customerId) {
+          const chk = await client.query('SELECT COALESCE(bonus_points,0) AS bp FROM store_customers WHERE id = $1::uuid', [customerId])
+          const bal = Number(chk.rows?.[0]?.bp || 0)
+          if (bal < bonusPointsRedeemed) {
+            await client.end()
+            return res.status(400).json({ message: 'Bonuspunkte reichen nicht mehr. Bitte Checkout neu laden.' })
+          }
         }
 
         const ins = await client.query(
@@ -3147,14 +3365,14 @@ async function start() {
              address_line1, address_line2, city, postal_code, country,
              billing_address_line1, billing_address_line2, billing_city, billing_postal_code, billing_country, billing_same_as_shipping,
              payment_method, customer_id, is_guest, newsletter_opted_in,
-             subtotal_cents, total_cents, currency)
-           VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,'eur')
+             subtotal_cents, discount_cents, bonus_points_redeemed, total_cents, currency)
+           VALUES ($1,$2,'paid',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,'eur')
            RETURNING id, order_number`,
           [cartId, paymentIntentId, sellerId, email, first_name, last_name, phone,
            address_line1, address_line2, city, postal_code, country,
            billing_address_line1, billing_address_line2, billing_city, billing_postal_code, billing_country, billingSame,
            paymentMethod, customerId, isGuest, newsletter_opted_in,
-           subtotalCents, totalCents]
+           subtotalCents, discountCents, bonusPointsRedeemed, totalCents]
         )
 
         const orderId = ins.rows && ins.rows[0] ? ins.rows[0].id : null
@@ -3189,6 +3407,48 @@ async function start() {
             ]
           )
         }
+
+        if (bonusPointsRedeemed > 0 && customerId) {
+          await client.query(
+            `UPDATE store_customers SET bonus_points = bonus_points - $1, updated_at = NOW() WHERE id = $2::uuid AND bonus_points >= $1`,
+            [bonusPointsRedeemed, customerId],
+          )
+          try {
+            await appendBonusLedger(client, {
+              customerId,
+              pointsDelta: -bonusPointsRedeemed,
+              description: `Bestellung #${orderNumber} — Bonus an der Kasse eingelöst (−${bonusPointsRedeemed} Punkte)`,
+              source: 'order_redeem',
+              orderId,
+              skipBalanceUpdate: true,
+            })
+          } catch (le) {
+            console.warn('bonus ledger order_redeem:', le?.message || le)
+          }
+        }
+        if (!isGuest && customerId) {
+          const earned = bonusPointsEarnedFromOrderPaidCents(totalCents)
+          if (earned > 0) {
+            await client.query(
+              `UPDATE store_customers SET bonus_points = COALESCE(bonus_points, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+              [earned, customerId],
+            )
+            try {
+              await appendBonusLedger(client, {
+                customerId,
+                pointsDelta: earned,
+                description: `Bestellung #${orderNumber} — Punkte aus Zahlungsbetrag (+${earned} Punkte)`,
+                source: 'order_earn',
+                orderId,
+                skipBalanceUpdate: true,
+              })
+            } catch (le) {
+              console.warn('bonus ledger order_earn:', le?.message || le)
+            }
+          }
+        }
+
+        await clearCartBonusReserve(client, cartId)
 
         // Clear cart items so user can't reorder accidentally
         await client.query('DELETE FROM store_cart_items WHERE cart_id = $1', [cartId])
@@ -4190,6 +4450,175 @@ async function start() {
       }
     }
 
+    const adminHubCustomerBonusLedgerPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const customerId = (req.params.id || '').trim()
+      if (!customerId) return res.status(400).json({ message: 'id required' })
+      const body = req.body || {}
+      const description = (body.description || '').toString().trim()
+      const delta = parseInt(body.points_delta, 10)
+      if (!description) return res.status(400).json({ message: 'description required' })
+      if (!Number.isFinite(delta) || delta === 0) return res.status(400).json({ message: 'points_delta must be non-zero integer' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const ex = await client.query('SELECT id FROM store_customers WHERE id = $1::uuid', [customerId])
+        if (!ex.rows?.[0]) {
+          await client.end()
+          return res.status(404).json({ message: 'Customer not found' })
+        }
+        const occurredAt = body.occurred_at ? new Date(body.occurred_at).toISOString() : null
+        await appendBonusLedger(client, {
+          customerId,
+          pointsDelta: delta,
+          description,
+          source: 'manual',
+          occurredAt,
+          skipBalanceUpdate: false,
+        })
+        const insR = await client.query(
+          `SELECT id, occurred_at, points_delta, description, source, order_id, created_at, updated_at
+           FROM store_customer_bonus_ledger WHERE customer_id = $1::uuid ORDER BY id DESC LIMIT 1`,
+          [customerId],
+        )
+        const row = insR.rows?.[0]
+        const balR = await client.query('SELECT COALESCE(bonus_points,0) AS bp FROM store_customers WHERE id = $1::uuid', [customerId])
+        await client.end()
+        res.status(201).json({
+          entry: row
+            ? {
+                id: row.id,
+                occurred_at: row.occurred_at,
+                points_delta: Number(row.points_delta),
+                description: row.description,
+                source: row.source,
+                order_id: row.order_id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+              }
+            : null,
+          bonus_points: Number(balR.rows?.[0]?.bp || 0),
+        })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerBonusLedgerPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const customerId = (req.params.customerId || '').trim()
+      const entryId = (req.params.entryId || '').trim()
+      if (!customerId || !entryId) return res.status(400).json({ message: 'customerId and entryId required' })
+      const body = req.body || {}
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const curR = await client.query(
+          'SELECT id, points_delta, description, occurred_at FROM store_customer_bonus_ledger WHERE id = $1::uuid AND customer_id = $2::uuid',
+          [entryId, customerId],
+        )
+        const cur = curR.rows?.[0]
+        if (!cur) {
+          await client.end()
+          return res.status(404).json({ message: 'Entry not found' })
+        }
+        const oldDelta = Number(cur.points_delta)
+        let newDelta = oldDelta
+        if (body.points_delta !== undefined && body.points_delta !== null) {
+          newDelta = parseInt(body.points_delta, 10)
+          if (!Number.isFinite(newDelta) || newDelta === 0) {
+            await client.end()
+            return res.status(400).json({ message: 'points_delta must be non-zero integer' })
+          }
+        }
+        const newDesc = body.description != null ? String(body.description).trim() : cur.description
+        if (!newDesc) {
+          await client.end()
+          return res.status(400).json({ message: 'description required' })
+        }
+        let newOccurred = cur.occurred_at
+        if (body.occurred_at != null && body.occurred_at !== '') {
+          newOccurred = new Date(body.occurred_at).toISOString()
+        }
+        const diff = newDelta - oldDelta
+        await client.query(
+          `UPDATE store_customer_bonus_ledger SET description = $1, points_delta = $2, occurred_at = $3::timestamptz, updated_at = NOW()
+           WHERE id = $4::uuid AND customer_id = $5::uuid`,
+          [newDesc, newDelta, newOccurred, entryId, customerId],
+        )
+        if (diff !== 0) {
+          await client.query(
+            `UPDATE store_customers SET bonus_points = COALESCE(bonus_points, 0) + $1, updated_at = NOW() WHERE id = $2::uuid`,
+            [diff, customerId],
+          )
+        }
+        const outR = await client.query(
+          'SELECT id, occurred_at, points_delta, description, source, order_id, created_at, updated_at FROM store_customer_bonus_ledger WHERE id = $1::uuid',
+          [entryId],
+        )
+        const balR = await client.query('SELECT COALESCE(bonus_points,0) AS bp FROM store_customers WHERE id = $1::uuid', [customerId])
+        await client.end()
+        const row = outR.rows?.[0]
+        res.json({
+          entry: row
+            ? {
+                id: row.id,
+                occurred_at: row.occurred_at,
+                points_delta: Number(row.points_delta),
+                description: row.description,
+                source: row.source,
+                order_id: row.order_id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+              }
+            : null,
+          bonus_points: Number(balR.rows?.[0]?.bp || 0),
+        })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubCustomerBonusLedgerDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const customerId = (req.params.customerId || '').trim()
+      const entryId = (req.params.entryId || '').trim()
+      if (!customerId || !entryId) return res.status(400).json({ message: 'customerId and entryId required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const curR = await client.query(
+          'SELECT points_delta FROM store_customer_bonus_ledger WHERE id = $1::uuid AND customer_id = $2::uuid',
+          [entryId, customerId],
+        )
+        const cur = curR.rows?.[0]
+        if (!cur) {
+          await client.end()
+          return res.status(404).json({ message: 'Entry not found' })
+        }
+        const oldDelta = Number(cur.points_delta)
+        await client.query('DELETE FROM store_customer_bonus_ledger WHERE id = $1::uuid AND customer_id = $2::uuid', [entryId, customerId])
+        await client.query(
+          `UPDATE store_customers SET bonus_points = COALESCE(bonus_points, 0) - $1, updated_at = NOW() WHERE id = $2::uuid`,
+          [oldDelta, customerId],
+        )
+        const balR = await client.query('SELECT COALESCE(bonus_points,0) AS bp FROM store_customers WHERE id = $1::uuid', [customerId])
+        await client.end()
+        res.json({ success: true, bonus_points: Number(balR.rows?.[0]?.bp || 0) })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
     const adminHubCustomerByIdGET = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       const id = (req.params.id || '').trim()
@@ -4226,6 +4655,27 @@ async function start() {
           [id]
         )
         const discounts = discountsR.rows || []
+        let bonus_ledger = []
+        try {
+          const ledR = await client.query(
+            `SELECT id, occurred_at, points_delta, description, source, order_id, created_at, updated_at
+             FROM store_customer_bonus_ledger WHERE customer_id = $1::uuid
+             ORDER BY occurred_at DESC NULLS LAST, created_at DESC`,
+            [id],
+          )
+          bonus_ledger = (ledR.rows || []).map((e) => ({
+            id: e.id,
+            occurred_at: e.occurred_at,
+            points_delta: Number(e.points_delta),
+            description: e.description,
+            source: e.source,
+            order_id: e.order_id,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+          }))
+        } catch (_) {
+          bonus_ledger = []
+        }
         await client.end()
         res.json({
           customer: {
@@ -4237,6 +4687,7 @@ async function start() {
             birth_date: row.birth_date || null,
             orders,
             discounts,
+            bonus_ledger,
           }
         })
       } catch (e) {
@@ -4525,6 +4976,9 @@ async function start() {
     httpApp.get('/admin-hub/v1/customers/:id', adminHubCustomerByIdGET)
     httpApp.post('/admin-hub/v1/customers/:id/discounts', adminHubCustomerDiscountPOST)
     httpApp.delete('/admin-hub/v1/customers/:customerId/discounts/:discountId', adminHubCustomerDiscountDELETE)
+    httpApp.post('/admin-hub/v1/customers/:id/bonus-ledger', adminHubCustomerBonusLedgerPOST)
+    httpApp.patch('/admin-hub/v1/customers/:customerId/bonus-ledger/:entryId', adminHubCustomerBonusLedgerPATCH)
+    httpApp.delete('/admin-hub/v1/customers/:customerId/bonus-ledger/:entryId', adminHubCustomerBonusLedgerDELETE)
     httpApp.get('/admin-hub/v1/shipping-carriers', adminHubCarriersGET)
     httpApp.post('/admin-hub/v1/shipping-carriers', adminHubCarrierPOST)
     httpApp.patch('/admin-hub/v1/shipping-carriers/:id', adminHubCarrierPATCH)

@@ -20,6 +20,8 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { Link } from "@/i18n/navigation";
 import { tokens } from "@/design-system/tokens";
 import PayNowButton from "@/components/ui/PayNowButton";
+import { getToken } from "@belucha/lib";
+import { getMedusaClient } from "@/lib/medusa-client";
 
 const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 
@@ -266,7 +268,7 @@ function CheckoutFormField({
   );
 }
 
-function CheckoutForm({ clientSecret, cartId, items, subtotalCents }) {
+function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents }) {
   const t = useTranslations("checkout");
   const stripe = useStripe();
   const elements = useElements();
@@ -296,6 +298,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents }) {
 
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const payCentsDisplay = amountToPayCents != null ? amountToPayCents : subtotalCents;
 
   useEffect(() => {
     if (!stripe || typeof window === "undefined") return;
@@ -674,12 +677,68 @@ function getStripe() {
 
 export default function CheckoutPage() {
   const t = useTranslations("checkout");
-  const { cart, subtotalCents } = useCart();
+  const { cart, subtotalCents, setCart } = useCart();
   const items = cart?.items || [];
 
   const [clientSecret, setClientSecret] = useState(null);
   const [loadingPI, setLoadingPI] = useState(false);
   const [piError, setPiError] = useState(null);
+  const [payCents, setPayCents] = useState(null);
+  const [bonusDiscountCents, setBonusDiscountCents] = useState(0);
+  const [bonusDraft, setBonusDraft] = useState("");
+  const [bonusErr, setBonusErr] = useState("");
+  const [balancePoints, setBalancePoints] = useState(null);
+  const [bonusApplying, setBonusApplying] = useState(false);
+  const [customerToken, setCustomerToken] = useState(null);
+
+  useEffect(() => {
+    setCustomerToken(getToken("customer"));
+  }, []);
+
+  useEffect(() => {
+    setBonusDraft(String(cart?.bonus_points_reserved ?? ""));
+  }, [cart?.bonus_points_reserved]);
+
+  useEffect(() => {
+    if (!customerToken) {
+      setBalancePoints(null);
+      return;
+    }
+    const client = getMedusaClient();
+    client.getCustomer(customerToken).then((r) => {
+      setBalancePoints(r?.customer?.bonus_points ?? 0);
+    });
+  }, [customerToken, cart?.id]);
+
+  const applyBonusRedemption = async () => {
+    setBonusErr("");
+    if (!cart?.id) return;
+    const tok = getToken("customer");
+    if (!tok) {
+      setBonusErr(t("bonusLogin"));
+      return;
+    }
+    setBonusApplying(true);
+    try {
+      const raw = String(bonusDraft || "").replace(/\D/g, "");
+      const pts = Math.max(0, parseInt(raw, 10) || 0);
+      const client = getMedusaClient();
+      const out = await client.patchStoreCart(cart.id, { bonus_points_reserved: pts }, tok);
+      if (out?.__error) {
+        setBonusErr(out.message || t("bonusError"));
+        return;
+      }
+      if (out?.cart) setCart(out.cart);
+      setBonusDraft(String(out.bonus_points_reserved ?? 0));
+      const r2 = await client.getCustomer(tok);
+      setBalancePoints(r2?.customer?.bonus_points ?? 0);
+      setClientSecret(null);
+    } catch (e) {
+      setBonusErr(e?.message || t("bonusError"));
+    } finally {
+      setBonusApplying(false);
+    }
+  };
 
   useEffect(() => {
     if (!cart?.id || items.length === 0 || !STRIPE_PK) return;
@@ -692,12 +751,15 @@ export default function CheckoutPage() {
         setClientSecret(returnedSecret);
         setPiError(null);
         setLoadingPI(false);
+        setPayCents(subtotalCents);
+        setBonusDiscountCents(0);
         return;
       }
     }
 
     setLoadingPI(true);
     setPiError(null);
+    setClientSecret(null);
     fetch("/api/store-payment-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -707,13 +769,21 @@ export default function CheckoutPage() {
       .then((data) => {
         if (data?.client_secret) {
           setClientSecret(data.client_secret);
+          setPayCents(typeof data.amount_cents === "number" ? data.amount_cents : subtotalCents);
+          setBonusDiscountCents(Number(data.bonus_discount_cents || 0));
         } else {
           setPiError(data?.message || t("configError"));
+          setPayCents(null);
+          setBonusDiscountCents(0);
         }
       })
-      .catch(() => setPiError(t("configError")))
+      .catch(() => {
+        setPiError(t("configError"));
+        setPayCents(null);
+        setBonusDiscountCents(0);
+      })
       .finally(() => setLoadingPI(false));
-  }, [cart?.id]);
+  }, [cart?.id, cart?.bonus_points_reserved, subtotalCents, t, items.length]);
 
   const stripeInstance = getStripe();
 
@@ -758,6 +828,7 @@ export default function CheckoutPage() {
                     cartId={cart.id}
                     items={items}
                     subtotalCents={subtotalCents}
+                    amountToPayCents={payCents}
                   />
                 </Elements>
               )}
@@ -784,17 +855,73 @@ export default function CheckoutPage() {
                 </SummaryItem>
               ))}
               <Divider />
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#111827", marginBottom: 8 }}>{t("bonusTitle")}</div>
+                {customerToken ? (
+                  <>
+                    {balancePoints != null && (
+                      <p style={{ fontSize: "0.75rem", color: "#6b7280", margin: "0 0 8px" }}>{t("bonusBalance", { points: balancePoints })}</p>
+                    )}
+                    <p style={{ fontSize: "0.7rem", color: "#9ca3af", margin: "0 0 8px", lineHeight: 1.4 }}>{t("bonusHint")}</p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={bonusDraft}
+                        onChange={(e) => setBonusDraft(e.target.value)}
+                        placeholder={t("bonusPlaceholder")}
+                        style={{
+                          flex: "1 1 120px",
+                          minWidth: 100,
+                          padding: "8px 10px",
+                          border: "1px solid #d1d5db",
+                          borderRadius: 8,
+                          fontSize: "0.875rem",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={applyBonusRedemption}
+                        disabled={bonusApplying}
+                        style={{
+                          padding: "8px 14px",
+                          background: tokens.primary.DEFAULT,
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 8,
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          cursor: bonusApplying ? "wait" : "pointer",
+                          opacity: bonusApplying ? 0.7 : 1,
+                        }}
+                      >
+                        {t("bonusApply")}
+                      </button>
+                    </div>
+                    {bonusErr ? <p style={{ fontSize: "0.75rem", color: "#b91c1c", margin: "8px 0 0" }}>{bonusErr}</p> : null}
+                  </>
+                ) : (
+                  <p style={{ fontSize: "0.75rem", color: "#6b7280", margin: 0 }}>{t("bonusLogin")}</p>
+                )}
+              </div>
+              <Divider />
               <SummaryRow>
                 <span>{t("subtotal")}</span>
                 <span>{formatPriceCents(subtotalCents)} €</span>
               </SummaryRow>
+              {bonusDiscountCents > 0 && (
+                <SummaryRow>
+                  <span>{t("bonusDiscount")}</span>
+                  <span>−{formatPriceCents(bonusDiscountCents)} €</span>
+                </SummaryRow>
+              )}
               <SummaryRow>
                 <span>{t("shipping")}</span>
                 <span>{t("freeShipping")}</span>
               </SummaryRow>
               <SummaryTotal>
                 <span>{t("total")}</span>
-                <span>{formatPriceCents(subtotalCents)} €</span>
+                <span>{formatPriceCents(payCents != null ? payCents : subtotalCents)} €</span>
               </SummaryTotal>
             </SummaryCard>
           </Layout>

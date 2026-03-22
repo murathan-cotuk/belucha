@@ -86,7 +86,15 @@
     "freeShipping": "Gratuit",
     "total": "Total",
     "billingSameAsShipping": "Adresse de facturation identique à la livraison",
-    "billingAddress": "Adresse de facturation"
+    "billingAddress": "Adresse de facturation",
+    "bonusTitle": "Points bonus",
+    "bonusBalance": "Votre solde : {points} points",
+    "bonusHint": "25 points = 1 € de réduction. Par pas de 25. 100 points de bienvenue à l'inscription.",
+    "bonusPlaceholder": "Points (ex. 50, 75, 100)",
+    "bonusApply": "Appliquer",
+    "bonusDiscount": "Réduction bonus",
+    "bonusLogin": "Connectez-vous pour utiliser vos points.",
+    "bonusError": "Impossible d'appliquer les points."
   },
   "order": {
     "loading": "Chargement…",

@@ -86,7 +86,15 @@
     "freeShipping": "Free",
     "total": "Total",
     "billingSameAsShipping": "Billing address same as shipping",
-    "billingAddress": "Billing address"
+    "billingAddress": "Billing address",
+    "bonusTitle": "Bonus points",
+    "bonusBalance": "Your balance: {points} points",
+    "bonusHint": "25 points = €1 off. Redeem in steps of 25. You receive 100 welcome points when you register.",
+    "bonusPlaceholder": "Points (e.g. 50, 75, 100)",
+    "bonusApply": "Apply",
+    "bonusDiscount": "Bonus discount",
+    "bonusLogin": "Log in to redeem bonus points.",
+    "bonusError": "Could not apply bonus points."
   },
   "order": {
     "loading": "Loading…",

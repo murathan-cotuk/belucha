@@ -248,6 +248,7 @@ export default function AccountPage() {
               {[
                 { label: "Übersicht", icon: "👤", href: "/account" },
                 { label: "Meine Bestellungen", icon: "📦", href: "/orders" },
+                { label: "Bonuspunkte", icon: "⭐", href: "/bonus" },
               ].map((item) => (
                 <Link
                   key={item.href}
@@ -296,6 +297,20 @@ export default function AccountPage() {
 
             {/* Main content */}
             <div>
+              <Section title="Bonuspunkte">
+                <div style={{ fontSize: 32, fontWeight: 800, color: ORANGE, marginBottom: 8 }}>
+                  {customer?.bonus_points != null ? customer.bonus_points : "—"}{" "}
+                  <span style={{ fontSize: 16, fontWeight: 600, color: DARK }}>Punkte</span>
+                </div>
+                <p style={{ fontSize: 13, color: GRAY, margin: "0 0 12px", lineHeight: 1.5 }}>
+                  25 Punkte = 1 € Rabatt an der Kasse. Pro bezahltem Euro (aufgerundet) sammeln Sie Punkte; bei Registrierung gibt es 100
+                  Willkommenspunkte.
+                </p>
+                <Link href="/bonus" style={{ fontSize: 14, fontWeight: 600, color: ORANGE, textDecoration: "none" }}>
+                  Details &amp; Regeln →
+                </Link>
+              </Section>
+
               {/* Personal info */}
               <Section
                 title="Persönliche Daten"
