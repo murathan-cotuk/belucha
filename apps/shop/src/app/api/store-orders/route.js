@@ -7,9 +7,12 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const base = getBackendUrl();
+    const auth = request.headers.get("authorization");
+    const headers = { "Content-Type": "application/json" };
+    if (auth) headers.Authorization = auth;
     const res = await fetch(`${base}/store/orders`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     });
     const data = await res.json();

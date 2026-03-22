@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { useAuthGuard, getToken } from "@belucha/lib";
-import { Link } from "@/i18n/navigation";
+import { useAuthGuard, getToken, useCustomerAuth as useAuth } from "@belucha/lib";
+import { Link, useRouter } from "@/i18n/navigation";
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
+import AccountSidebar from "@/components/account/AccountSidebar";
 import { getMedusaClient } from "@/lib/medusa-client";
 import { formatPriceCents } from "@/lib/format";
 
@@ -151,7 +152,12 @@ export default function OrdersPage() {
       const res = await client.request("/store/orders/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setOrders(res?.orders || []);
+      if (res?.__error) {
+        setError(res.message || "Fehler");
+        setOrders([]);
+      } else {
+        setOrders(res?.orders || []);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -186,13 +192,12 @@ export default function OrdersPage() {
           onSubmitted={() => { setSuccessMsg("Retouranfrage wurde erfolgreich eingereicht. Wir melden uns bei dir!"); fetchOrders(); }}
         />
       )}
-      <main className="flex-grow">
-        <div className="max-w-4xl mx-auto px-4 py-12">
-          <div className="flex items-center gap-4 mb-8">
-            <Link href="/account" style={{ color: "#ff971c", fontSize: 14, textDecoration: "none" }}>← Mein Belucha</Link>
-            <h1 className="text-3xl font-bold text-gray-900">Meine Bestellungen</h1>
-          </div>
-
+      <main className="flex-grow bg-[#fafafa]">
+        <div className="max-w-[1100px] mx-auto px-4 py-12">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">Meine Bestellungen</h1>
+          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
+            <AccountSidebar onLogout={() => { logout(); router.push("/"); }} />
+            <div className="min-w-0">
           {successMsg && (
             <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
               ✓ {successMsg}
@@ -345,6 +350,8 @@ export default function OrdersPage() {
               })}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </main>
       <Footer />

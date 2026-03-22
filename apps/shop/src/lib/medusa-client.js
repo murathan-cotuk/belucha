@@ -299,6 +299,66 @@ class MedusaClient {
     return res
   }
 
+  async getWishlist(token) {
+    const res = await this.request('/store/wishlist', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res?.__error) return { items: [] }
+    return res
+  }
+
+  async addWishlistProduct(token, productId) {
+    return this.request('/store/wishlist', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ product_id: productId }),
+    })
+  }
+
+  async removeWishlistProduct(token, productId) {
+    return this.request(`/store/wishlist/${encodeURIComponent(productId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  }
+
+  async getCustomerAddresses(token) {
+    const res = await this.request('/store/customers/me/addresses', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res?.__error) return { addresses: [] }
+    return res
+  }
+
+  async createCustomerAddress(token, data) {
+    const res = await this.request('/store/customers/me/addresses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+    if (res?.__error) throw new Error(res.message || 'Adresse speichern fehlgeschlagen')
+    return res
+  }
+
+  async updateCustomerAddress(token, addressId, data) {
+    const res = await this.request(`/store/customers/me/addresses/${encodeURIComponent(addressId)}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+    if (res?.__error) throw new Error(res.message || 'Update failed')
+    return res
+  }
+
+  async deleteCustomerAddress(token, addressId) {
+    const res = await this.request(`/store/customers/me/addresses/${encodeURIComponent(addressId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res?.__error) throw new Error(res.message || 'Delete failed')
+    return res
+  }
+
   /**
    * Store pages (CMS, published only)
    */

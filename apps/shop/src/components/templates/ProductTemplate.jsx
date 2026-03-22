@@ -19,6 +19,7 @@ import { StarRating } from "@/components/ProductCard";
 import { ProductCard } from "@/components/ProductCard";
 import { Lightbox } from "@/components/Lightbox";
 import ToCartButton from "@/components/ui/To Cart Button";
+import ProductWishlistHeart from "@/components/ProductWishlistHeart";
 
 const Container = styled.div`
   max-width: 100%;
@@ -857,9 +858,23 @@ export default function ProductTemplate() {
       <ThreeCol>
         {/* Left: Gallery — sticky until Kunden section */}
         <GalleryCol>
-          <MainImageWrap onClick={() => displayImages.length > 0 && setLightboxOpen(true)}>
-            <MainImage src={mainImage} alt={displayTitle} />
-          </MainImageWrap>
+          <div style={{ position: "relative", width: "100%" }}>
+            <MainImageWrap onClick={() => displayImages.length > 0 && setLightboxOpen(true)}>
+              <MainImage src={mainImage} alt={displayTitle} />
+            </MainImageWrap>
+            {product?.id && (
+              <div
+                style={{ position: "absolute", top: 8, right: 8, zIndex: 5 }}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="presentation"
+              >
+                <div style={{ position: "relative" }}>
+                  <ProductWishlistHeart productId={product.id} useAbsolute={false} />
+                </div>
+              </div>
+            )}
+          </div>
           {displayImages.length > 1 && (
             <Thumbnails>
               {displayImages.map((img, index) => (

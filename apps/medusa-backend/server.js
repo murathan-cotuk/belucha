@@ -609,6 +609,40 @@ async function start() {
   );
 `).catch(() => {})
         await client.query(`
+          CREATE TABLE IF NOT EXISTS store_customer_wishlist (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            customer_id uuid NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+            product_id uuid NOT NULL REFERENCES admin_hub_products(id) ON DELETE CASCADE,
+            created_at timestamptz DEFAULT now(),
+            UNIQUE(customer_id, product_id)
+          );
+        `).catch(() => {})
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_customer_wishlist_customer ON store_customer_wishlist(customer_id)').catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_customer_addresses (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            customer_id uuid NOT NULL REFERENCES store_customers(id) ON DELETE CASCADE,
+            label text,
+            address_line1 text NOT NULL,
+            address_line2 text,
+            zip_code varchar(20),
+            city text,
+            country varchar(10),
+            is_default_shipping boolean NOT NULL DEFAULT false,
+            is_default_billing boolean NOT NULL DEFAULT false,
+            created_at timestamptz DEFAULT now(),
+            updated_at timestamptz DEFAULT now()
+          );
+        `).catch(() => {})
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_customer_addresses_customer ON store_customer_addresses(customer_id)').catch(() => {})
+        await client.query(`
+          INSERT INTO store_customer_addresses (customer_id, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing)
+          SELECT c.id, c.address_line1, c.address_line2, c.zip_code, c.city, COALESCE(NULLIF(TRIM(c.country), ''), 'DE'), true, true
+          FROM store_customers c
+          WHERE c.address_line1 IS NOT NULL AND TRIM(c.address_line1) <> ''
+            AND NOT EXISTS (SELECT 1 FROM store_customer_addresses a WHERE a.customer_id = c.id)
+        `).catch(() => {})
+        await client.query(`
   CREATE TABLE IF NOT EXISTS store_returns (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     return_number BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 200001 INCREMENT BY 1),
@@ -3088,14 +3122,306 @@ async function start() {
         )
         await client.end()
         const row = r.rows[0]
-        if (!row) return res.status(404).json({ message: 'Customer not found' })
+        if (!row) {
+          await client.end()
+          return res.status(404).json({ message: 'Customer not found' })
+        }
+        let addresses = []
+        let wishlist_product_ids = []
+        try {
+          const ar = await client.query(
+            `SELECT id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing, created_at
+             FROM store_customer_addresses WHERE customer_id = $1::uuid ORDER BY created_at ASC`,
+            [payload.id],
+          )
+          addresses = ar.rows || []
+        } catch (_) {}
+        try {
+          const wr = await client.query(
+            'SELECT product_id FROM store_customer_wishlist WHERE customer_id = $1::uuid ORDER BY created_at DESC',
+            [payload.id],
+          )
+          wishlist_product_ids = (wr.rows || []).map((x) => x.product_id)
+        } catch (_) {}
+        await client.end()
         res.json({
           customer: {
             ...row,
             customer_number: row.customer_number ? Number(row.customer_number) : null,
             bonus_points: Number(row.bonus_points || 0),
+            addresses,
+            wishlist_product_ids,
           },
         })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeWishlistGET = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          'SELECT product_id, created_at FROM store_customer_wishlist WHERE customer_id = $1::uuid ORDER BY created_at DESC',
+          [payload.id],
+        )
+        await client.end()
+        res.json({ items: (r.rows || []).map((x) => ({ product_id: x.product_id, created_at: x.created_at })) })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeWishlistPOST = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const productId = (req.body?.product_id || req.body?.productId || '').toString().trim()
+      if (!productId) return res.status(400).json({ message: 'product_id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const ex = await client.query('SELECT id FROM admin_hub_products WHERE id = $1::uuid', [productId])
+        if (!ex.rows?.[0]) {
+          await client.end()
+          return res.status(404).json({ message: 'Product not found' })
+        }
+        await client.query(
+          `INSERT INTO store_customer_wishlist (customer_id, product_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT (customer_id, product_id) DO NOTHING`,
+          [payload.id, productId],
+        )
+        await client.end()
+        res.status(201).json({ ok: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeWishlistDELETE = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const productId = (req.params?.productId || '').toString().trim()
+      if (!productId) return res.status(400).json({ message: 'product id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_customer_wishlist WHERE customer_id = $1::uuid AND product_id = $2::uuid', [payload.id, productId])
+        await client.end()
+        res.json({ ok: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeCustomerAddressesGET = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `SELECT id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing, created_at
+           FROM store_customer_addresses WHERE customer_id = $1::uuid ORDER BY created_at ASC`,
+          [payload.id],
+        )
+        await client.end()
+        res.json({ addresses: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeCustomerAddressesPOST = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const b = req.body || {}
+      const address_line1 = (b.address_line1 || '').toString().trim()
+      if (!address_line1) return res.status(400).json({ message: 'address_line1 required' })
+      const label = (b.label || '').toString().trim() || null
+      const address_line2 = (b.address_line2 || '').toString().trim() || null
+      const zip_code = (b.zip_code || b.postal_code || '').toString().trim() || null
+      const city = (b.city || '').toString().trim() || null
+      const country = (b.country || 'DE').toString().trim() || 'DE'
+      let is_default_shipping = b.is_default_shipping === true
+      let is_default_billing = b.is_default_billing === true
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const cntR = await client.query('SELECT COUNT(*)::int AS n FROM store_customer_addresses WHERE customer_id = $1::uuid', [payload.id])
+        const n = Number(cntR.rows?.[0]?.n || 0)
+        if (n === 0) {
+          is_default_shipping = true
+          is_default_billing = true
+        }
+        if (is_default_shipping) {
+          await client.query('UPDATE store_customer_addresses SET is_default_shipping = false WHERE customer_id = $1::uuid', [payload.id])
+        }
+        if (is_default_billing) {
+          await client.query('UPDATE store_customer_addresses SET is_default_billing = false WHERE customer_id = $1::uuid', [payload.id])
+        }
+        const ins = await client.query(
+          `INSERT INTO store_customer_addresses (customer_id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing)
+           VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9)
+           RETURNING id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing, created_at`,
+          [payload.id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing],
+        )
+        await client.end()
+        res.status(201).json({ address: ins.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeCustomerAddressesPATCH = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const addressId = (req.params?.addressId || '').toString().trim()
+      if (!addressId) return res.status(400).json({ message: 'address id required' })
+      const b = req.body || {}
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const own = await client.query(
+          'SELECT id FROM store_customer_addresses WHERE id = $1::uuid AND customer_id = $2::uuid',
+          [addressId, payload.id],
+        )
+        if (!own.rows?.[0]) {
+          await client.end()
+          return res.status(404).json({ message: 'Address not found' })
+        }
+        const sets = []
+        const vals = []
+        const push = (col, v) => {
+          vals.push(v)
+          sets.push(`${col} = $${vals.length}`)
+        }
+        if ('label' in b) push('label', (b.label || '').toString().trim() || null)
+        if ('address_line1' in b) {
+          const v = (b.address_line1 || '').toString().trim()
+          if (!v) {
+            await client.end()
+            return res.status(400).json({ message: 'address_line1 required' })
+          }
+          push('address_line1', v)
+        }
+        if ('address_line2' in b) push('address_line2', (b.address_line2 || '').toString().trim() || null)
+        if ('zip_code' in b || 'postal_code' in b) push('zip_code', (b.zip_code || b.postal_code || '').toString().trim() || null)
+        if ('city' in b) push('city', (b.city || '').toString().trim() || null)
+        if ('country' in b) push('country', (b.country || '').toString().trim() || null)
+        if (b.is_default_shipping === true) {
+          await client.query('UPDATE store_customer_addresses SET is_default_shipping = false WHERE customer_id = $1::uuid', [payload.id])
+          sets.push('is_default_shipping = true')
+        } else if (b.is_default_shipping === false) {
+          sets.push('is_default_shipping = false')
+        }
+        if (b.is_default_billing === true) {
+          await client.query('UPDATE store_customer_addresses SET is_default_billing = false WHERE customer_id = $1::uuid', [payload.id])
+          sets.push('is_default_billing = true')
+        } else if (b.is_default_billing === false) {
+          sets.push('is_default_billing = false')
+        }
+        if (!sets.length) {
+          await client.end()
+          return res.status(400).json({ message: 'Nothing to update' })
+        }
+        sets.push('updated_at = NOW()')
+        const idPos = vals.length + 1
+        const custPos = vals.length + 2
+        const r = await client.query(
+          `UPDATE store_customer_addresses SET ${sets.join(', ')} WHERE id = $${idPos}::uuid AND customer_id = $${custPos}::uuid
+           RETURNING id, label, address_line1, address_line2, zip_code, city, country, is_default_shipping, is_default_billing, created_at, updated_at`,
+          [...vals, addressId, payload.id],
+        )
+        await client.end()
+        res.json({ address: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const storeCustomerAddressesDELETE = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      const payload = verifyCustomerToken(token)
+      if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
+      const addressId = (req.params?.addressId || '').toString().trim()
+      if (!addressId) return res.status(400).json({ message: 'address id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const del = await client.query(
+          'DELETE FROM store_customer_addresses WHERE id = $1::uuid AND customer_id = $2::uuid RETURNING is_default_shipping, is_default_billing',
+          [addressId, payload.id],
+        )
+        const deleted = del.rows?.[0]
+        if (!deleted) {
+          await client.end()
+          return res.status(404).json({ message: 'Address not found' })
+        }
+        if (deleted.is_default_shipping) {
+          await client.query('UPDATE store_customer_addresses SET is_default_shipping = false WHERE customer_id = $1::uuid', [payload.id])
+          const n = await client.query(
+            'SELECT id FROM store_customer_addresses WHERE customer_id = $1::uuid ORDER BY created_at ASC LIMIT 1',
+            [payload.id],
+          )
+          if (n.rows?.[0]?.id) {
+            await client.query('UPDATE store_customer_addresses SET is_default_shipping = true WHERE id = $1::uuid', [n.rows[0].id])
+          }
+        }
+        if (deleted.is_default_billing) {
+          await client.query('UPDATE store_customer_addresses SET is_default_billing = false WHERE customer_id = $1::uuid', [payload.id])
+          const n = await client.query(
+            'SELECT id FROM store_customer_addresses WHERE customer_id = $1::uuid ORDER BY created_at ASC LIMIT 1',
+            [payload.id],
+          )
+          if (n.rows?.[0]?.id) {
+            await client.query('UPDATE store_customer_addresses SET is_default_billing = true WHERE id = $1::uuid', [n.rows[0].id])
+          }
+        }
+        await client.end()
+        res.json({ ok: true })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Error' })
@@ -3126,6 +3452,8 @@ async function start() {
         const { Client } = require('pg')
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
+        const custId = payload.id ? String(payload.id).trim() : null
+        const custEmail = payload.email ? String(payload.email).trim() : ''
         const ordersR = await client.query(
           `SELECT id, order_number, order_status, payment_status, delivery_status,
                   total_cents, subtotal_cents, shipping_cents, discount_cents, currency,
@@ -3134,8 +3462,11 @@ async function start() {
                   billing_address_line1, billing_city, billing_postal_code, billing_country, billing_same_as_shipping,
                   payment_method, tracking_number, carrier_name, shipped_at, delivery_date, notes,
                   newsletter_opted_in, created_at, updated_at
-           FROM store_orders WHERE LOWER(email) = LOWER($1) ORDER BY created_at DESC`,
-          [payload.email]
+           FROM store_orders
+           WHERE ($2::uuid IS NOT NULL AND customer_id = $2::uuid)
+              OR (email IS NOT NULL AND TRIM(email) <> '' AND LOWER(TRIM(email)) = LOWER(TRIM($1)))
+           ORDER BY created_at DESC`,
+          [custEmail, custId || null]
         )
         const orderIds = (ordersR.rows || []).map(r => r.id)
         let itemsMap = {}
@@ -3206,8 +3537,12 @@ async function start() {
         await client.connect()
         // Verify order belongs to customer
         const orderR = await client.query(
-          'SELECT id, order_number, delivery_status, delivery_date, total_cents FROM store_orders WHERE id = $1::uuid AND LOWER(email) = LOWER($2)',
-          [orderId, payload.email]
+          `SELECT id, order_number, delivery_status, delivery_date, total_cents FROM store_orders WHERE id = $1::uuid
+           AND (
+             ($3::uuid IS NOT NULL AND customer_id = $3::uuid)
+             OR (email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($2)))
+           )`,
+          [orderId, payload.email, payload.id || null],
         )
         if (!orderR.rows[0]) { await client.end(); return res.status(404).json({ message: 'Order not found' }) }
         const order = orderR.rows[0]
@@ -3249,6 +3584,18 @@ async function start() {
       if (!cartId) return res.status(400).json({ message: 'cart_id required' })
       if (!paymentIntentId) return res.status(400).json({ message: 'payment_intent_id required' })
 
+      const authHdr = (req.headers.authorization || '').toString()
+      const bearerTok = authHdr.startsWith('Bearer ') ? authHdr.slice(7).trim() : ''
+      let jwtCustomerId = null
+      let jwtEmail = null
+      if (bearerTok) {
+        const jp = verifyCustomerToken(bearerTok)
+        if (jp?.id && jp?.email) {
+          jwtCustomerId = String(jp.id).trim()
+          jwtEmail = String(jp.email).trim()
+        }
+      }
+
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       if (!dbUrl || !dbUrl.startsWith('postgres')) return res.status(503).json({ message: 'Database not configured' })
 
@@ -3269,10 +3616,10 @@ async function start() {
         const totalCents = Math.max(0, subtotalCents - discountCents)
         const bonusPointsRedeemed = reservedPts
 
-        const email = (body.email || '').toString().trim() || null
-        const first_name = (body.first_name || '').toString().trim() || null
-        const last_name = (body.last_name || '').toString().trim() || null
-        const phone = (body.phone || '').toString().trim() || null
+        let email = (body.email || '').toString().trim() || null
+        let first_name = (body.first_name || '').toString().trim() || null
+        let last_name = (body.last_name || '').toString().trim() || null
+        let phone = (body.phone || '').toString().trim() || null
         const address_line1 = (body.address_line1 || '').toString().trim() || null
         const address_line2 = (body.address_line2 || '').toString().trim() || null
         const city = (body.city || '').toString().trim() || null
@@ -3298,27 +3645,44 @@ async function start() {
           }
         } catch (_) {}
 
-        // Look up customer by email; auto-create guest record if not found
+        // Customer: angemeldet → immer Konto-E-Mail + customer_id (Bestellungen unter „Meine Bestellungen“)
         let customerId = null
         let isGuest = true
         try {
-          const custRes = await client.query('SELECT id, account_type FROM store_customers WHERE LOWER(email) = LOWER($1)', [email])
-          if (custRes.rows && custRes.rows[0]) {
-            customerId = custRes.rows[0].id
-            isGuest = custRes.rows[0].account_type === 'gastkunde'
-          } else if (email) {
-            const insC = await client.query(
-              `INSERT INTO store_customers (email, first_name, last_name, phone, account_type, address_line1, zip_code, city, country)
-               VALUES ($1,$2,$3,$4,'gastkunde',$5,$6,$7,$8)
-               ON CONFLICT (email) DO UPDATE SET
-                 first_name = COALESCE(EXCLUDED.first_name, store_customers.first_name),
-                 last_name  = COALESCE(EXCLUDED.last_name,  store_customers.last_name),
-                 updated_at = now()
-               RETURNING id`,
-              [email, first_name, last_name, phone, address_line1, postal_code, city, country]
+          if (jwtCustomerId && jwtEmail) {
+            email = jwtEmail
+            const accR = await client.query(
+              'SELECT id, account_type, first_name, last_name, phone, email FROM store_customers WHERE id = $1::uuid',
+              [jwtCustomerId],
             )
-            if (insC.rows && insC.rows[0]) customerId = insC.rows[0].id
-            isGuest = true
+            const acc = accR.rows?.[0]
+            if (acc) {
+              customerId = acc.id
+              isGuest = acc.account_type === 'gastkunde'
+              if (!first_name && acc.first_name) first_name = acc.first_name
+              if (!last_name && acc.last_name) last_name = acc.last_name
+              if (!phone && acc.phone) phone = acc.phone
+              if (acc.email) email = String(acc.email).trim()
+            }
+          } else if (email) {
+            const custRes = await client.query('SELECT id, account_type FROM store_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))', [email])
+            if (custRes.rows && custRes.rows[0]) {
+              customerId = custRes.rows[0].id
+              isGuest = custRes.rows[0].account_type === 'gastkunde'
+            } else {
+              const insC = await client.query(
+                `INSERT INTO store_customers (email, first_name, last_name, phone, account_type, address_line1, zip_code, city, country)
+                 VALUES ($1,$2,$3,$4,'gastkunde',$5,$6,$7,$8)
+                 ON CONFLICT (email) DO UPDATE SET
+                   first_name = COALESCE(EXCLUDED.first_name, store_customers.first_name),
+                   last_name  = COALESCE(EXCLUDED.last_name,  store_customers.last_name),
+                   updated_at = now()
+                 RETURNING id`,
+                [email, first_name, last_name, phone, address_line1, postal_code, city, country],
+              )
+              if (insC.rows && insC.rows[0]) customerId = insC.rows[0].id
+              isGuest = true
+            }
           }
         } catch (_) {}
 
@@ -4961,6 +5325,13 @@ async function start() {
     httpApp.post('/store/auth/token', storeAuthTokenPOST)
     httpApp.get('/store/customers/me', storeCustomersMeGET)
     httpApp.patch('/store/customers/me', storeCustomerMePATCH)
+    httpApp.get('/store/customers/me/addresses', storeCustomerAddressesGET)
+    httpApp.post('/store/customers/me/addresses', storeCustomerAddressesPOST)
+    httpApp.patch('/store/customers/me/addresses/:addressId', storeCustomerAddressesPATCH)
+    httpApp.delete('/store/customers/me/addresses/:addressId', storeCustomerAddressesDELETE)
+    httpApp.get('/store/wishlist', storeWishlistGET)
+    httpApp.post('/store/wishlist', storeWishlistPOST)
+    httpApp.delete('/store/wishlist/:productId', storeWishlistDELETE)
     httpApp.get('/store/orders/me', storeOrdersMeGET)
     httpApp.post('/store/orders/:id/return-request', storeReturnRequestPOST)
 

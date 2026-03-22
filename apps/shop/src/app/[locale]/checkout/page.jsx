@@ -20,7 +20,7 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { Link } from "@/i18n/navigation";
 import { tokens } from "@/design-system/tokens";
 import PayNowButton from "@/components/ui/PayNowButton";
-import { getToken } from "@belucha/lib";
+import { getToken, useCustomerAuth as useCustomerAuthHook } from "@belucha/lib";
 import { getMedusaClient } from "@/lib/medusa-client";
 
 const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
@@ -268,6 +268,10 @@ function CheckoutFormField({
   );
 }
 
+function applyToField(field, value) {
+  field.onChange({ target: { value: value ?? "" } });
+}
+
 function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents }) {
   const t = useTranslations("checkout");
   const stripe = useStripe();
@@ -276,8 +280,13 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
   const params = useParams();
   const locale = params?.locale || "de";
   const { setCart } = useCart();
+  const { user } = useCustomerAuthHook();
   const returnRunRef = useRef(false);
   const [paymentElementReady, setPaymentElementReady] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [shipAddrId, setShipAddrId] = useState("");
+  const [billAddrId, setBillAddrId] = useState("");
+  const [saveNewAddress, setSaveNewAddress] = useState(false);
 
   const email = useField("");
   const firstName = useField("");
@@ -299,6 +308,39 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const payCentsDisplay = amountToPayCents != null ? amountToPayCents : subtotalCents;
+
+  useEffect(() => {
+    if (!user?.id) {
+      setSavedAddresses([]);
+      setShipAddrId("");
+      setBillAddrId("");
+      return;
+    }
+    const token = getToken("customer");
+    if (!token) return;
+    (async () => {
+      const client = getMedusaClient();
+      const me = await client.getCustomer(token);
+      const addrs = me?.customer?.addresses || [];
+      setSavedAddresses(addrs);
+      const c = me?.customer;
+      if (c?.email) applyToField(email, c.email);
+      if (c?.first_name) applyToField(firstName, c.first_name);
+      if (c?.last_name) applyToField(lastName, c.last_name);
+      if (c?.phone) applyToField(phone, c.phone);
+      const def = addrs.find((a) => a.is_default_shipping) || addrs[0];
+      if (def?.id) {
+        setShipAddrId(def.id);
+        applyToField(address, def.address_line1 || "");
+        applyToField(address2, def.address_line2 || "");
+        applyToField(city, def.city || "");
+        applyToField(postalCode, def.zip_code || "");
+        applyToField(country, def.country || "DE");
+      }
+      const defB = addrs.find((a) => a.is_default_billing) || def;
+      if (defB?.id) setBillAddrId(defB.id);
+    })();
+  }, [user?.id]);
 
   useEffect(() => {
     if (!stripe || typeof window === "undefined") return;
@@ -359,9 +401,12 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
       }
 
       try {
+        const custTok = typeof window !== "undefined" ? getToken("customer") : null;
+        const orderHeaders = { "Content-Type": "application/json" };
+        if (custTok) orderHeaders.Authorization = `Bearer ${custTok}`;
         const res = await fetch("/api/store-orders", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: orderHeaders,
           body: JSON.stringify({
             cart_id: cartId,
             payment_intent_id: paymentIntent.id,
@@ -385,6 +430,20 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
         const data = await res.json();
         const orderId = data?.order?.id;
         if (orderId) {
+          if (custTok && snapshot.save_new_address && !snapshot.ship_addr_id && snapshot.address_line1) {
+            try {
+              const client = getMedusaClient();
+              await client.createCustomerAddress(custTok, {
+                address_line1: snapshot.address_line1,
+                address_line2: snapshot.address_line2 || null,
+                zip_code: snapshot.postal_code || null,
+                city: snapshot.city || null,
+                country: snapshot.country || "DE",
+                is_default_shipping: snapshot.addr_count === 0,
+                is_default_billing: snapshot.addr_count === 0,
+              });
+            } catch (_) {}
+          }
           sessionStorage.setItem(`belucha_pi_done_${piId}`, "1");
           try {
             sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
@@ -458,6 +517,9 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
           billing_city: billingSameAsShipping ? undefined : billingCity.value.trim(),
           billing_postal_code: billingSameAsShipping ? undefined : billingPostalCode.value.trim(),
           billing_country: billingSameAsShipping ? undefined : billingCountry.value.trim(),
+          save_new_address: saveNewAddress,
+          ship_addr_id: shipAddrId || "",
+          addr_count: savedAddresses.length,
         }),
       );
     } catch (_) {}
@@ -493,9 +555,12 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
 
     if (paymentIntent?.status === "succeeded") {
       try {
+        const custTok = typeof window !== "undefined" ? getToken("customer") : null;
+        const orderHeaders = { "Content-Type": "application/json" };
+        if (custTok) orderHeaders.Authorization = `Bearer ${custTok}`;
         const res = await fetch("/api/store-orders", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: orderHeaders,
           body: JSON.stringify({
             cart_id: cartId,
             payment_intent_id: paymentIntent.id,
@@ -519,6 +584,20 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
         const data = await res.json();
         const orderId = data?.order?.id;
         if (orderId) {
+          if (custTok && saveNewAddress && !shipAddrId && address.value.trim()) {
+            try {
+              const client = getMedusaClient();
+              await client.createCustomerAddress(custTok, {
+                address_line1: address.value.trim(),
+                address_line2: address2.value.trim() || null,
+                zip_code: postalCode.value.trim() || null,
+                city: city.value.trim() || null,
+                country: country.value.trim() || "DE",
+                is_default_shipping: savedAddresses.length === 0,
+                is_default_billing: savedAddresses.length === 0,
+              });
+            } catch (_) {}
+          }
           try {
             sessionStorage.removeItem(CHECKOUT_SNAPSHOT_KEY);
           } catch (_) {}
@@ -557,6 +636,44 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
 
       <FormCard style={{ marginBottom: 24 }}>
         <SectionTitle>{t("shippingAddress")}</SectionTitle>
+        {savedAddresses.length > 0 && (
+          <FieldWrap style={{ marginBottom: 16 }}>
+            <Label>Gespeicherte Adresse wählen</Label>
+            <select
+              value={shipAddrId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setShipAddrId(id);
+                const a = savedAddresses.find((x) => x.id === id);
+                if (a) {
+                  applyToField(address, a.address_line1 || "");
+                  applyToField(address2, a.address_line2 || "");
+                  applyToField(city, a.city || "");
+                  applyToField(postalCode, a.zip_code || "");
+                  applyToField(country, a.country || "DE");
+                }
+              }}
+              style={{
+                padding: "10px 12px",
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                fontSize: "0.9375rem",
+                fontFamily: "inherit",
+                color: "#111827",
+                background: "#fff",
+                width: "100%",
+                maxWidth: 480,
+              }}
+            >
+              <option value="">Neue Adresse eingeben …</option>
+              {savedAddresses.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {[a.label, a.address_line1, a.zip_code, a.city].filter(Boolean).join(" · ")}
+                </option>
+              ))}
+            </select>
+          </FieldWrap>
+        )}
         <FieldGrid>
           <CheckoutFormField label={t("address")} field={address} fullWidth autoComplete="street-address" />
           <CheckoutFormField label={t("address2")} field={address2} fullWidth autoComplete="address-line2" />
@@ -613,6 +730,44 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
       {!billingSameAsShipping && (
         <FormCard style={{ marginBottom: 24 }}>
           <SectionTitle>{t("billingAddress")}</SectionTitle>
+          {savedAddresses.length > 0 && (
+            <FieldWrap style={{ marginBottom: 16 }}>
+              <Label>Rechnungsadresse aus Konto</Label>
+              <select
+                value={billAddrId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setBillAddrId(id);
+                  const a = savedAddresses.find((x) => x.id === id);
+                  if (a) {
+                    applyToField(billingAddress, a.address_line1 || "");
+                    applyToField(billingAddress2, a.address_line2 || "");
+                    applyToField(billingCity, a.city || "");
+                    applyToField(billingPostalCode, a.zip_code || "");
+                    applyToField(billingCountry, a.country || "DE");
+                  }
+                }}
+                style={{
+                  padding: "10px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: 8,
+                  fontSize: "0.9375rem",
+                  fontFamily: "inherit",
+                  color: "#111827",
+                  background: "#fff",
+                  width: "100%",
+                  maxWidth: 480,
+                }}
+              >
+                <option value="">Andere Rechnungsadresse eingeben …</option>
+                {savedAddresses.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {[a.label, a.address_line1, a.zip_code, a.city].filter(Boolean).join(" · ")}
+                  </option>
+                ))}
+              </select>
+            </FieldWrap>
+          )}
           <FieldGrid>
             <CheckoutFormField label={t("address")} field={billingAddress} fullWidth autoComplete="billing street-address" />
             <CheckoutFormField label={t("address2")} field={billingAddress2} fullWidth autoComplete="billing address-line2" />
@@ -643,6 +798,20 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
             </FieldWrap>
           </FieldGrid>
         </FormCard>
+      )}
+
+      {user?.id && !shipAddrId && (
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "0.875rem", color: "#374151", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={saveNewAddress}
+              onChange={(e) => setSaveNewAddress(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: "#111827" }}
+            />
+            Diese Lieferadresse in meinem Konto speichern
+          </label>
+        </div>
       )}
 
       <FormCard>

@@ -9,6 +9,7 @@ import { storefrontProductHandle } from "@/lib/product-url-handle";
 import { resolveImageUrl } from "@/lib/image-url";
 import { localizedProductMediaList, variantImageUrlForLocale } from "@/lib/product-locale-media";
 import { optionDisplayLabel, optionCanonicalValue, variationGroupDisplayName } from "@/lib/variation-labels";
+import ProductWishlistHeart from "@/components/ProductWishlistHeart";
 import styled from "styled-components";
 
 /* ─────────────────────────────────────────────────────────── *
@@ -467,6 +468,7 @@ export function ProductCard({ product }) {
           {isNew && !hasSale && !isComingSoon && <Badge>New</Badge>}
           {outOfStock && !isComingSoon && <Badge $sold>Sold out</Badge>}
         </Badges>
+        {product?.id && <ProductWishlistHeart productId={product.id} />}
       </ImgBlock>
 
       <AddToCartBtn

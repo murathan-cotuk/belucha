@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useCustomerAuth as useAuth, useAuthGuard, getToken } from "@belucha/lib";
-import { Link } from "@/i18n/navigation";
+import { useRouter } from "@/i18n/navigation";
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
+import AccountSidebar from "@/components/account/AccountSidebar";
 import { getMedusaClient } from "@/lib/medusa-client";
 
 const ORANGE = "#ff971c";
@@ -14,7 +15,8 @@ const BORDER = "#e5e7eb";
 
 export default function BonusPage() {
   useAuthGuard({ requiredRole: "customer", redirectTo: "/login" });
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const [points, setPoints] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,15 +38,15 @@ export default function BonusPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fafafa" }}>
       <ShopHeader />
-      <main style={{ flex: 1, maxWidth: 720, margin: "0 auto", padding: "40px 24px", width: "100%", boxSizing: "border-box" }}>
-        <Link href="/account" style={{ fontSize: 14, color: GRAY, textDecoration: "none", marginBottom: 20, display: "inline-block" }}>
-          ← Zurück zum Konto
-        </Link>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: DARK, margin: "0 0 8px" }}>Meine Bonuspunkte</h1>
-        <p style={{ fontSize: 14, color: GRAY, margin: "0 0 28px", lineHeight: 1.5 }}>
-          Sammeln und einlösen Sie Punkte bei jedem Einkauf.
-        </p>
-
+      <main style={{ flex: 1, padding: "40px 24px", width: "100%", boxSizing: "border-box" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: DARK, margin: "0 0 8px" }}>Meine Bonuspunkte</h1>
+          <p style={{ fontSize: 14, color: GRAY, margin: "0 0 28px", lineHeight: 1.5 }}>
+            Sammeln und einlösen Sie Punkte bei jedem Einkauf.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "start" }}>
+            <AccountSidebar onLogout={() => { logout(); router.push("/"); }} />
+            <div style={{ minWidth: 0 }}>
         <div
           style={{
             background: "#fff",
@@ -82,6 +84,9 @@ export default function BonusPage() {
             </li>
             <li>Der Rabatt wird vom Bestellwert abgezogen; Sie zahlen den reduzierten Betrag mit Ihrer Zahlungsart.</li>
           </ul>
+        </div>
+            </div>
+          </div>
         </div>
       </main>
       <Footer />

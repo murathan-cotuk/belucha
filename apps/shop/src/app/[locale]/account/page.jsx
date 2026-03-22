@@ -5,6 +5,7 @@ import { useCustomerAuth as useAuth, useAuthGuard, getToken } from "@belucha/lib
 import { Link, useRouter } from "@/i18n/navigation";
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
+import AccountSidebar from "@/components/account/AccountSidebar";
 import { getMedusaClient } from "@/lib/medusa-client";
 
 const ORANGE = "#ff971c";
@@ -128,7 +129,7 @@ export default function AccountPage() {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [editSection, setEditSection] = useState(null); // "personal" | "address" | null
+  const [editSection, setEditSection] = useState(null); // "personal" | null
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState("");
@@ -201,8 +202,6 @@ export default function AccountPage() {
     return "Privatkunde";
   };
 
-  const countryName = (code) => COUNTRIES.find(c => c.code === code)?.name || code || "—";
-
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fff" }}>
@@ -243,57 +242,7 @@ export default function AccountPage() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "start" }}>
-            {/* Sidebar */}
-            <nav style={{ background: "#fff", borderRadius: 12, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
-              {[
-                { label: "Übersicht", icon: "👤", href: "/account" },
-                { label: "Meine Bestellungen", icon: "📦", href: "/orders" },
-                { label: "Bonuspunkte", icon: "⭐", href: "/bonus" },
-              ].map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "14px 18px",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: item.href === "/account" ? ORANGE : DARK,
-                    background: item.href === "/account" ? "#fff7ed" : "transparent",
-                    borderLeft: item.href === "/account" ? `3px solid ${ORANGE}` : "3px solid transparent",
-                    textDecoration: "none",
-                    borderBottom: `1px solid ${BORDER}`,
-                    transition: "all 0.1s",
-                  }}
-                >
-                  <span style={{ fontSize: 16 }}>{item.icon}</span>
-                  {item.label}
-                </Link>
-              ))}
-              <button
-                onClick={handleLogout}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "14px 18px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "#ef4444",
-                  background: "transparent",
-                  border: "none",
-                  borderLeft: "3px solid transparent",
-                  width: "100%",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ fontSize: 16 }}>🚪</span>
-                Abmelden
-              </button>
-            </nav>
+            <AccountSidebar onLogout={handleLogout} />
 
             {/* Main content */}
             <div>
@@ -372,58 +321,35 @@ export default function AccountPage() {
                 )}
               </Section>
 
-              {/* Address */}
               <Section
-                title="Lieferadresse"
-                action={editSection !== "address" && <EditButton onClick={() => startEdit("address")} />}
+                title="Adressen"
+                action={
+                  <Link href="/addresses" style={{ fontSize: 13, fontWeight: 600, color: ORANGE, textDecoration: "none" }}>
+                    Alle verwalten →
+                  </Link>
+                }
               >
-                {editSection === "address" ? (
-                  <div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={lbl}>Straße & Hausnummer</label>
-                        <input style={inp} value={form.address_line1} onChange={e => set("address_line1", e.target.value)} placeholder="Musterstraße 12" />
-                      </div>
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={lbl}>Adresszusatz (optional)</label>
-                        <input style={inp} value={form.address_line2} onChange={e => set("address_line2", e.target.value)} placeholder="Apartment, Stock, c/o…" />
-                      </div>
-                      <div>
-                        <label style={lbl}>PLZ</label>
-                        <input style={inp} value={form.zip_code} onChange={e => set("zip_code", e.target.value)} placeholder="12345" />
-                      </div>
-                      <div>
-                        <label style={lbl}>Stadt</label>
-                        <input style={inp} value={form.city} onChange={e => set("city", e.target.value)} placeholder="Berlin" />
-                      </div>
-                      <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={lbl}>Land</label>
-                        <select style={inp} value={form.country} onChange={e => set("country", e.target.value)}>
-                          <option value="">Bitte wählen…</option>
-                          {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    {saveErr && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{saveErr}</p>}
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <SaveButton onClick={saveEdit} loading={saving} />
-                      <button onClick={() => setEditSection(null)} style={{ padding: "10px 20px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, cursor: "pointer", background: "#fff", color: GRAY }}>
-                        Abbrechen
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  customer?.address_line1 ? (
-                    <div>
-                      <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK, fontWeight: 500 }}>{customer.address_line1}</p>
-                      {customer.address_line2 && <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK }}>{customer.address_line2}</p>}
-                      <p style={{ margin: "0 0 4px", fontSize: 15, color: DARK }}>{[customer.zip_code, customer.city].filter(Boolean).join(" ")}</p>
-                      <p style={{ margin: 0, fontSize: 15, color: DARK }}>{countryName(customer.country)}</p>
-                    </div>
-                  ) : (
-                    <p style={{ color: GRAY, fontSize: 14, margin: 0 }}>Noch keine Adresse gespeichert.</p>
-                  )
-                )}
+                <p style={{ fontSize: 14, color: DARK, margin: "0 0 8px", lineHeight: 1.5 }}>
+                  {Array.isArray(customer?.addresses) && customer.addresses.length > 0
+                    ? `${customer.addresses.length} gespeicherte Adresse${customer.addresses.length === 1 ? "" : "n"} — Liefer- und Rechnungsadresse können Sie dort festlegen.`
+                    : "Noch keine Adressen im Konto. Sie können mehrere Adressen speichern und Standard-Liefer- bzw. Rechnungsadresse wählen."}
+                </p>
+                <Link
+                  href="/addresses"
+                  style={{
+                    display: "inline-block",
+                    marginTop: 4,
+                    padding: "8px 16px",
+                    border: `1.5px solid ${ORANGE}`,
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: ORANGE,
+                    textDecoration: "none",
+                  }}
+                >
+                  Adressen bearbeiten
+                </Link>
               </Section>
 
               {/* Quick links */}
