@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Link, usePathname } from "@/i18n/navigation";
+import { restPathFromPathname } from "@/lib/shop-market";
 
 /**
  * @param {Object} props
@@ -10,7 +11,8 @@ import { Link, usePathname } from "@/i18n/navigation";
  */
 export default function Breadcrumbs({ title, items: customItems }) {
   const pathname = usePathname() || "";
-  const segments = pathname.split("/").filter(Boolean);
+  const crumbPath = restPathFromPathname(pathname);
+  const segments = crumbPath.split("/").filter(Boolean);
 
   let items;
   if (Array.isArray(customItems) && customItems.length > 0) {

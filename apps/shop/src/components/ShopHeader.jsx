@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter as useNextRouter } from "next/navigation";
-import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { Link, usePathname } from "@/i18n/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import styled from "styled-components";
 import { motion } from "framer-motion";
@@ -18,6 +18,13 @@ import TopBar from "@/components/TopBar";
 import { tokens } from "@/design-system/tokens";
 import { routing } from "@/i18n/routing";
 import { resolveImageUrl } from "@/lib/image-url";
+import {
+  parseMarketPath,
+  marketPrefix,
+  restPathFromPathname,
+  SHOP_CURRENCIES,
+} from "@/lib/shop-market";
+import { useMarketPrefix } from "@/context/MarketPrefixContext";
 
 const SCROLL_THRESHOLD = 60;
 const SCROLL_DELTA = 8; /* px; only toggle direction after this much scroll to avoid jitter */
@@ -246,6 +253,34 @@ const MiddleBarCartBadge = styled.span`
   display: flex;
   align-items: center;
   justify-content: center;
+`;
+
+const MiddleBarAccountBtn = styled(MiddleBarIconBtn)`
+  position: relative;
+`;
+
+/** Green check on profile when customer is signed in */
+const AccountSignedInBadge = styled.span`
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #4ade80 0%, #22c55e 100%);
+  border: 2px solid ${MIDDLE_BAR_BG};
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  pointer-events: none;
+
+  svg {
+    width: 9px;
+    height: 9px;
+    flex-shrink: 0;
+  }
 `;
 
 /* Locale dropdown trigger – sadece ikon */
@@ -507,8 +542,8 @@ const LocaleDropdown = styled.div`
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 480px;
-  max-width: 95vw;
+  width: 720px;
+  max-width: 96vw;
   background: ${tokens.background.card};
   border: 1px solid ${tokens.border.light};
   border-radius: 16px;
@@ -567,8 +602,21 @@ const SHOP_LOCALES = [
   { code: "tr", label: "Türkçe",     flag: "🇹🇷" },
 ];
 
+const CCY_FROM_ISO = { EUR: "eur", GBP: "gbp", CHF: "chf", USD: "usd", TRY: "try" };
+
+const SHOP_CCY_LABELS = {
+  eur: { label: "Euro", sub: "EUR" },
+  gbp: { label: "Sterling", sub: "GBP" },
+  chf: { label: "Franken", sub: "CHF" },
+  usd: { label: "US-Dollar", sub: "USD" },
+  try: { label: "Türkische Lira", sub: "TRY" },
+};
+
 export default function ShopHeader() {
+  const ctxPrefix = useMarketPrefix();
   const pathname = usePathname() || "/";
+  const marketParsed =
+    parseMarketPath(pathname) || (ctxPrefix ? parseMarketPath(ctxPrefix) : null);
   const nextRouter = useNextRouter();
   const [scrollY, setScrollY] = useState(0);
   const [scrollingDown, setScrollingDown] = useState(false);
@@ -576,27 +624,29 @@ export default function ShopHeader() {
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [localeDropdownOpen, setLocaleDropdownOpen] = useState(false);
-  const [selectedCountry, setSelectedCountry] = useState("DE");
   const [mainMenuItems, setMainMenuItems] = useState([]);
   const [secondMenuItems, setSecondMenuItems] = useState([]);
   const { isAuthenticated, user, logout } = useAuth();
 
-  // Load/persist selected country in localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("selectedCountry");
-      if (saved && SHOP_COUNTRIES.some((c) => c.code === saved)) setSelectedCountry(saved);
-    }
-  }, []);
+  const selectedCountry = (() => {
+    if (!marketParsed) return "DE";
+    const up = marketParsed.country.toUpperCase();
+    return SHOP_COUNTRIES.some((c) => c.code === up) ? up : "DE";
+  })();
+
+  const navigateTriple = (countryLower, langLower, curLower) => {
+    const tail = restPathFromPathname(pathname);
+    const suffix = tail === "/" ? "" : tail;
+    nextRouter.push(`${marketPrefix(countryLower, langLower, curLower)}${suffix}`);
+  };
+
   const handleSelectCountry = (countryCode) => {
-    setSelectedCountry(countryCode);
-    if (typeof window !== "undefined") localStorage.setItem("selectedCountry", countryCode);
-    const country = SHOP_COUNTRIES.find((c) => c.code === countryCode);
-    // Auto-navigate to country's default language if it differs from current
-    if (country && country.defaultLocale !== locale) {
-      const base = pathname === "/" ? "" : pathname;
-      nextRouter.push(`/${country.defaultLocale}${base}`);
-    }
+    const c = SHOP_COUNTRIES.find((x) => x.code === countryCode);
+    if (!c) return;
+    const m = countryCode.toLowerCase();
+    const lang = (c.defaultLocale || "de").toLowerCase();
+    const cur = CCY_FROM_ISO[c.currency] || "eur";
+    navigateTriple(m, lang, cur);
     setLocaleDropdownOpen(false);
   };
   const { openCartSidebar, itemCount } = useCart();
@@ -737,13 +787,12 @@ export default function ShopHeader() {
 
             <MiddleBarRight>
               <LocaleCurrencyWrap data-locale-dropdown>
-                <MiddleBarLocaleBtn type="button" onClick={() => { setUserMenuOpen(false); setMainMenuOpen(false); setLocaleDropdownOpen((v) => !v); }} title={tLocale("label")} aria-label="Sprache" aria-haspopup="listbox" aria-expanded={localeDropdownOpen}>
+                <MiddleBarLocaleBtn type="button" onClick={() => { setUserMenuOpen(false); setMainMenuOpen(false); setLocaleDropdownOpen((v) => !v); }} title={`${tLocale("label")} · Währung`} aria-label="Land, Sprache, Währung" aria-haspopup="listbox" aria-expanded={localeDropdownOpen}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
                   </svg>
                 </MiddleBarLocaleBtn>
                 <LocaleDropdown $open={localeDropdownOpen}>
-                  {/* Left: Country selector */}
                   <div style={{ flex: 1, borderRight: "1px solid #e5e7eb", padding: "16px 0" }}>
                     <div style={{ padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>Land</div>
                     {SHOP_COUNTRIES.map((c) => (
@@ -761,8 +810,7 @@ export default function ShopHeader() {
                       </LocaleOption>
                     ))}
                   </div>
-                  {/* Right: Language selector */}
-                  <div style={{ flex: 1, padding: "16px 0" }}>
+                  <div style={{ flex: 1, borderRight: "1px solid #e5e7eb", padding: "16px 0" }}>
                     <div style={{ padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>Sprache</div>
                     {SHOP_LOCALES.map((l) => (
                       <LocaleOption
@@ -771,8 +819,9 @@ export default function ShopHeader() {
                         data-active={locale === l.code ? "true" : "false"}
                         onClick={() => {
                           setLocaleDropdownOpen(false);
-                          const base = pathname === "/" ? "" : pathname;
-                          nextRouter.push(`/${l.code}${base}`);
+                          const m = marketParsed?.country ?? "de";
+                          const cur = marketParsed?.currency ?? "eur";
+                          navigateTriple(m, l.code, cur);
                         }}
                       >
                         <span style={{ fontSize: 20 }}>{l.flag}</span>
@@ -780,14 +829,51 @@ export default function ShopHeader() {
                       </LocaleOption>
                     ))}
                   </div>
+                  <div style={{ flex: 1, padding: "16px 0" }}>
+                    <div style={{ padding: "4px 16px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>Währung</div>
+                    {SHOP_CURRENCIES.map((code) => {
+                      const active = (marketParsed?.currency || "eur") === code;
+                      const meta = SHOP_CCY_LABELS[code] || { label: code.toUpperCase(), sub: code.toUpperCase() };
+                      return (
+                        <LocaleOption
+                          key={code}
+                          type="button"
+                          data-active={active ? "true" : "false"}
+                          onClick={() => {
+                            setLocaleDropdownOpen(false);
+                            const m = marketParsed?.country ?? "de";
+                            const lang = marketParsed?.lang ?? locale;
+                            navigateTriple(m, lang, code);
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{meta.label}</div>
+                            <div style={{ fontSize: 11, color: "#9ca3af" }}>{meta.sub}</div>
+                          </div>
+                        </LocaleOption>
+                      );
+                    })}
+                  </div>
                 </LocaleDropdown>
               </LocaleCurrencyWrap>
               <MiddleBarAccountWrap data-user-menu>
-                <MiddleBarIconBtn type="button" onClick={() => { setLocaleDropdownOpen(false); setMainMenuOpen(false); setUserMenuOpen((v) => !v); }} title="Mein Konto" aria-label="Mein Konto">
+                <MiddleBarAccountBtn
+                  type="button"
+                  onClick={() => { setLocaleDropdownOpen(false); setMainMenuOpen(false); setUserMenuOpen((v) => !v); }}
+                  title={isAuthenticated ? "Mein Konto — angemeldet" : "Mein Konto"}
+                  aria-label={isAuthenticated ? "Mein Konto, angemeldet" : "Mein Konto"}
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
                   </svg>
-                </MiddleBarIconBtn>
+                  {isAuthenticated && (
+                    <AccountSignedInBadge aria-hidden="true">
+                      <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </AccountSignedInBadge>
+                  )}
+                </MiddleBarAccountBtn>
                 <UserDropdown $open={userMenuOpen}>
                   {isAuthenticated ? (
                     <>

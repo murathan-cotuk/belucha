@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useLocale } from "next-intl";
+import { storefrontProductHandle } from "@/lib/product-url-handle";
 import { liteClient as algoliasearch } from "algoliasearch/lite";
 import { InstantSearch, useSearchBox, useHits, useInstantSearch, Configure } from "react-instantsearch";
 import styled from "styled-components";
@@ -253,10 +254,11 @@ function SearchBarFallback({ placeholder = "Search...", maxHeight = "400px", hid
           {hits.map((product, i) => {
             const { title: hitTitle, description: hitDesc } = getLocalizedProduct(product, locale);
             const priceCents = product.variants?.[0]?.prices?.[0]?.amount ?? product.metadata?.price_cents ?? null;
+            const pathHandle = storefrontProductHandle(product, locale);
             return (
               <HitLink
                 key={product.id || product.handle || i}
-                href={product.handle ? `/produkt/${product.handle}` : "#"}
+                href={pathHandle ? `/produkt/${pathHandle}` : "#"}
                 onClick={() => setOpen(false)}
               >
                 {product.thumbnail && <HitImage src={product.thumbnail} alt="" />}

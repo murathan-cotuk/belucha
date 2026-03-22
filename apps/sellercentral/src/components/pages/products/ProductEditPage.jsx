@@ -25,9 +25,11 @@ import {
 } from "@shopify/polaris";
 import { ProductIcon, MenuHorizontalIcon, ViewIcon } from "@shopify/polaris-icons";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
-import { titleToHandle } from "@/lib/slugify";
+import { titleToHandle, sanitizeSeoHandleInput } from "@/lib/slugify";
 import { useUnsavedChanges } from "@/context/UnsavedChangesContext";
 import MediaPickerModal from "@/components/MediaPickerModal";
+import { routing } from "@/i18n/routing";
+import { encodeVariantPathKey } from "@/lib/variant-path-key";
 
 const getDefaultBaseUrl = () => {
   const env = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "";
@@ -45,6 +47,48 @@ const getDefaultShopUrl = () => {
   }
   return "";
 };
+
+/** Digits + one decimal dot — avoids controlled type="number" + toFixed fighting mid-edit. */
+function sanitizePriceDraftString(s) {
+  const t = String(s ?? "").replace(",", ".");
+  let out = "";
+  let dot = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch >= "0" && ch <= "9") out += ch;
+    else if (ch === "." && !dot) {
+      dot = true;
+      out += ".";
+    }
+  }
+  return out;
+}
+
+/** Per-locale variant image; no leaking another locale’s image into DE when `image_urls` is set. */
+function variantImageUrlForLocale(row, loc) {
+  const l = String(loc || "de").toLowerCase();
+  const map = row?.image_urls && typeof row.image_urls === "object" ? row.image_urls : {};
+  if (map[l]) return map[l];
+  const keys = Object.keys(map).filter((k) => map[k] != null && String(map[k]).trim() !== "");
+  if (keys.length === 0) return row?.image_url || "";
+  if (map.de) return map.de;
+  if (l === "de") return row?.image_url || "";
+  return row?.image_url || "";
+}
+
+/** Option `value` = canonical key; `labels[locale]` = display string for seller + shop. */
+function optionDisplayLabel(opt, loc) {
+  const l = String(loc || "de").toLowerCase();
+  if (opt && typeof opt === "object") {
+    const labels = opt.labels && typeof opt.labels === "object" ? opt.labels : {};
+    if (Object.prototype.hasOwnProperty.call(labels, l)) {
+      const s = labels[l];
+      if (s != null && String(s).trim() !== "") return String(s).trim();
+    }
+    return String(opt.value ?? "").trim();
+  }
+  return String(opt ?? "").trim();
+}
 
 const STATUS_OPTIONS = [
   { label: "Active", value: "published" },
@@ -90,15 +134,6 @@ const UNIT_TYPE_OPTIONS = [
   { label: "Piece", value: "stück" },
 ];
 
-const PRODUCT_LOCALES = [
-  { code: "de", label: "DE", flag: "🇩🇪", name: "Deutsch" },
-  { code: "en", label: "EN", flag: "🇬🇧", name: "English" },
-  { code: "fr", label: "FR", flag: "🇫🇷", name: "Français" },
-  { code: "it", label: "IT", flag: "🇮🇹", name: "Italiano" },
-  { code: "es", label: "ES", flag: "🇪🇸", name: "Español" },
-  { code: "tr", label: "TR", flag: "🇹🇷", name: "Türkçe" },
-];
-
 const PRODUCT_COUNTRIES = [
   { code: "DE", label: "Deutschland",   flag: "🇩🇪", currency: "EUR", symbol: "€",   vatRate: 19,  taxLabel: "MwSt." },
   { code: "AT", label: "Österreich",    flag: "🇦🇹", currency: "EUR", symbol: "€",   vatRate: 20,  taxLabel: "MwSt." },
@@ -110,6 +145,31 @@ const PRODUCT_COUNTRIES = [
   { code: "US", label: "United States", flag: "🇺🇸", currency: "USD", symbol: "$",   vatRate: 0,   taxLabel: "Tax" },
 ];
 const PRODUCT_COUNTRIES_MAP = Object.fromEntries(PRODUCT_COUNTRIES.map((c) => [c.code, c]));
+
+/** Pricing country from app locale (globe). AT/CH are not separate here. */
+const COUNTRY_FOR_UI_LOCALE = { de: "DE", en: "US", tr: "TR", fr: "FR", it: "IT", es: "ES" };
+
+function defaultShopMarketForLocale(loc) {
+  const l = String(loc || "de").toLowerCase();
+  if (l === "en") return "gb";
+  if (l === "tr") return "tr";
+  if (l === "fr") return "fr";
+  if (l === "it") return "it";
+  if (l === "es") return "es";
+  return "de";
+}
+
+function shopPreviewPrefix(loc) {
+  const l = String(loc || "de").toLowerCase();
+  return `/${defaultShopMarketForLocale(l)}/${l}/eur`;
+}
+
+function shopProductHandleForLocale(product, loc) {
+  const tr = product?.metadata?.translations?.[loc];
+  const h = (tr?.handle || "").trim();
+  if (h) return h;
+  return (product?.handle || "").trim();
+}
 
 function getEmptyProduct() {
   return {
@@ -180,11 +240,20 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [swatchPickerTarget, setSwatchPickerTarget] = useState(null);
   // Draft price strings keyed by `${variantKey}_${field}` — committed on blur
   const [priceInputs, setPriceInputs] = useState({});
+  const priceInputsRef = useRef({});
+  useEffect(() => {
+    priceInputsRef.current = priceInputs;
+  }, [priceInputs]);
+  // Per-country pricing: draft strings (text) — committed on blur; avoids number input + immediate toFixed
+  const [countryPriceDrafts, setCountryPriceDrafts] = useState({});
+  const countryPriceDraftsRef = useRef({});
+  useEffect(() => {
+    countryPriceDraftsRef.current = countryPriceDrafts;
+  }, [countryPriceDrafts]);
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   const [duplicateOptions, setDuplicateOptions] = useState(DEFAULT_DUPLICATE_OPTIONS);
   const [duplicateSaving, setDuplicateSaving] = useState(false);
-  const [editingLocale, setEditingLocale] = useState(locale);
-  const [editingCountry, setEditingCountry] = useState("DE");
+  const editingCountry = COUNTRY_FOR_UI_LOCALE[locale] || "DE";
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -261,13 +330,13 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   useEffect(() => {
     if (descriptionMode === "visual" && descEditorRef.current) {
       const tr = product?.metadata?.translations || {};
-      const locData = tr[editingLocale] || {};
-      const desc = editingLocale === "de"
+      const locData = tr[locale] || {};
+      const desc = locale === "de"
         ? (locData.description ?? product?.description ?? "")
         : (locData.description ?? "");
       descEditorRef.current.innerHTML = desc;
     }
-  }, [descriptionMode, editingLocale]);
+  }, [descriptionMode, locale, product?.description, product?.metadata?.translations]);
 
   function normalizeForCompare(p) {
     if (!p) return null;
@@ -313,12 +382,36 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const meta = product?.metadata && typeof product.metadata === "object" ? product.metadata : {};
 
   // Per-locale content for the currently editing locale
-  const editingTr = (meta.translations || {})[editingLocale] || {};
-  const editingTitle = editingLocale === "de" ? (editingTr.title ?? product?.title ?? "") : (editingTr.title ?? "");
-  const editingDescription = editingLocale === "de" ? (editingTr.description ?? product?.description ?? "") : (editingTr.description ?? "");
+  const editingTr = (meta.translations || {})[locale] || {};
+  const editingTitle = locale === "de" ? (editingTr.title ?? product?.title ?? "") : (editingTr.title ?? "");
+  const editingDescription = locale === "de" ? (editingTr.description ?? product?.description ?? "") : (editingTr.description ?? "");
   const editingBullets = Array.isArray(editingTr.bullet_points)
     ? editingTr.bullet_points
-    : (editingLocale === "de" && Array.isArray(meta.bullet_points) ? meta.bullet_points : []);
+    : (locale === "de" && Array.isArray(meta.bullet_points) ? meta.bullet_points : []);
+
+  // New product: URL handle follows the current locale title automatically (SEO slug).
+  useEffect(() => {
+    if (!isNew || !product) return;
+    const src = (editingTitle || "").trim() || (product.title || "").trim();
+    const next = titleToHandle(src);
+    if (!next) return;
+    setProduct((prev) => {
+      if (!prev) return prev;
+      const m = { ...(prev.metadata && typeof prev.metadata === "object" ? prev.metadata : {}) };
+      const tr = { ...(m.translations || {}) };
+      if (locale === "de") {
+        tr.de = { ...(tr.de || {}), handle: next };
+        const cur = (prev.handle || "").trim();
+        if (cur === next) return prev;
+        return { ...prev, handle: next, metadata: { ...m, translations: tr } };
+      }
+      const locPrev = { ...(tr[locale] || {}) };
+      const curH = (locPrev.handle || "").trim();
+      if (curH === next) return prev;
+      tr[locale] = { ...locPrev, handle: next };
+      return { ...prev, metadata: { ...m, translations: tr } };
+    });
+  }, [isNew, editingTitle, product?.title, locale]);
 
   // Per-country pricing for the currently editing country
   const currentCountryConf = PRODUCT_COUNTRIES_MAP[editingCountry] || PRODUCT_COUNTRIES_MAP["DE"];
@@ -346,18 +439,19 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       if (!prev) return prev;
       const m = { ...(prev.metadata && typeof prev.metadata === "object" ? prev.metadata : {}) };
       const tr = { ...(m.translations || {}) };
-      const locData = { ...(tr[editingLocale] || {}) };
-      locData[key] = value;
-      tr[editingLocale] = locData;
+      const locData = { ...(tr[locale] || {}) };
+      if (key === "handle" && (value === "" || value == null)) delete locData.handle;
+      else locData[key] = value;
+      tr[locale] = locData;
       m.translations = tr;
       // Keep product.title / product.description in sync for the primary DE locale
-      if (editingLocale === "de") {
+      if (locale === "de") {
         if (key === "title") return { ...prev, title: value, metadata: m };
         if (key === "description") return { ...prev, description: value, metadata: m };
       }
       return { ...prev, metadata: m };
     });
-  }, [editingLocale]);
+  }, [locale]);
 
   // ── Per-country price helpers ────────────────────────────────────
   const updateCountryPrice = useCallback((field, cents) => {
@@ -396,6 +490,24 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     });
   }, [editingCountry]);
 
+  /** Pass `rawFromDom` from blur `e.currentTarget.value` so the last keystroke is never lost (draft ref can lag one render). */
+  const commitCountryPriceDraft = useCallback((draftKey, metadataField, linkedClearKey, rawFromDom) => {
+    const fromRef = countryPriceDraftsRef.current[draftKey];
+    const raw =
+      rawFromDom !== undefined ? sanitizePriceDraftString(String(rawFromDom)) : fromRef;
+    if (raw === undefined) return;
+    const trimmed = String(raw).trim();
+    const n = parseFloat(trimmed.replace(",", "."));
+    updateCountryPrice(metadataField, trimmed === "" || Number.isNaN(n) ? null : Math.round(n * 100));
+    setCountryPriceDrafts((prev) => {
+      const next = { ...prev };
+      delete next[draftKey];
+      if (linkedClearKey) delete next[linkedClearKey];
+      countryPriceDraftsRef.current = next;
+      return next;
+    });
+  }, [updateCountryPrice]);
+
   const updateMeta = useCallback((key, value) => {
     setProduct((prev) => {
       if (!prev) return prev;
@@ -411,8 +523,6 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     const editingDescToSave = descriptionMode === "visual" && descEditorRef.current
       ? descriptionVisualToHtml(descEditorRef.current.innerHTML || "")
       : editingDescription;
-    // Always regenerate handle from the current title so shop URL stays in sync when name changes.
-    const handle = titleToHandle(editingTitle || product.title || "product") || (product.handle || "").trim();
     const fallbackStatus = initialProduct?.status ?? "draft";
     const nextStatus = product.status != null && String(product.status).trim() !== ""
       ? String(product.status).trim()
@@ -428,8 +538,8 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       }
       // Commit the currently editing locale's content
       const allTranslations = { ...(metadata.translations || {}) };
-      allTranslations[editingLocale] = {
-        ...(allTranslations[editingLocale] || {}),
+      allTranslations[locale] = {
+        ...(allTranslations[locale] || {}),
         title: editingTitle || product.title || "Untitled",
         description: editingDescToSave,
         bullet_points: editingBullets,
@@ -438,15 +548,26 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       if (!allTranslations.de?.title) {
         allTranslations.de = { ...(allTranslations.de || {}), title: product.title || "Untitled", description: product.description || "" };
       }
+      const canonicalHandle =
+        (product.handle || "").trim() ||
+        titleToHandle(allTranslations.de?.title || product.title || "product") ||
+        "product";
+      allTranslations.de = { ...(allTranslations.de || {}), handle: canonicalHandle };
       metadata.translations = allTranslations;
       // variation_groups already in metadata (kept in sync by applyVariantGroups); re-serialize for safety
       if (variantGroups.length > 0) {
         metadata.variation_groups = variantGroups.map((g) => ({
           name: (g.name || "Option").trim() || "Option",
-          options: (g.options || []).map((o) => ({
-            value: String(o.value ?? "").trim(),
-            ...(o.swatch_image ? { swatch_image: String(o.swatch_image).trim() } : {}),
-          })),
+          options: (g.options || []).map((o) => {
+            const row = {
+              value: String(o.value ?? "").trim(),
+              ...(o.swatch_image ? { swatch_image: String(o.swatch_image).trim() } : {}),
+            };
+            if (o.labels && typeof o.labels === "object" && Object.keys(o.labels).length > 0) {
+              row.labels = o.labels;
+            }
+            return row;
+          }),
         }));
       }
       // Top-level EAN alanı (SKU & EAN) güncellendiğinde shop tarafında doğru görünsün diye
@@ -465,7 +586,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       const canonicalDescription = metadata.translations?.de?.description || product.description || "";
       const payload = {
         title: canonicalTitle,
-        handle,
+        handle: canonicalHandle,
         sku: product.sku || "",
         description: canonicalDescription,
         status: nextStatus,
@@ -584,7 +705,15 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     );
   }
 
+  const hasLocaleMedia =
+    locale !== "de" &&
+    Object.prototype.hasOwnProperty.call((meta.translations || {})[locale] || {}, "media");
   const mediaUrls = (() => {
+    if (hasLocaleMedia) {
+      const m = editingTr.media;
+      if (Array.isArray(m)) return m.filter((u) => u != null && String(u).trim() !== "");
+      return [];
+    }
     const m = meta.media;
     if (Array.isArray(m)) return m.filter((u) => u != null && String(u).trim() !== "");
     if (m != null && String(m).trim() !== "") return [String(m)];
@@ -612,9 +741,32 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       options: (g.options || []).map((opt) => ({
         value: typeof opt === "object" ? String(opt.value ?? "") : String(opt ?? ""),
         swatch_image: typeof opt === "object" ? String(opt.swatch_image ?? opt.swatch_image_url ?? "") : "",
+        labels: typeof opt === "object" && opt.labels && typeof opt.labels === "object" ? { ...opt.labels } : {},
       })),
     }));
   })();
+
+  const getGroupDisplayName = (gi) => {
+    const g = variantGroups[gi];
+    if (!g) return "";
+    if (String(locale).toLowerCase() === "de") return g.name || "";
+    const trLoc = (meta.translations || {})[locale] || {};
+    const arr = trLoc.variation_groups;
+    if (Array.isArray(arr) && arr[gi]?.name != null && String(arr[gi].name).trim() !== "") {
+      return String(arr[gi].name);
+    }
+    return g.name || "";
+  };
+
+  const getOptionInputValue = (opt) => {
+    if (!opt) return "";
+    const labels = opt.labels && typeof opt.labels === "object" ? opt.labels : {};
+    if (Object.prototype.hasOwnProperty.call(labels, locale)) {
+      const s = labels[locale];
+      if (s != null) return String(s);
+    }
+    return String(opt.value || "");
+  };
 
   /**
    * Apply new groups config: regenerates variant matrix while preserving existing
@@ -651,10 +803,16 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
       });
       const metaGroups = nextGroups.map((g) => ({
         name: g.name || "Option",
-        options: (g.options || []).map((o) => ({
-          value: String(o.value ?? "").trim(),
-          ...(o.swatch_image ? { swatch_image: o.swatch_image } : {}),
-        })),
+        options: (g.options || []).map((o) => {
+          const row = {
+            value: String(o.value ?? "").trim(),
+            ...(o.swatch_image ? { swatch_image: o.swatch_image } : {}),
+          };
+          if (o.labels && typeof o.labels === "object" && Object.keys(o.labels).length > 0) {
+            row.labels = o.labels;
+          }
+          return row;
+        }),
       }));
       return {
         ...prev,
@@ -688,6 +846,9 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         v.sale_price_cents = !isNaN(n) && value !== "" ? Math.round(n * 100) : undefined;
       } else if (field === "inventory") {
         v.inventory = value !== "" ? parseInt(String(value), 10) || 0 : 0;
+      } else if (field === "image_urls") {
+        v.image_urls =
+          value && typeof value === "object" && Object.keys(value).length > 0 ? value : undefined;
       } else {
         v[field] = value || undefined;
       }
@@ -698,14 +859,32 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
   // Group-level helpers — all go through applyVariantGroups
   const vg_addGroup = () =>
-    applyVariantGroups([...variantGroups, { name: "", options: [{ value: "", swatch_image: "" }] }]);
+    applyVariantGroups([...variantGroups, { name: "", options: [{ value: "", swatch_image: "", labels: {} }] }]);
   const vg_removeGroup = (gi) =>
     applyVariantGroups(variantGroups.filter((_, i) => i !== gi));
-  const vg_setGroupName = (gi, name) =>
-    applyVariantGroups(variantGroups.map((g, i) => (i === gi ? { ...g, name } : g)));
+  const vg_setGroupName = (gi, name) => {
+    if (String(locale).toLowerCase() === "de") {
+      applyVariantGroups(variantGroups.map((g, i) => (i === gi ? { ...g, name } : g)));
+      return;
+    }
+    setProduct((prev) => {
+      if (!prev) return prev;
+      const m = { ...(prev.metadata && typeof prev.metadata === "object" ? prev.metadata : {}) };
+      const tr = { ...(m.translations || {}) };
+      const locData = { ...(tr[locale] || {}) };
+      const n = variantGroups.length;
+      const arr = Array.isArray(locData.variation_groups) ? [...locData.variation_groups] : [];
+      while (arr.length < n) arr.push({});
+      if (gi >= 0 && gi < n) arr[gi] = { ...arr[gi], name };
+      locData.variation_groups = arr;
+      tr[locale] = locData;
+      m.translations = tr;
+      return { ...prev, metadata: m };
+    });
+  };
   const vg_addOption = (gi) =>
     applyVariantGroups(variantGroups.map((g, i) =>
-      i === gi ? { ...g, options: [...(g.options || []), { value: "", swatch_image: "" }] } : g
+      i === gi ? { ...g, options: [...(g.options || []), { value: "", swatch_image: "", labels: {} }] } : g
     ));
   const vg_removeOption = (gi, oi) =>
     applyVariantGroups(variantGroups.map((g, i) =>
@@ -727,6 +906,61 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     applyVariantGroups(next);
   };
 
+  const handleOptionDisplayChange = (gi, oi, text) => {
+    const g = variantGroups[gi];
+    if (!g?.options?.[oi]) return;
+    const opt = g.options[oi];
+    const prevCanonical = String(opt.value || "").trim();
+    const labels = { ...(opt.labels || {}) };
+
+    if (!prevCanonical) {
+      const t = String(text || "").trim();
+      if (!t) {
+        const nextLabels = { ...labels };
+        delete nextLabels[locale];
+        applyVariantGroups(
+          variantGroups.map((gr, i) =>
+            i !== gi
+              ? gr
+              : {
+                  ...gr,
+                  options: gr.options.map((o, j) => (j === oi ? { ...o, labels: nextLabels } : o)),
+                }
+          )
+        );
+        return;
+      }
+      const seeded = { ...labels };
+      routing.locales.forEach((loc) => {
+        if (seeded[loc] == null || String(seeded[loc]).trim() === "") seeded[loc] = t;
+      });
+      applyVariantGroups(
+        variantGroups.map((gr, i) =>
+          i !== gi
+            ? gr
+            : {
+                ...gr,
+                options: gr.options.map((o, j) => (j === oi ? { ...o, value: t, labels: seeded } : o)),
+              }
+        )
+      );
+      return;
+    }
+
+    applyVariantGroups(
+      variantGroups.map((gr, i) =>
+        i !== gi
+          ? gr
+          : {
+              ...gr,
+              options: gr.options.map((o, j) =>
+                j === oi ? { ...o, labels: { ...(o.labels || {}), [locale]: text } } : o
+              ),
+            }
+      )
+    );
+  };
+
   // ─── Variant image picker ────────────────────────────────────────────────────
   const openVariantImgPicker = (optionValues) => {
     setVariantImgPickerTarget(optionValues);
@@ -738,7 +972,8 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
   const removeMedia = (index) => {
     const next = mediaUrls.filter((_, i) => i !== index);
-    updateMeta("media", next);
+    if (locale === "de") updateMeta("media", next);
+    else updateLocaleField("media", next);
   };
   const resolveMediaUrl = (url) => {
     if (!url) return "";
@@ -859,38 +1094,12 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
           <span style={{ display: "flex", alignItems: "center", width: 20, height: 20 }}><ProductIcon /></span>
           <span className="product-edit-name">{isNew ? "New product" : (product?.title || "Product")}</span>
         </Link>
-        <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-          {PRODUCT_LOCALES.map((l) => (
-            <button
-              key={l.code}
-              type="button"
-              onClick={() => setEditingLocale(l.code)}
-              title={l.name}
-              style={{
-                padding: "4px 9px",
-                borderRadius: 5,
-                border: editingLocale === l.code ? "2px solid #2563eb" : "1px solid #d1d5db",
-                background: editingLocale === l.code ? "#eff6ff" : "#f9fafb",
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: "pointer",
-                color: editingLocale === l.code ? "#1d4ed8" : "#6b7280",
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                lineHeight: 1,
-              }}
-            >
-              <span style={{ fontSize: 13 }}>{l.flag}</span> {l.label}
-            </button>
-          ))}
-        </div>
         <span style={{ flex: 1 }} />
         {!isNew && (
           <>
-            {product?.handle && (
+            {shopProductHandleForLocale(product, locale) && (
               <a
-                href={`${shopBaseUrl}/produkt/${encodeURIComponent(product.handle)}`}
+                href={`${shopBaseUrl}${shopPreviewPrefix(locale)}/produkt/${encodeURIComponent(shopProductHandleForLocale(product, locale))}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ textDecoration: "none" }}
@@ -919,10 +1128,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
         <Layout.Section>
           <Card>
             <BlockStack gap="300">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Title</Text>
-                <span style={{ fontSize: 11, color: "#6b7280" }}>{(PRODUCT_LOCALES.find(l => l.code === editingLocale) || {}).flag} {editingLocale.toUpperCase()}</span>
-              </div>
+              <Text as="h2" variant="bodyMd" fontWeight="regular">Title</Text>
               <TextField label="Title" labelHidden value={editingTitle} onChange={(v) => updateLocaleField("title", v)} placeholder="e.g. Cotton T-Shirt" autoComplete="off" />
 
               <Divider />
@@ -961,10 +1167,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
               <Divider />
               <BlockStack gap="200">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <Text as="h2" variant="bodyMd" fontWeight="regular">Description</Text>
-                  <span style={{ fontSize: 11, color: "#6b7280" }}>{(PRODUCT_LOCALES.find(l => l.code === editingLocale) || {}).flag} {editingLocale.toUpperCase()}</span>
-                </div>
+                <Text as="h2" variant="bodyMd" fontWeight="regular">Description</Text>
                 <div className="product-description-box">
                   <div className="product-description-toolbar">
                     <div className="product-description-toolbar-left">
@@ -1030,6 +1233,13 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Media</Text>
+              {locale !== "de" && (
+                <Text as="p" variant="bodySm" tone="subdued">
+                  {hasLocaleMedia
+                    ? "Images for this language only. Clear all to fall back to German media."
+                    : "Using German images until you add images for this language."}
+                </Text>
+              )}
               <div className="product-media-grid">
                 {mediaUrls.map((url, i) => (
                   <div key={i} className="product-media-item">
@@ -1051,7 +1261,10 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 multiple
                 onSelect={(urls) => {
                   const toAdd = urls.slice(0, Math.max(0, 6 - mediaUrls.length));
-                  if (toAdd.length) updateMeta("media", [...mediaUrls, ...toAdd].slice(0, 6));
+                  if (!toAdd.length) return;
+                  const merged = [...mediaUrls, ...toAdd].slice(0, 6);
+                  if (locale === "de") updateMeta("media", merged);
+                  else updateLocaleField("media", merged);
                 }}
               />
 
@@ -1059,11 +1272,30 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               <MediaPickerModal
                 open={variantImgPickerTarget !== null}
                 onClose={() => setVariantImgPickerTarget(null)}
-                title={variantImgPickerTarget ? `Görsel — ${variantImgPickerTarget.join(" / ")}` : "Varyant görseli"}
+                title={
+                  variantImgPickerTarget
+                    ? `Görsel (${locale.toUpperCase()}) — ${variantImgPickerTarget.join(" / ")}`
+                    : "Varyant görseli"
+                }
                 multiple={false}
                 onSelect={(urls) => {
-                  if (variantImgPickerTarget && urls[0]) {
+                  if (!variantImgPickerTarget || !urls[0]) {
+                    setVariantImgPickerTarget(null);
+                    return;
+                  }
+                  if (locale === "de") {
                     updateMatrixVariant(variantImgPickerTarget, "image_url", urls[0]);
+                  } else {
+                    const row = (product?.variants || []).find(
+                      (v) =>
+                        Array.isArray(v.option_values) &&
+                        v.option_values.join("\u0000") === variantImgPickerTarget.join("\u0000")
+                    );
+                    const map = {
+                      ...(row?.image_urls && typeof row.image_urls === "object" ? row.image_urls : {}),
+                      [locale]: urls[0],
+                    };
+                    updateMatrixVariant(variantImgPickerTarget, "image_urls", map);
                   }
                   setVariantImgPickerTarget(null);
                 }}
@@ -1088,53 +1320,51 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Pricing</Text>
 
-              {/* Country tabs */}
-              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                {PRODUCT_COUNTRIES.map((c) => (
-                  <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => setEditingCountry(c.code)}
-                    title={`${c.label} · ${c.currency} · ${c.taxLabel} ${c.vatRate}%`}
-                    style={{
-                      padding: "5px 11px",
-                      borderRadius: 6,
-                      border: editingCountry === c.code ? "2px solid #2563eb" : "1px solid #d1d5db",
-                      background: editingCountry === c.code ? "#eff6ff" : "#f9fafb",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      color: editingCountry === c.code ? "#1d4ed8" : "#6b7280",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 3,
-                      lineHeight: 1,
-                    }}
-                  >
-                    <span style={{ fontSize: 13 }}>{c.flag}</span> {c.code}
-                  </button>
-                ))}
-              </div>
-
               <Text as="p" variant="bodySm" tone="subdued">
                 {currentCountryConf.label} · {currentCountryConf.currency} · {currentCountryConf.taxLabel} {currentCountryConf.vatRate}%
               </Text>
 
-              {/* Netto / Brutto with lock */}
+              {/* Netto / Brutto with lock — currency shown beside field (Polaris prefix + controlled value breaks multi-char typing). */}
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8, flexWrap: "wrap" }}>
                 <Box minWidth="130px" flex="1">
                   <div className="product-edit-label">Netto (exkl. {currentCountryConf.taxLabel})</div>
-                  <TextField
-                    type="number"
-                    step="0.01"
-                    value={cpNettoCents != null ? (cpNettoCents / 100).toFixed(2) : ""}
-                    onChange={(v) => {
-                      const n = parseFloat(v.replace(",", "."));
-                      updateCountryPrice("netto_cents", isNaN(n) || v === "" ? null : Math.round(n * 100));
-                    }}
-                    placeholder="0.00"
-                    prefix={currentCountryConf.symbol}
-                  />
+                  <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                    <span style={{ flexShrink: 0, alignSelf: "center", fontSize: 14, fontWeight: 600, color: "var(--p-color-text-subdued)", minWidth: "1.25em" }} aria-hidden>{currentCountryConf.symbol}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <TextField
+                        label="Netto"
+                        labelHidden
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={
+                          (() => {
+                            const dk = `${editingCountry}_netto_cents`;
+                            return Object.prototype.hasOwnProperty.call(countryPriceDrafts, dk)
+                              ? countryPriceDrafts[dk]
+                              : cpNettoCents != null
+                                ? (cpNettoCents / 100).toFixed(2)
+                                : "";
+                          })()
+                        }
+                        onChange={(v) => {
+                          const dk = `${editingCountry}_netto_cents`;
+                          const clean = sanitizePriceDraftString(v);
+                          setCountryPriceDrafts((prev) => {
+                            const next = { ...prev, [dk]: clean };
+                            countryPriceDraftsRef.current = next;
+                            return next;
+                          });
+                        }}
+                        onBlur={(e) => {
+                          const dk = `${editingCountry}_netto_cents`;
+                          const clearBrutto = cpLinked ? `${editingCountry}_brutto_cents` : null;
+                          commitCountryPriceDraft(dk, "netto_cents", clearBrutto, e.currentTarget.value);
+                        }}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
                 </Box>
                 <div style={{ paddingBottom: 8 }}>
                   <button
@@ -1152,62 +1382,120 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 </div>
                 <Box minWidth="130px" flex="1">
                   <div className="product-edit-label">Brutto (inkl. {currentCountryConf.taxLabel} {currentCountryConf.vatRate > 0 ? currentCountryConf.vatRate + "%" : ""})</div>
-                  <TextField
-                    type="number"
-                    step="0.01"
-                    value={cpBruttoCents != null ? (cpBruttoCents / 100).toFixed(2) : ""}
-                    onChange={(v) => {
-                      const n = parseFloat(v.replace(",", "."));
-                      updateCountryPrice("brutto_cents", isNaN(n) || v === "" ? null : Math.round(n * 100));
-                    }}
-                    placeholder="0.00"
-                    prefix={currentCountryConf.symbol}
-                  />
+                  <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                    <span style={{ flexShrink: 0, alignSelf: "center", fontSize: 14, fontWeight: 600, color: "var(--p-color-text-subdued)", minWidth: "1.25em" }} aria-hidden>{currentCountryConf.symbol}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <TextField
+                        label="Brutto"
+                        labelHidden
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={
+                          (() => {
+                            const dk = `${editingCountry}_brutto_cents`;
+                            return Object.prototype.hasOwnProperty.call(countryPriceDrafts, dk)
+                              ? countryPriceDrafts[dk]
+                              : cpBruttoCents != null
+                                ? (cpBruttoCents / 100).toFixed(2)
+                                : "";
+                          })()
+                        }
+                        onChange={(v) => {
+                          const dk = `${editingCountry}_brutto_cents`;
+                          const clean = sanitizePriceDraftString(v);
+                          setCountryPriceDrafts((prev) => {
+                            const next = { ...prev, [dk]: clean };
+                            countryPriceDraftsRef.current = next;
+                            return next;
+                          });
+                        }}
+                        onBlur={(e) => {
+                          const dk = `${editingCountry}_brutto_cents`;
+                          const clearNetto = cpLinked ? `${editingCountry}_netto_cents` : null;
+                          commitCountryPriceDraft(dk, "brutto_cents", clearNetto, e.currentTarget.value);
+                        }}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
                 </Box>
                 <Box minWidth="130px" flex="1">
                   <div className="product-edit-label">UVP</div>
-                  <TextField
-                    type="number"
-                    step="0.01"
-                    value={cpUvpCents != null ? (cpUvpCents / 100).toFixed(2) : ""}
-                    onChange={(v) => {
-                      const n = parseFloat(v.replace(",", "."));
-                      updateCountryPrice("uvp_cents", isNaN(n) || v === "" ? null : Math.round(n * 100));
-                    }}
-                    placeholder="—"
-                    prefix={currentCountryConf.symbol}
-                  />
+                  <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                    <span style={{ flexShrink: 0, alignSelf: "center", fontSize: 14, fontWeight: 600, color: "var(--p-color-text-subdued)", minWidth: "1.25em" }} aria-hidden>{currentCountryConf.symbol}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <TextField
+                        label="UVP"
+                        labelHidden
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={
+                          (() => {
+                            const dk = `${editingCountry}_uvp_cents`;
+                            return Object.prototype.hasOwnProperty.call(countryPriceDrafts, dk)
+                              ? countryPriceDrafts[dk]
+                              : cpUvpCents != null
+                                ? (cpUvpCents / 100).toFixed(2)
+                                : "";
+                          })()
+                        }
+                        onChange={(v) => {
+                          const dk = `${editingCountry}_uvp_cents`;
+                          const clean = sanitizePriceDraftString(v);
+                          setCountryPriceDrafts((prev) => {
+                            const next = { ...prev, [dk]: clean };
+                            countryPriceDraftsRef.current = next;
+                            return next;
+                          });
+                        }}
+                        onBlur={(e) => commitCountryPriceDraft(`${editingCountry}_uvp_cents`, "uvp_cents", null, e.currentTarget.value)}
+                        placeholder="—"
+                      />
+                    </div>
+                  </div>
                 </Box>
                 <Box minWidth="130px" flex="1">
                   <div className="product-edit-label">Sale-Preis</div>
-                  <TextField
-                    type="number"
-                    step="0.01"
-                    value={cpSaleCents != null ? (cpSaleCents / 100).toFixed(2) : ""}
-                    onChange={(v) => {
-                      const n = parseFloat(v.replace(",", "."));
-                      updateCountryPrice("sale_cents", isNaN(n) || v === "" ? null : Math.round(n * 100));
-                    }}
-                    placeholder="—"
-                    prefix={currentCountryConf.symbol}
-                  />
+                  <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+                    <span style={{ flexShrink: 0, alignSelf: "center", fontSize: 14, fontWeight: 600, color: "var(--p-color-text-subdued)", minWidth: "1.25em" }} aria-hidden>{currentCountryConf.symbol}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <TextField
+                        label="Sale"
+                        labelHidden
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        value={
+                          (() => {
+                            const dk = `${editingCountry}_sale_cents`;
+                            return Object.prototype.hasOwnProperty.call(countryPriceDrafts, dk)
+                              ? countryPriceDrafts[dk]
+                              : cpSaleCents != null
+                                ? (cpSaleCents / 100).toFixed(2)
+                                : "";
+                          })()
+                        }
+                        onChange={(v) => {
+                          const dk = `${editingCountry}_sale_cents`;
+                          const clean = sanitizePriceDraftString(v);
+                          setCountryPriceDrafts((prev) => {
+                            const next = { ...prev, [dk]: clean };
+                            countryPriceDraftsRef.current = next;
+                            return next;
+                          });
+                        }}
+                        onBlur={(e) => commitCountryPriceDraft(`${editingCountry}_sale_cents`, "sale_cents", null, e.currentTarget.value)}
+                        placeholder="—"
+                      />
+                    </div>
+                  </div>
                 </Box>
               </div>
 
-              {cpBruttoCents != null && cpNettoCents != null && currentCountryConf.vatRate > 0 && (
-                <Text as="p" variant="bodySm" tone="subdued">
-                  {currentCountryConf.symbol}{(cpNettoCents / 100).toFixed(2)} netto + {currentCountryConf.taxLabel} {currentCountryConf.vatRate}% ({currentCountryConf.symbol}{((cpBruttoCents - cpNettoCents) / 100).toFixed(2)}) = {currentCountryConf.symbol}{(cpBruttoCents / 100).toFixed(2)} brutto
-                  {cpSaleCents != null && cpSaleCents > 0 && cpBruttoCents > 0 && (
-                    <> · Sale: <span style={{ textDecoration: "line-through" }}>{currentCountryConf.symbol}{(cpBruttoCents / 100).toFixed(2)}</span> → {currentCountryConf.symbol}{(cpSaleCents / 100).toFixed(2)}</>
-                  )}
-                </Text>
-              )}
-
               <Divider />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Text as="h2" variant="bodyMd" fontWeight="regular">Bullet points (max 5, je max. 120 Zeichen)</Text>
-                <span style={{ fontSize: 11, color: "#6b7280" }}>{(PRODUCT_LOCALES.find(l => l.code === editingLocale) || {}).flag} {editingLocale.toUpperCase()}</span>
-              </div>
+              <Text as="h2" variant="bodyMd" fontWeight="regular">Bullet points (max 5, je max. 120 Zeichen)</Text>
               <Text as="p" variant="bodySm" tone="subdued">Short selling points shown on the product page.</Text>
               {[0, 1, 2, 3, 4].map((i) => {
                 const val = editingBullets[i] ?? "";
@@ -1255,6 +1543,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                   <Text as="h2" variant="bodyMd" fontWeight="semibold">Variations</Text>
                   <Text as="p" variant="bodySm" tone="subdued">
                     Add groups (e.g. Color, Size). Variant combinations are auto-generated.
+                    Option values use one internal key (set on first entry); switch the globe to translate labels per language — shop shows the label for each locale.
                   </Text>
                 </div>
                 <Button variant="primary" size="slim" onClick={vg_addGroup}>+ Add Group</Button>
@@ -1288,7 +1577,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                         <TextField
                           label="Group name"
                           labelHidden
-                          value={group.name}
+                          value={getGroupDisplayName(gi)}
                           onChange={(v) => vg_setGroupName(gi, v)}
                           placeholder="e.g. Color, Size, Material"
                           autoComplete="off"
@@ -1330,8 +1619,8 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                           {/* Value input */}
                           <input
                             type="text"
-                            value={opt.value}
-                            onChange={(e) => vg_setOption(gi, oi, "value", e.target.value)}
+                            value={getOptionInputValue(opt)}
+                            onChange={(e) => handleOptionDisplayChange(gi, oi, e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
                                 e.preventDefault();
@@ -1368,8 +1657,9 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                       <table className="vg-matrix-table">
                         <thead>
                           <tr>
+                            <th style={{ width: 72 }} />
                             {variantGroups.map((g, gi) => (
-                              <th key={gi}>{g.name || `Group ${gi + 1}`}</th>
+                              <th key={gi}>{getGroupDisplayName(gi) || g.name || `Group ${gi + 1}`}</th>
                             ))}
                             <th>Image</th>
                             <th>SKU</th>
@@ -1382,24 +1672,45 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                         </thead>
                         <tbody>
                           {matrixRows.map((v, vi) => {
-                            // Variant product image: only explicitly set override (swatch images are separate)
-                            const overrideUrl = v.image_url ? resolveMediaUrl(v.image_url) : null;
-                            const effectiveImg = overrideUrl;
-                            const isOverride = !!overrideUrl;
+                            const raw = variantImageUrlForLocale(v, locale);
+                            const effectiveImg = raw ? resolveMediaUrl(raw) : null;
+                            const isOverride =
+                              locale === "de"
+                                ? !!v.image_url
+                                : !!(v.image_urls && v.image_urls[locale]);
 
                             return (
                               <tr key={vi}>
+                                <td style={{ verticalAlign: "middle" }}>
+                                  {isNew ? (
+                                    <Text as="span" variant="bodySm" tone="subdued">
+                                      —
+                                    </Text>
+                                  ) : (
+                                    <Link
+                                      href={`/products/${idOrHandle}/variants/${encodeVariantPathKey(v.option_values)}`}
+                                      style={{ fontSize: 13, fontWeight: 600 }}
+                                    >
+                                      Open
+                                    </Link>
+                                  )}
+                                </td>
                                 {/* Option values — read-only cells */}
                                 {v.option_values.map((val, oi) => {
-                                  const swatchUrl = variantGroups[oi]?.options?.find((o) => o.value === val)?.swatch_image;
+                                  const gOpt = variantGroups[oi];
+                                  const opt = (gOpt?.options || []).find(
+                                    (o) => String(o.value || "").trim().toLowerCase() === String(val || "").trim().toLowerCase()
+                                  );
+                                  const label = opt ? optionDisplayLabel(opt, locale) : val;
+                                  const swatchUrl = opt?.swatch_image;
                                   return (
                                     <td key={oi} style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
                                       {swatchUrl ? (
                                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                           <span style={{ width: 14, height: 14, borderRadius: "50%", display: "inline-block", backgroundImage: `url(${resolveMediaUrl(swatchUrl)})`, backgroundSize: "cover", flexShrink: 0, border: "1px solid var(--p-color-border)" }} />
-                                          {val}
+                                          {label}
                                         </span>
-                                      ) : val}
+                                      ) : label}
                                     </td>
                                   );
                                 })}
@@ -1420,7 +1731,27 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                                     </button>
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 80 }}>
                                       {isOverride && (
-                                        <button type="button" className="vg-clear-override" onClick={() => updateMatrixVariant(v.option_values, "image_url", "")}>
+                                        <button
+                                          type="button"
+                                          className="vg-clear-override"
+                                          onClick={() => {
+                                            if (locale === "de") {
+                                              updateMatrixVariant(v.option_values, "image_url", "");
+                                            } else {
+                                              const map = {
+                                                ...(v.image_urls && typeof v.image_urls === "object"
+                                                  ? v.image_urls
+                                                  : {}),
+                                              };
+                                              delete map[locale];
+                                              updateMatrixVariant(
+                                                v.option_values,
+                                                "image_urls",
+                                                Object.keys(map).length ? map : undefined
+                                              );
+                                            }
+                                          }}
+                                        >
                                           Löschen
                                         </button>
                                       )}
@@ -1445,33 +1776,35 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                                   ];
                                   return priceFields.map(({ f, centsKey, placeholder }) => {
                                     const dk = mkDraftKey(f);
-                                    const isDraft = dk in priceInputs;
+                                    const isDraft = Object.prototype.hasOwnProperty.call(priceInputs, dk);
                                     const displayVal = isDraft
                                       ? priceInputs[dk]
                                       : (v[centsKey] != null ? (Number(v[centsKey]) / 100).toFixed(2) : "");
                                     return (
                                       <td key={f}>
                                         <TextField
-                                          label=""
+                                          label={`Variant ${f}`}
                                           labelHidden
                                           value={displayVal}
                                           placeholder={placeholder}
                                           autoComplete="off"
                                           onChange={(val) => {
-                                            // Only allow digits, dot, comma
-                                            const clean = val.replace(",", ".");
-                                            setPriceInputs((prev) => ({ ...prev, [dk]: clean }));
+                                            const clean = sanitizePriceDraftString(val);
+                                            setPriceInputs((prev) => {
+                                              const next = { ...prev, [dk]: clean };
+                                              priceInputsRef.current = next;
+                                              return next;
+                                            });
                                           }}
-                                          onBlur={() => {
-                                            const raw = priceInputs[dk];
-                                            if (raw !== undefined) {
-                                              updateMatrixVariant(v.option_values, f, raw);
-                                              setPriceInputs((prev) => {
-                                                const next = { ...prev };
-                                                delete next[dk];
-                                                return next;
-                                              });
-                                            }
+                                          onBlur={(e) => {
+                                            const raw = sanitizePriceDraftString(e.currentTarget.value);
+                                            updateMatrixVariant(v.option_values, f, raw);
+                                            setPriceInputs((prev) => {
+                                              const next = { ...prev };
+                                              delete next[dk];
+                                              priceInputsRef.current = next;
+                                              return next;
+                                            });
                                           }}
                                         />
                                       </td>
@@ -1510,17 +1843,49 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">SEO</Text>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "var(--p-color-text-subdued)", marginBottom: 4 }}>URL-Handle (Shop)</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "var(--p-color-text-subdued)", marginBottom: 4 }}>
+                  URL-Handle (Shop){locale !== "de" ? " — this language" : " — canonical (German)"}
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
-                    value={product.handle || titleToHandle(editingTitle || product.title || "")}
-                    onChange={(e) => update({ handle: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") })}
+                    value={
+                      locale === "de"
+                        ? ((product.handle || "").trim() || titleToHandle(editingTitle || product.title || ""))
+                        : ((editingTr.handle || "").trim())
+                    }
+                    onChange={(e) => {
+                      const v = sanitizeSeoHandleInput(e.target.value);
+                      if (locale === "de") {
+                        setProduct((prev) => {
+                          if (!prev) return prev;
+                          const m = { ...(prev.metadata && typeof prev.metadata === "object" ? prev.metadata : {}) };
+                          const tr = { ...(m.translations || {}) };
+                          tr.de = { ...(tr.de || {}), handle: v };
+                          return { ...prev, handle: v, metadata: { ...m, translations: tr } };
+                        });
+                      } else {
+                        updateLocaleField("handle", v);
+                      }
+                    }}
                     style={{ flex: 1, padding: "6px 10px", border: "1px solid var(--p-color-border)", borderRadius: 6, fontSize: 12, fontFamily: "monospace" }}
                     placeholder="url-handle"
                   />
                   <button
                     type="button"
-                    onClick={() => update({ handle: titleToHandle(editingTitle || product.title || "") })}
+                    onClick={() => {
+                      const next = titleToHandle(editingTitle || product.title || "");
+                      if (locale === "de") {
+                        setProduct((prev) => {
+                          if (!prev) return prev;
+                          const m = { ...(prev.metadata && typeof prev.metadata === "object" ? prev.metadata : {}) };
+                          const tr = { ...(m.translations || {}) };
+                          tr.de = { ...(tr.de || {}), handle: next };
+                          return { ...prev, handle: next, metadata: { ...m, translations: tr } };
+                        });
+                      } else {
+                        updateLocaleField("handle", next);
+                      }
+                    }}
                     title="Titel → Handle synchronisieren"
                     style={{ padding: "6px 10px", background: "var(--p-color-bg-surface-hover)", border: "1px solid var(--p-color-border)", borderRadius: 6, cursor: "pointer", fontSize: 11, whiteSpace: "nowrap" }}
                   >
@@ -1528,7 +1893,13 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                   </button>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--p-color-text-subdued)", marginTop: 4 }}>
-                  Shop-URL: /produkt/<span style={{ fontFamily: "monospace" }}>{product.handle || titleToHandle(editingTitle || product.title || "…")}</span>
+                  Shop-URL: {shopPreviewPrefix(locale)}/produkt/
+                  <span style={{ fontFamily: "monospace" }}>
+                    {shopProductHandleForLocale(product, locale) || titleToHandle(editingTitle || product.title || "…")}
+                  </span>
+                  {locale !== "de" && !(editingTr.handle || "").trim() && (product.handle || "").trim() ? (
+                    <span> (empty uses DE handle)</span>
+                  ) : null}
                 </div>
               </div>
               <TextField label="Meta title" value={meta.seo_meta_title ?? ""} onChange={(v) => updateMeta("seo_meta_title", v)} placeholder="Meta title" autoComplete="off" />

@@ -10,6 +10,9 @@ import { getMedusaClient } from "@/lib/medusa-client";
 import { CartContext } from "@/context/CartContext";
 import { formatPriceCents, getLocalizedProduct } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
+import { storefrontProductHandle } from "@/lib/product-url-handle";
+import { localizedProductMediaList, variantImageUrlForLocale } from "@/lib/product-locale-media";
+import { optionDisplayLabel, optionCanonicalValue, variationGroupDisplayName } from "@/lib/variation-labels";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import Carousel from "@/components/Carousel";
 import { StarRating } from "@/components/ProductCard";
@@ -678,8 +681,10 @@ export default function ProductTemplate() {
   }, [slug]);
 
   useEffect(() => {
-    if (typeof document === "undefined" || !product?.handle) return;
-    const href = `${window.location.origin}/produkt/${product.handle}`;
+    if (typeof document === "undefined" || !product) return;
+    const pathSlug = storefrontProductHandle(product, locale);
+    if (!pathSlug) return;
+    const href = `${window.location.origin}/produkt/${pathSlug}`;
     let link = document.querySelector('link[rel="canonical"]');
     if (!link) {
       link = document.createElement("link");
@@ -687,7 +692,7 @@ export default function ProductTemplate() {
       document.head.appendChild(link);
     }
     link.href = href;
-  }, [product?.handle]);
+  }, [product, locale]);
 
   useEffect(() => {
     if (!product?.variation_groups?.length || !product?.variants?.length) return;
@@ -733,12 +738,13 @@ export default function ProductTemplate() {
   if (!product) return <Container>Produkt nicht gefunden.</Container>;
 
   const { title: displayTitle, description: displayDescription } = getLocalizedProduct(product, locale);
+  const localeMedia = localizedProductMediaList(product, locale);
   const rawImages = product.images?.length
     ? product.images
     : product.thumbnail
       ? [{ url: product.thumbnail, alt: product.title }]
-      : Array.isArray(product.metadata?.media) && product.metadata.media.length
-        ? product.metadata.media.map((url) => ({ url: typeof url === "string" ? url : url?.url, alt: product.title }))
+      : localeMedia.length
+        ? localeMedia.map((url) => ({ url: typeof url === "string" ? url : url?.url, alt: product.title }))
         : [];
   const images = rawImages.map((img) => ({ ...img, url: resolveImageUrl(img?.url || img) || img?.url || img }));
   const meta = product.metadata || {};
@@ -751,7 +757,10 @@ export default function ProductTemplate() {
     ? findVariantIndexByMap(variants, variationGroups, selectedOptions)
     : selectedVariantIndex;
   const variant = variants[effectiveVariantIndex] ?? variants[selectedVariantIndex] ?? variants[0];
-  const variantImageUrl = variant?.image_url ? resolveImageUrl(variant.image_url) : null;
+  const variantImageUrl = (() => {
+    const raw = variant ? variantImageUrlForLocale(variant, locale) : "";
+    return raw ? resolveImageUrl(raw) : null;
+  })();
   // When variant has its own image, gallery shows only that image; otherwise show product images
   const displayImages = variantImageUrl
     ? [{ url: variantImageUrl, alt: variant?.title || displayTitle }]
@@ -909,21 +918,29 @@ export default function ProductTemplate() {
           {/* ── Variant selector ── */}
           {useLinkedVariations && variationGroups?.length ? (
             <VariantSection>
-              {variationGroups.map((group) => {
+              {variationGroups.map((group, gIdx) => {
                 const groupName = group.name || "";
                 const selected = selectedOptions[groupName] ?? "";
+                const groupTitle = variationGroupDisplayName(group, gIdx, meta, locale);
+                const selectedOpt = (group.options || []).find(
+                  (o) => optionCanonicalValue(o).toLowerCase() === selected.trim().toLowerCase()
+                );
+                const selectedLabel = selected
+                  ? (selectedOpt ? optionDisplayLabel(selectedOpt, locale) : selected)
+                  : "";
                 const isSwatch = (group.options || []).some(
                   (o) => (typeof o === "object" && o.swatch_image)
                 );
                 return (
                   <VarGroup key={groupName}>
                     <VarLabel>
-                      {groupName}
-                      {selected && <VarLabelSelected>: {selected}</VarLabelSelected>}
+                      {groupTitle || groupName}
+                      {selectedLabel && <VarLabelSelected>: {selectedLabel}</VarLabelSelected>}
                     </VarLabel>
                     <VarRow>
                       {(group.options || []).map((opt, oIdx) => {
-                        const valueStr = (typeof opt === "object" ? (opt.value ?? "") : String(opt ?? "")).toString().trim();
+                        const valueStr = optionCanonicalValue(opt);
+                        const displayStr = optionDisplayLabel(opt, locale) || `Option ${oIdx + 1}`;
                         const swatchUrl = typeof opt === "object" && opt.swatch_image
                           ? resolveImageUrl(opt.swatch_image)
                           : null;
@@ -939,15 +956,15 @@ export default function ProductTemplate() {
                             <VarSwatch
                               key={oIdx}
                               type="button"
-                              title={valueStr}
+                              title={displayStr}
                               $selected={isSelected}
                               $oos={!inStock}
                               onClick={handleClick}
-                              aria-label={valueStr}
+                              aria-label={displayStr}
                               aria-pressed={isSelected}
                             >
                               {swatchUrl ? (
-                                <img src={swatchUrl} alt={valueStr} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
+                                <img src={swatchUrl} alt={displayStr} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
                               ) : (
                                 <span style={{ display: "block", width: "100%", height: "100%", borderRadius: "50%", background: valueStr.toLowerCase() }} />
                               )}
@@ -963,7 +980,7 @@ export default function ProductTemplate() {
                             onClick={handleClick}
                             aria-pressed={isSelected}
                           >
-                            {valueStr || `Option ${oIdx + 1}`}
+                            {displayStr}
                           </VarChip>
                         );
                       })}

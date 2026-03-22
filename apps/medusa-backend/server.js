@@ -1910,6 +1910,12 @@ async function start() {
             'SELECT id, title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants, created_at, updated_at FROM admin_hub_products WHERE LOWER(handle) = LOWER($1)',
             [val]
           )
+          if (!res.rows || !res.rows[0]) {
+            res = await client.query(
+              'SELECT id, title, handle, sku, description, status, seller_id, collection_id, price_cents, inventory, metadata, variants, created_at, updated_at FROM admin_hub_products WHERE EXISTS (SELECT 1 FROM jsonb_each(COALESCE(metadata->\'translations\', \'{}\'::jsonb)) AS tr(locale_key, tr_data) WHERE tr_data ? \'handle\' AND LENGTH(TRIM(COALESCE(tr_data->>\'handle\', \'\'))) > 0 AND LOWER(TRIM(tr_data->>\'handle\')) = LOWER($1)) LIMIT 1',
+              [val]
+            )
+          }
         }
         await client.end()
         const r = res.rows && res.rows[0]
@@ -2147,7 +2153,18 @@ async function start() {
             const vPriceCents = v.price_cents != null ? Number(v.price_cents) : (v.price != null ? Math.round(Number(v.price) * 100) : priceCents)
             const vCompareCents = v.compare_at_price_cents != null ? Number(v.compare_at_price_cents) : null
             const optionValues = Array.isArray(v.option_values) ? v.option_values : (v.value != null ? [v.value] : null)
-            return {
+            let image_urls = null
+            if (v.image_urls && typeof v.image_urls === 'object' && !Array.isArray(v.image_urls)) {
+              const m = {}
+              for (const [k, u] of Object.entries(v.image_urls)) {
+                const rk = (k || '').toString().toLowerCase().trim()
+                if (!rk) continue
+                const resolved = resolveUploadUrl(u || null)
+                if (resolved) m[rk] = resolved
+              }
+              if (Object.keys(m).length > 0) image_urls = m
+            }
+            const row = {
               id: p.id + '-v-' + i,
               product_id: p.id,
               title: v.title || (optionValues && optionValues.length > 0 ? optionValues.join(' / ') : v.value) || 'Option ' + (i + 1),
@@ -2162,6 +2179,8 @@ async function start() {
               image_url: resolveUploadUrl(v.image_url || v.image || null) || null,
               swatch_image_url: resolveUploadUrl(v.swatch_image_url || v.swatch_image || null) || null,
             }
+            if (image_urls) row.image_urls = image_urls
+            return row
           })
         : [{
             id: p.id + '-variant',

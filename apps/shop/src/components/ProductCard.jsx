@@ -5,7 +5,10 @@ import { Link } from "@/i18n/navigation";
 import { useLocale } from "next-intl";
 import { CartContext } from "@/context/CartContext";
 import { formatPriceCents, getLocalizedProduct, htmlToText } from "@/lib/format";
+import { storefrontProductHandle } from "@/lib/product-url-handle";
 import { resolveImageUrl } from "@/lib/image-url";
+import { localizedProductMediaList, variantImageUrlForLocale } from "@/lib/product-locale-media";
+import { optionDisplayLabel, optionCanonicalValue, variationGroupDisplayName } from "@/lib/variation-labels";
 import styled from "styled-components";
 
 /* ─────────────────────────────────────────────────────────── *
@@ -357,16 +360,18 @@ export function ProductCard({ product }) {
 
   const variant = normalizedVariants[effectiveIdx] ?? normalizedVariants[0] ?? variants[0];
 
+  const localeMedia = localizedProductMediaList(product, locale);
   /* Resolve primary and second image (hover) */
   const rawImg =
-    variant?.image_url ||
+    variantImageUrlForLocale(variant, locale) ||
     product.images?.[0]?.url ||
     product.thumbnail ||
-    (Array.isArray(product.metadata?.media) ? product.metadata.media[0] : null);
+    localeMedia[0] ||
+    null;
   const imgSrc = resolveImg(rawImg);
   const rawImg2 =
     product.images?.[1]?.url ||
-    (Array.isArray(product.metadata?.media) && product.metadata.media[1] ? product.metadata.media[1] : null);
+    (localeMedia[1] ? localeMedia[1] : null);
   const imgSrc2 = resolveImg(rawImg2);
 
   /* Price */
@@ -398,7 +403,7 @@ export function ProductCard({ product }) {
   const reviewAvg = meta.review_avg != null ? Number(meta.review_avg) : 0;
   const reviewCount = meta.review_count != null ? Number(meta.review_count) : 0;
 
-  const productUrl = `/produkt/${product.handle || product.id}`;
+  const productUrl = `/produkt/${storefrontProductHandle(product, locale) || product.id}`;
 
   const handleQuickAdd = async (e) => {
     e.preventDefault();
@@ -536,12 +541,14 @@ export function ProductCard({ product }) {
                 const MAX_OPTS = 5;
                 const opts = (group.options || []).slice(0, MAX_OPTS);
                 const extra = Math.max(0, (group.options || []).length - MAX_OPTS);
+                const pMeta = product.metadata || {};
                 return (
                   <VGroupRow key={gIdx}>
-                    <VGroupLabel>{group.name}</VGroupLabel>
+                    <VGroupLabel>{variationGroupDisplayName(group, gIdx, pMeta, locale) || group.name}</VGroupLabel>
                     <Pills>
                       {opts.map((opt, oIdx) => {
-                        const val = typeof opt === "object" ? (opt.value || "") : String(opt || "");
+                        const val = optionCanonicalValue(opt);
+                        const displayStr = optionDisplayLabel(opt, locale) || val;
                         const swatchUrl = typeof opt === "object" && opt.swatch_image ? resolveImg(opt.swatch_image) : null;
                         const isOn = (selectedOpts[gIdx] || "").toLowerCase() === val.toLowerCase();
                         // Check stock for this option (any variant with this option value)
@@ -558,15 +565,15 @@ export function ProductCard({ product }) {
                             $outOfStock={!hasStock}
                             $swatch={!!swatchUrl}
                             type="button"
-                            title={val}
+                            title={displayStr}
                             onClick={(e) => {
                               e.preventDefault();
                               setSelectedOpts((prev) => ({ ...prev, [gIdx]: val }));
                             }}
                           >
                             {swatchUrl ? (
-                              <img src={swatchUrl} alt={val} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} />
-                            ) : val}
+                              <img src={swatchUrl} alt={displayStr} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} />
+                            ) : displayStr}
                           </Pill>
                         );
                       })}

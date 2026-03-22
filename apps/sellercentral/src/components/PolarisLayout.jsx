@@ -218,6 +218,9 @@ export default function PolarisLayout({ children }) {
     </svg>
   );
 
+  const localeLabel =
+    LOCALES.find((l) => l.code === locale)?.label ?? String(locale || "").toUpperCase();
+
   const langSelector = (
     <Popover
       active={langDropdownOpen}
@@ -229,12 +232,17 @@ export default function PolarisLayout({ children }) {
         <Button
           variant="plain"
           onClick={() => setLangDropdownOpen((v) => !v)}
-          accessibilityLabel="Language / Dil"
+          accessibilityLabel={`Language / Dil — ${localeLabel}`}
           size="slim"
           style={{ color: "#fff" }}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, color: "#fff" }}>
-            <GlobeIcon />
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#fff" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 20, height: 20, flexShrink: 0 }}>
+              <GlobeIcon />
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.04em", lineHeight: 1 }}>
+              {localeLabel}
+            </span>
           </span>
         </Button>
       }
