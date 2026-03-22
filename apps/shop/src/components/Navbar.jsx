@@ -414,16 +414,22 @@ export default function Navbar() {
                     </UserName>
                   )}
               <DropdownItem href="/account" onClick={() => setIsDropdownOpen(false)}>
-                Konto
-              </DropdownItem>
-              <DropdownItem href="/favorites" onClick={() => setIsDropdownOpen(false)}>
-                Merkzettel
+                Übersicht
               </DropdownItem>
               <DropdownItem href="/orders" onClick={() => setIsDropdownOpen(false)}>
-                Bestellungen
+                Meine Bestellungen
               </DropdownItem>
-              <DropdownItem href="/invoices" onClick={() => setIsDropdownOpen(false)}>
-                Rechnungen
+              <DropdownItem href="/merkzettel" onClick={() => setIsDropdownOpen(false)}>
+                Merkzettel
+              </DropdownItem>
+              <DropdownItem href="/addresses" onClick={() => setIsDropdownOpen(false)}>
+                Adressen
+              </DropdownItem>
+              <DropdownItem href="/reviews" onClick={() => setIsDropdownOpen(false)}>
+                Bewertungen
+              </DropdownItem>
+              <DropdownItem href="/bonus" onClick={() => setIsDropdownOpen(false)}>
+                Bonuspunkte
               </DropdownItem>
                   <DropdownButton
                     onClick={() => {

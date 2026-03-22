@@ -3264,7 +3264,17 @@ async function start() {
       const payload = verifyCustomerToken(token)
       if (!payload?.id) return res.status(401).json({ message: 'Unauthorized' })
       const b = req.body || {}
-      const address_line1 = (b.address_line1 || '').toString().trim()
+      const address_line1 = (
+        b.address_line1 ??
+        b.line1 ??
+        b.street ??
+        b.address1 ??
+        b.address?.line1 ??
+        b.address?.address_line1 ??
+        ''
+      )
+        .toString()
+        .trim()
       if (!address_line1) return res.status(400).json({ message: 'address_line1 required' })
       const label = (b.label || '').toString().trim() || null
       const address_line2 = (b.address_line2 || '').toString().trim() || null
@@ -3334,8 +3344,21 @@ async function start() {
           sets.push(`${col} = $${vals.length}`)
         }
         if ('label' in b) push('label', (b.label || '').toString().trim() || null)
-        if ('address_line1' in b) {
-          const v = (b.address_line1 || '').toString().trim()
+        if (
+          'address_line1' in b ||
+          'line1' in b ||
+          'street' in b ||
+          'address1' in b
+        ) {
+          const v = (
+            b.address_line1 ??
+            b.line1 ??
+            b.street ??
+            b.address1 ??
+            ''
+          )
+            .toString()
+            .trim()
           if (!v) {
             await client.end()
             return res.status(400).json({ message: 'address_line1 required' })
@@ -4514,6 +4537,174 @@ async function start() {
       }
     }
 
+    const pdfDeLatin = (s) => {
+      if (s == null || s === undefined) return ''
+      return String(s)
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+        .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue')
+        .replace(/ß/g, 'ss')
+    }
+    const pdfFmtDate = (d) => {
+      if (!d) return '—'
+      try {
+        return new Date(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      } catch (_) {
+        return '—'
+      }
+    }
+    const pdfCents = (c) => (Number(c || 0) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) + ' EUR'
+
+    const adminHubOrderPdfInvoiceGET = async (req, res) => {
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const PDFDocument = require('pdfkit')
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const oRes = await client.query('SELECT * FROM store_orders WHERE id = $1::uuid', [id])
+        const row = oRes.rows && oRes.rows[0]
+        if (!row) {
+          await client.end()
+          return res.status(404).json({ message: 'Order not found' })
+        }
+        const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [id])
+        const itemRows = iRes.rows || []
+        await client.end()
+        client = null
+        const on = row.order_number != null ? String(row.order_number) : String(id).slice(0, 8)
+        const shopName = process.env.SHOP_INVOICE_NAME || 'Belucha'
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="Rechnung-${on}.pdf"`)
+        const doc = new PDFDocument({ margin: 48, size: 'A4' })
+        doc.pipe(res)
+        doc.fontSize(20).fillColor('#111').text(pdfDeLatin('Rechnung'), { align: 'right' })
+        doc.moveDown(0.2)
+        doc.fontSize(9).fillColor('#666').text(pdfDeLatin(shopName), { align: 'right' })
+        doc.fillColor('#111')
+        doc.moveDown(1.2)
+        doc.fontSize(10).text(`Rechnungs-Nr.: ${on}`)
+        doc.text(`Datum: ${pdfFmtDate(row.created_at)}`)
+        doc.text(`Bestell-ID: ${id}`)
+        doc.moveDown(0.6)
+        const custName = [row.first_name, row.last_name].filter(Boolean).join(' ')
+        doc.text(`Kunde: ${pdfDeLatin(custName || '—')}`)
+        if (row.email) doc.text(`E-Mail: ${pdfDeLatin(row.email)}`)
+        doc.moveDown(0.6)
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Lieferadresse'))
+        doc.font('Helvetica').fontSize(9)
+        ;[custName, row.address_line1, row.address_line2, [row.postal_code, row.city].filter(Boolean).join(' '), row.country].filter(Boolean).forEach((line) => doc.text(pdfDeLatin(line)))
+        const billDiff = row.billing_same_as_shipping === false && row.billing_address_line1
+        if (billDiff) {
+          doc.moveDown(0.5)
+          doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Rechnungsadresse'))
+          doc.font('Helvetica').fontSize(9)
+          ;[
+            [row.first_name, row.last_name].filter(Boolean).join(' '),
+            row.billing_address_line1,
+            row.billing_address_line2,
+            [row.billing_postal_code, row.billing_city].filter(Boolean).join(' '),
+            row.billing_country,
+          ]
+            .filter(Boolean)
+            .forEach((line) => doc.text(pdfDeLatin(line)))
+        }
+        doc.moveDown(0.8)
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Positionen'))
+        doc.font('Helvetica').fontSize(9)
+        itemRows.forEach((it) => {
+          const qty = Number(it.quantity || 1)
+          const unit = Number(it.unit_price_cents || 0)
+          const lineTotal = unit * qty
+          doc.text(
+            `${qty} x ${pdfDeLatin(it.title || 'Artikel')} — ${pdfCents(unit)} / Stk. — ${pdfCents(lineTotal)}`,
+            { width: 500 },
+          )
+        })
+        doc.moveDown(0.6)
+        const sub = row.subtotal_cents != null ? Number(row.subtotal_cents) : itemRows.reduce((s, it) => s + Number(it.unit_price_cents || 0) * Number(it.quantity || 1), 0)
+        const ship = Number(row.shipping_cents || 0)
+        const disc = Number(row.discount_cents || 0)
+        doc.text(`Zwischensumme: ${pdfCents(sub)}`)
+        doc.text(`Versand: ${ship > 0 ? pdfCents(ship) : '0,00 EUR (kostenlos)'}`)
+        if (disc > 0) doc.text(`Rabatt: -${pdfCents(disc)}`)
+        doc.font('Helvetica-Bold').fontSize(11).text(`Gesamt: ${pdfCents(row.total_cents != null ? row.total_cents : sub + ship - disc)}`)
+        doc.font('Helvetica').fontSize(8).fillColor('#666')
+        doc.moveDown(1)
+        doc.text(pdfDeLatin('Hinweis: Es handelt sich um eine vereinfachte Rechnung. Bei Fragen wenden Sie sich an den Verkäufer.'), { width: 480 })
+        doc.end()
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        if (!res.headersSent) res.status(500).json({ message: e?.message || 'PDF error' })
+      }
+    }
+
+    const adminHubOrderPdfLieferscheinGET = async (req, res) => {
+      const id = (req.params.id || '').trim()
+      if (!id) return res.status(400).json({ message: 'id required' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      if (!dbUrl) return res.status(503).json({ message: 'Database not configured' })
+      let client
+      try {
+        const PDFDocument = require('pdfkit')
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const oRes = await client.query('SELECT * FROM store_orders WHERE id = $1::uuid', [id])
+        const row = oRes.rows && oRes.rows[0]
+        if (!row) {
+          await client.end()
+          return res.status(404).json({ message: 'Order not found' })
+        }
+        const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [id])
+        const itemRows = iRes.rows || []
+        await client.end()
+        client = null
+        const on = row.order_number != null ? String(row.order_number) : String(id).slice(0, 8)
+        const shopName = process.env.SHOP_INVOICE_NAME || 'Belucha'
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="Lieferschein-${on}.pdf"`)
+        const doc = new PDFDocument({ margin: 48, size: 'A4' })
+        doc.pipe(res)
+        doc.fontSize(20).fillColor('#111').text(pdfDeLatin('Lieferschein'), { align: 'right' })
+        doc.moveDown(0.2)
+        doc.fontSize(9).fillColor('#666').text(pdfDeLatin(shopName), { align: 'right' })
+        doc.fillColor('#111')
+        doc.moveDown(1.2)
+        doc.fontSize(10).text(`Lieferschein-Nr.: ${on}`)
+        doc.text(`Datum: ${pdfFmtDate(row.created_at)}`)
+        doc.moveDown(0.6)
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Lieferadresse'))
+        doc.font('Helvetica').fontSize(9)
+        const custName = [row.first_name, row.last_name].filter(Boolean).join(' ')
+        ;[custName, row.address_line1, row.address_line2, [row.postal_code, row.city].filter(Boolean).join(' '), row.country].filter(Boolean).forEach((line) => doc.text(pdfDeLatin(line)))
+        doc.moveDown(0.8)
+        if (row.carrier_name || row.tracking_number) {
+          doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Versand'))
+          doc.font('Helvetica').fontSize(9)
+          if (row.carrier_name) doc.text(pdfDeLatin(String(row.carrier_name)))
+          if (row.tracking_number) doc.text(`Tracking: ${pdfDeLatin(String(row.tracking_number))}`)
+          doc.moveDown(0.6)
+        }
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Packstücke / Artikel'))
+        doc.font('Helvetica').fontSize(9)
+        itemRows.forEach((it) => {
+          const qty = Number(it.quantity || 1)
+          doc.text(`${qty} x ${pdfDeLatin(it.title || 'Artikel')}${it.product_handle ? ` (${pdfDeLatin(it.product_handle)})` : ''}`, { width: 500 })
+        })
+        doc.font('Helvetica').fontSize(8).fillColor('#666')
+        doc.moveDown(1)
+        doc.text(pdfDeLatin('Dieser Lieferschein dient der Zuordnung der Sendung. Keine Rechnung.'), { width: 480 })
+        doc.end()
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        if (!res.headersSent) res.status(500).json({ message: e?.message || 'PDF error' })
+      }
+    }
+
     const adminHubOrderPATCH = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       const id = (req.params.id || '').trim()
@@ -5340,6 +5531,8 @@ async function start() {
 
     httpApp.get('/admin-hub/v1/orders', adminHubOrdersGET)
     httpApp.post('/admin-hub/v1/orders', adminHubOrderPOST)
+    httpApp.get('/admin-hub/v1/orders/:id/pdf/invoice', adminHubOrderPdfInvoiceGET)
+    httpApp.get('/admin-hub/v1/orders/:id/pdf/lieferschein', adminHubOrderPdfLieferscheinGET)
     httpApp.get('/admin-hub/v1/orders/:id', adminHubOrderByIdGET)
     httpApp.patch('/admin-hub/v1/orders/:id', adminHubOrderPATCH)
     httpApp.delete('/admin-hub/v1/orders/:id', adminHubOrderDELETE)

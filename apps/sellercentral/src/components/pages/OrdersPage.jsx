@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button, InlineStack } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { getOrderPdfDownloadUrl } from "@/lib/order-pdf-url";
 import ShipOrdersModal from "@/components/orders/ShipOrdersModal";
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -79,6 +80,14 @@ function ExpandedRow({ order }) {
     <tr>
       <td colSpan={12} style={{ padding: 0, background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
         <div style={{ padding: "10px 24px 14px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Button url={getOrderPdfDownloadUrl(order.id, "invoice")} external variant="secondary" size="slim">
+              Rechnung (PDF)
+            </Button>
+            <Button url={getOrderPdfDownloadUrl(order.id, "lieferschein")} external variant="secondary" size="slim">
+              Lieferschein (PDF)
+            </Button>
+          </div>
           {showShipBlock && (
             <div
               style={{

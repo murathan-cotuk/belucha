@@ -26,27 +26,35 @@ export default function ProductWishlistHeart({ productId, title = "Merkzettel", 
   const { user } = useAuth();
   const { isInWishlist, toggle } = useWishlist();
   const [guestMsg, setGuestMsg] = useState(false);
+  const [apiErr, setApiErr] = useState("");
   const on = productId && isInWishlist(productId);
 
   const handleClick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!productId) return;
+    setApiErr("");
     if (!user?.id) {
       setGuestMsg(true);
       window.setTimeout(() => setGuestMsg(false), 4000);
       return;
     }
-    await toggle(productId);
+    const r = await toggle(productId);
+    if (r?.error) {
+      setApiErr(String(r.error));
+      window.setTimeout(() => setApiErr(""), 5000);
+    }
   };
 
   const btnStyle = {
     ...btnBase,
-    ...(positionAbsolute ? { position: "absolute", top: 8, right: 8, zIndex: 5 } : { position: "relative" }),
+    pointerEvents: "auto",
+    touchAction: "manipulation",
+    ...(positionAbsolute ? { position: "absolute", top: 8, right: 8, zIndex: 50 } : { position: "relative" }),
   };
 
   return (
-    <>
+    <span style={{ position: "relative", display: "inline-flex", verticalAlign: "middle" }}>
       <button
         type="button"
         onClick={handleClick}
@@ -54,6 +62,7 @@ export default function ProductWishlistHeart({ productId, title = "Merkzettel", 
         title={!user?.id ? "Zum Merkzettel — Anmeldung erforderlich" : on ? "Vom Merkzettel entfernen" : "Auf den Merkzettel"}
         style={btnStyle}
         onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill={on ? "#e11d48" : "none"} stroke={on ? "#e11d48" : "#374151"} strokeWidth="2" aria-hidden>
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
@@ -63,9 +72,9 @@ export default function ProductWishlistHeart({ productId, title = "Merkzettel", 
         <div
           style={{
             position: "absolute",
-            top: 48,
+            top: "calc(100% + 8px)",
             right: 0,
-            zIndex: 6,
+            zIndex: 60,
             maxWidth: 220,
             padding: "10px 12px",
             fontSize: 12,
@@ -84,6 +93,28 @@ export default function ProductWishlistHeart({ productId, title = "Merkzettel", 
           , um Produkte auf Ihren Merkzettel zu legen.
         </div>
       )}
-    </>
+      {apiErr && (
+        <div
+          role="alert"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            zIndex: 60,
+            maxWidth: 240,
+            padding: "8px 10px",
+            fontSize: 11,
+            lineHeight: 1.35,
+            background: "#fef2f2",
+            color: "#b91c1c",
+            borderRadius: 8,
+            border: "1px solid #fecaca",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {apiErr}
+        </div>
+      )}
+    </span>
   );
 }

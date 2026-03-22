@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
+import { getOrderPdfDownloadUrl } from "@/lib/order-pdf-url";
 import ShipOrdersModal from "@/components/orders/ShipOrdersModal";
 
 function fmtCents(c) {
@@ -194,12 +195,43 @@ export default function OrderDetailPage() {
         />
       )}
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <Button onClick={() => router.push(`/${locale}/orders`)}>← Bestellungen</Button>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
-          Bestellung #{order?.order_number || "—"}
-        </h1>
-        <span style={{ fontSize: 12, color: "#9ca3af" }}>{fmtDate(order?.created_at)}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+          marginBottom: 20,
+          flexWrap: "wrap",
+          width: "100%",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minWidth: 0 }}>
+          <Button onClick={() => router.push(`/${locale}/orders`)}>← Bestellungen</Button>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+            Bestellung #{order?.order_number || "—"}
+          </h1>
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>{fmtDate(order?.created_at)}</span>
+        </div>
+        {order?.id && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              alignItems: "center",
+              justifyContent: "flex-end",
+              flexShrink: 0,
+            }}
+          >
+            <Button url={getOrderPdfDownloadUrl(order.id, "invoice")} external variant="secondary">
+              Rechnung (PDF)
+            </Button>
+            <Button url={getOrderPdfDownloadUrl(order.id, "lieferschein")} external variant="secondary">
+              Lieferschein (PDF)
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && (

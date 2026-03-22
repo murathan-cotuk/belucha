@@ -331,10 +331,22 @@ class MedusaClient {
   }
 
   async createCustomerAddress(token, data) {
+    const d = data || {}
+    const line1 = (d.address_line1 ?? d.line1 ?? d.street ?? d.address1 ?? '')
+    const payload = {
+      label: d.label != null ? d.label : null,
+      address_line1: typeof line1 === 'string' ? line1.trim() : String(line1 || '').trim(),
+      address_line2: d.address_line2 != null ? String(d.address_line2).trim() || null : null,
+      zip_code: d.zip_code != null ? String(d.zip_code).trim() || null : null,
+      city: d.city != null ? String(d.city).trim() || null : null,
+      country: (d.country != null ? String(d.country).trim() : null) || 'DE',
+      is_default_shipping: d.is_default_shipping === true,
+      is_default_billing: d.is_default_billing === true,
+    }
     const res = await this.request('/store/customers/me/addresses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     })
     if (res?.__error) throw new Error(res.message || 'Adresse speichern fehlgeschlagen')
     return res

@@ -3,8 +3,8 @@
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
 import { ProductGrid } from "@/components/ProductGrid";
-import { Link } from "@/i18n/navigation";
-import { useState, useEffect, useRef } from "react";
+import { Link, useRouter } from "@/i18n/navigation";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useParams, notFound } from "next/navigation";
 import { resolveImageUrl, rewriteImageUrlsInHtml } from "@/lib/image-url";
 import styled, { keyframes } from "styled-components";
@@ -16,6 +16,9 @@ const RESERVED_HANDLES = [
   "search","login","register","account","bestsellers","recommended",
   "category","pages","collections","produkt","kollektion","product",
 ];
+
+/** Diese Slugs sind Shop-Routen, keine Kollektionen — sonst 404 über notFound(). */
+const WISHLIST_SLUGS = new Set(["merkzettel", "wishlist", "favorites"]);
 
 function sanitize(html) {
   if (!html) return "";
@@ -402,9 +405,20 @@ export default function CollectionPage() {
 
   const bodyRef = useRef(null);
 
+  useLayoutEffect(() => {
+    if (!handle) return;
+    const h = handle.toLowerCase();
+    if (WISHLIST_SLUGS.has(h)) {
+      router.replace("/favorites");
+    }
+  }, [handle, router]);
+
   /* ── Fetch ── */
   useEffect(() => {
     if (!handle) return;
+    if (WISHLIST_SLUGS.has(handle.toLowerCase())) {
+      return;
+    }
     if (RESERVED_HANDLES.includes(handle.toLowerCase())) {
       setNotFoundSt(true);
       setLoading(false);

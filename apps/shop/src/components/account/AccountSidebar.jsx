@@ -2,28 +2,26 @@
 
 import { Link, usePathname } from "@/i18n/navigation";
 import { useCustomerAuth as useAuth } from "@belucha/lib";
+import { restPathFromPathname } from "@/lib/shop-market";
 
 const ORANGE = "#ff971c";
 const DARK = "#1A1A1A";
 const GRAY = "#6b7280";
 const BORDER = "#e5e7eb";
 
-const LOCALE_RE = /^\/(en|de|tr|fr|it|es)(?=\/|$)/i;
-
 const NAV = [
   { label: "Übersicht", icon: "👤", href: "/account" },
   { label: "Meine Bestellungen", icon: "📦", href: "/orders" },
-  { label: "Merkzettel", icon: "♥", href: "/favorites" },
+  { label: "Merkzettel", icon: "♥", href: "/merkzettel" },
   { label: "Adressen", icon: "📍", href: "/addresses" },
+  { label: "Bewertungen", icon: "💬", href: "/reviews" },
   { label: "Bonuspunkte", icon: "⭐", href: "/bonus" },
-  { label: "Yorumlar", icon: "💬", href: "/reviews" },
-  { label: "Faturalar", icon: "📄", href: "/invoices" },
 ];
 
 function normalizePath(pathname) {
   if (!pathname) return "/";
-  const x = pathname.replace(LOCALE_RE, "") || "/";
-  return x.startsWith("/") ? x : `/${x}`;
+  const rest = restPathFromPathname(pathname);
+  return rest === "" ? "/" : rest.startsWith("/") ? rest : `/${rest}`;
 }
 
 export default function AccountSidebar({ onLogout }) {
@@ -42,7 +40,9 @@ export default function AccountSidebar({ onLogout }) {
         const active =
           item.href === "/account"
             ? appPath === "/account"
-            : appPath === item.href || appPath.startsWith(`${item.href}/`);
+            : item.href === "/merkzettel"
+              ? appPath === "/merkzettel" || appPath === "/favorites" || appPath === "/wishlist"
+              : appPath === item.href || appPath.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}

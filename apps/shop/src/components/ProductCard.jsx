@@ -40,6 +40,7 @@ const ImgBlock = styled.div`
   aspect-ratio: 1 / 1;
   overflow: hidden;
   background: #f4f4f2;
+  isolation: isolate;
 
   img {
     position: absolute;
@@ -189,7 +190,16 @@ const Badges = styled.div`
   display: flex;
   flex-direction: column;
   gap: 3px;
-  z-index: 3;
+  z-index: 8;
+  pointer-events: none;
+`;
+
+const WishlistHeartWrap = styled.div`
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 50;
+  pointer-events: auto;
 `;
 
 const Badge = styled.span`
@@ -468,7 +478,15 @@ export function ProductCard({ product }) {
           {isNew && !hasSale && !isComingSoon && <Badge>New</Badge>}
           {outOfStock && !isComingSoon && <Badge $sold>Sold out</Badge>}
         </Badges>
-        {product?.id && <ProductWishlistHeart productId={product.id} />}
+        {product?.id && (
+          <WishlistHeartWrap
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <ProductWishlistHeart productId={product.id} positionAbsolute={false} />
+          </WishlistHeartWrap>
+        )}
       </ImgBlock>
 
       <AddToCartBtn

@@ -215,13 +215,27 @@ export default function AddressesPage() {
                   <h2 style={{ margin: "0 0 16px", fontSize: 16 }}>Neue Adresse</h2>
                   <div style={{ display: "grid", gap: 12 }}>
                     <input style={inp} placeholder="Bezeichnung (optional)" value={form.label} onChange={(e) => set("label", e.target.value)} />
-                    <input style={inp} placeholder="Straße & Hausnummer *" value={form.address_line1} onChange={(e) => set("address_line1", e.target.value)} />
-                    <input style={inp} placeholder="Adresszusatz" value={form.address_line2} onChange={(e) => set("address_line2", e.target.value)} />
+                    <input
+                      style={inp}
+                      name="address_line1"
+                      autoComplete="address-line1"
+                      placeholder="Straße & Hausnummer *"
+                      value={form.address_line1}
+                      onChange={(e) => set("address_line1", e.target.value)}
+                    />
+                    <input
+                      style={inp}
+                      name="address_line2"
+                      autoComplete="address-line2"
+                      placeholder="Adresszusatz"
+                      value={form.address_line2}
+                      onChange={(e) => set("address_line2", e.target.value)}
+                    />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <input style={inp} placeholder="PLZ" value={form.zip_code} onChange={(e) => set("zip_code", e.target.value)} />
-                      <input style={inp} placeholder="Stadt" value={form.city} onChange={(e) => set("city", e.target.value)} />
+                      <input style={inp} name="zip_code" autoComplete="postal-code" placeholder="PLZ" value={form.zip_code} onChange={(e) => set("zip_code", e.target.value)} />
+                      <input style={inp} name="city" autoComplete="address-level2" placeholder="Stadt" value={form.city} onChange={(e) => set("city", e.target.value)} />
                     </div>
-                    <input style={inp} placeholder="Land (z. B. DE)" value={form.country} onChange={(e) => set("country", e.target.value)} />
+                    <input style={inp} name="country" autoComplete="country" placeholder="Land (z. B. DE)" value={form.country} onChange={(e) => set("country", e.target.value)} />
                     <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
                       <input type="checkbox" checked={form.is_default_shipping} onChange={(e) => set("is_default_shipping", e.target.checked)} />
                       Standard-Lieferadresse

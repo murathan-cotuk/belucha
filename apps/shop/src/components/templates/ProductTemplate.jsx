@@ -60,6 +60,7 @@ const GalleryCol = styled.div`
 
 const MainImageWrap = styled.div`
   position: relative;
+  z-index: 0;
   width: 100%;
   aspect-ratio: 1;
   border-radius: 12px;
@@ -864,8 +865,15 @@ export default function ProductTemplate() {
             </MainImageWrap>
             {product?.id && (
               <div
-                style={{ position: "absolute", top: 8, right: 8, zIndex: 5 }}
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  zIndex: 40,
+                  pointerEvents: "auto",
+                }}
                 onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
                 role="presentation"
               >

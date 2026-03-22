@@ -234,7 +234,7 @@ export default function AccountPage() {
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
           {/* Page header */}
           <div style={{ marginBottom: 32 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: DARK, margin: "0 0 4px" }}>Mein Belucha</h1>
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: DARK, margin: "0 0 4px" }}>Übersicht</h1>
             <p style={{ fontSize: 14, color: GRAY, margin: 0 }}>
               {customer?.customer_number ? `Kundennummer: #${customer.customer_number} · ` : ""}
               {customer?.email}

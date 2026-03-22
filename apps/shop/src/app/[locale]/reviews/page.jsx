@@ -19,12 +19,12 @@ export default function ReviewsPage() {
       <ShopHeader />
       <main style={{ flex: 1, padding: "40px 24px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: DARK, margin: "0 0 24px" }}>Yorumlar</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: DARK, margin: "0 0 24px" }}>Bewertungen</h1>
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "start" }}>
             <AccountSidebar onLogout={() => { logout(); router.push("/"); }} />
             <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 28 }}>
               <p style={{ color: GRAY, margin: 0, lineHeight: 1.6 }}>
-                Hier finden Sie bald Ihre Produktbewertungen. Diese Funktion wird derzeit vorbereitet.
+                Hier erscheint demnächst eine Liste Ihrer Produktbewertungen. Diese Funktion wird derzeit vorbereitet.
               </p>
             </div>
           </div>

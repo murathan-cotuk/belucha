@@ -886,13 +886,12 @@ export default function ShopHeader() {
                           {user.firstName} {user.lastName}
                         </div>
                       )}
-                      <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Mein Belucha</UserDropdownItem>
+                      <UserDropdownItem href="/account" onClick={() => setUserMenuOpen(false)}>Übersicht</UserDropdownItem>
                       <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Meine Bestellungen</UserDropdownItem>
-                      <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Yorumlar</UserDropdownItem>
-                      <UserDropdownItem href="/invoices" onClick={() => setUserMenuOpen(false)}>Faturalar</UserDropdownItem>
-                      <UserDropdownItem href="/favorites" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
+                      <UserDropdownItem href="/merkzettel" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
                       <UserDropdownItem href="/addresses" onClick={() => setUserMenuOpen(false)}>Adressen</UserDropdownItem>
-                      <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Meine Bonuspunkte</UserDropdownItem>
+                      <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Bewertungen</UserDropdownItem>
+                      <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Bonuspunkte</UserDropdownItem>
                       <UserDropdownBtn onClick={() => { logout(); setUserMenuOpen(false); }}>Abmelden</UserDropdownBtn>
                     </>
                   ) : (
