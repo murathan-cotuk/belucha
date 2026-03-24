@@ -484,6 +484,14 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
       return;
     }
 
+    // Save contact info to cart so abandoned cart recovery has customer data
+    getMedusaClient().patchStoreCart(cartId, {
+      email: email.value.trim(),
+      first_name: firstName.value.trim(),
+      last_name: lastName.value.trim(),
+      phone: phone.value.trim() || undefined,
+    }).catch(() => {});
+
     if (!paymentElementReady) {
       setError(t("paymentNotReady"));
       return;
@@ -621,7 +629,16 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
         <FieldGrid>
           <CheckoutFormField
             label={t("email")}
-            field={email}
+            field={{
+              ...email,
+              onBlur: (e) => {
+                email.onBlur(e);
+                const v = (e?.target?.value || email.value || "").trim();
+                if (v && validateEmail(v)) {
+                  getMedusaClient().patchStoreCart(cartId, { email: v }).catch(() => {});
+                }
+              },
+            }}
             type="email"
             validate={validateEmail}
             autoComplete="email"

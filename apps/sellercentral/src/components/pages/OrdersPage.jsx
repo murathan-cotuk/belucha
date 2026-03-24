@@ -239,7 +239,7 @@ function CustomerCell({ order, locale, router }) {
   );
 }
 
-function ActionMenu({ order, onUpdate, onDelete }) {
+function ActionMenu({ order, onUpdate, onDelete, onVersenden }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, bottom: "auto", right: 0, openUp: false });
   const router = useRouter();
@@ -282,6 +282,7 @@ function ActionMenu({ order, onUpdate, onDelete }) {
         <div ref={menuRef} style={{ position: "fixed", top: pos.top, bottom: pos.bottom, right: pos.right, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,.1)", zIndex: 9999, minWidth: 170, overflow: "hidden" }}>
           {[
             { label: "Details anzeigen", action: () => { router.push(`/${locale}/orders/${order.id}`); setOpen(false); } },
+            { label: "Versenden", action: () => { onVersenden?.(); setOpen(false); } },
             { label: "Stornieren", action: () => { onUpdate(order.id, { order_status: "storniert" }); setOpen(false); }, danger: true },
             { label: "Löschen", action: () => { if (confirm("Bestellung löschen?")) { onDelete(order.id); } setOpen(false); }, danger: true },
           ].map((item, i, arr) => (
@@ -289,7 +290,7 @@ function ActionMenu({ order, onUpdate, onDelete }) {
               onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
               onMouseLeave={e => e.currentTarget.style.background = "none"}
             >
-              {item.label}
+              {item.icon ? <span style={{ marginRight: 6 }}>{item.icon}</span> : null}{item.label}
             </button>
           ))}
         </div>
@@ -744,7 +745,7 @@ export default function OrdersPage() {
                           </Button>
                         </div>
                       )}
-                      <ActionMenu order={order} onUpdate={handleUpdate} onDelete={handleDelete} />
+                      <ActionMenu order={order} onUpdate={handleUpdate} onDelete={handleDelete} onVersenden={() => setVersendModal([order])} />
                     </div>
                   </td>
                 </tr>

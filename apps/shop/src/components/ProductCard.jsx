@@ -409,7 +409,7 @@ export function ProductCard({ product }) {
   const managesInventory = variant?.manage_inventory === true;
   const inventoryQty = variant?.inventory_quantity ?? product.variants?.[0]?.inventory_quantity;
   const outOfStock = managesInventory && typeof inventoryQty === "number" && inventoryQty <= 0;
-  const maxQty = Math.max(1, Math.min(Number(inventoryQty) > 0 ? Number(inventoryQty) : 10, 10));
+  const maxQty = Number(inventoryQty) > 0 ? Number(inventoryQty) : 9999;
 
   const meta = product.metadata || {};
   const reviewAvg = meta.review_avg != null ? Number(meta.review_avg) : 0;
@@ -454,7 +454,7 @@ export function ProductCard({ product }) {
   const clampQty = (n) => {
     const num = Number(n);
     if (!Number.isFinite(num)) return 1;
-    return Math.max(1, Math.min(maxQty, Math.floor(num)));
+    return Math.max(1, Math.floor(num));
   };
 
   return (
@@ -510,7 +510,7 @@ export function ProductCard({ product }) {
         <QtyInput
           type="number"
           min={1}
-          max={maxQty}
+
           value={quantity}
           onChange={(e) => setQuantity(clampQty(e.target.value))}
           onBlur={(e) => setQuantity(clampQty(e.target.value))}

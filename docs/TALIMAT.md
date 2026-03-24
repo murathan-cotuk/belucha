@@ -1,54 +1,42 @@
-23.03.
+24.03.
 
 -----------------------------------
 11. MEDIA MANAGEMENT (SELLERCENTRAL)
 -----------------------------------
 
-- Media bölümüne ekle:
-  - klasör oluşturma
-  - kategori oluşturma
-- Görseller organize edilebilmeli
-- Her görsel için:
-  - URL alınabilmeli
+- GOOGLE DRIVE BAGLANTISI
 
-EK:
-- URL ile eklenen görseller de media’da görünmeli
+Önce yapman gerekenler (5-10 dk):                                                                                                                                                       
+  1. Google Cloud Console:                                                                   
+  - https://console.cloud.google.com → Yeni proje oluştur
+  - "APIs & Services" → "Enable APIs" → Google Drive API aktifleştir
+  - "Credentials" → "Create Credentials" → OAuth 2.0 Client ID
+    - Application type: Web application
+    - Authorized redirect URI: https://YOUR_BACKEND_URL/admin-hub/v1/drive/callback
+  - Client ID ve Client Secret'i kopyala
+
+  2. Backend env var'ları ekle:
+  GOOGLE_DRIVE_CLIENT_ID=your_client_id
+  GOOGLE_DRIVE_CLIENT_SECRET=your_client_secret
+  SELLERCENTRAL_URL=https://your-sellercentral-url.com
+
+  3. Backend'e googleapis ekle:
+  cd apps/medusa-backend && npm install googleapis
+
+  ---
+  Bu kurulumu yaptıktan sonra "hazır" de, backend + frontend kodunu implement edeyim:        
+  - Drive OAuth2 bağlantısı (connect/disconnect)
+  - Klasör seçme (Drive URL yapıştır)
+  - Gerçek zamanlı push notification sync (yeni dosya → anında MediaPage'e eklenir)
+  - Polling fallback (her 10 dakikada bir)
+  - MediaPage'de "Google Drive" kartı
+
+  Kurulumu yapıp hazır olduğunda devam edelim.
 
 
------------------------------------
-13. INVENTORY IMAGE BUG
------------------------------------
-
-- Sellercentral inventory sayfasında:
-  - küçük image preview boş
-→ ürün görselleri burada görünmeli
-
-- shopta bir üründen 10dan fazla adet secilmiyor. cartta, productpagede, product card ta maximum order quantity gibi bir sinirlama olmasin. her yerde istendigi kadar eklenebilsin sepete.
-- sellercentralde bir varyasyon optionuna swatch image ekleyince onu varyasyon ürününün ilk fotografi olarak da kabul ediyor. ürün fotosu size in sagindaki yer oldugu icin oraya etki etmemeli. oraya tiklayarak ürün eklenmeli. o kisimdan eklenen görselleri silebilme sansimiz da olmali.
-- sellercentralde ürüne girdigimde ya da database de olan herhangi bir seye girdigimde (kategori, kolkesiyon, ürün, fotograf vs.) database de ne sekilde tanimlaniyorsa o gözükmeli. yani ID si yazmali sellercentralde urlde. yani bunu lütfen atlama burasi cok kritik. isim tanimli su anda ancak ben sürekli isim degistiriyorum urlde güncellenmiyor. database ile sürekli iletisim halinde kalinmasi lazim. o yüzde id kullanalim id hep sabittir.
-
-YENI
--+siparisler sayfasinda fiyat gösterilirken vat de gözüksün. satis fiyati brüt yaziyoruz ya  
-orada brüt fiyat/1,19 gözüksün zwischen netto preis olarak. sonra +steuer ya da her ülkede   
-ne deniyorsa ve her ülkenin vergi orani ne ise ona göre + vergi eklensin. zaten ürünlerin    
-fiyatlarini da ülkelere göre belirleyecegiz. ürünler sayfasinda ürünlerin icindeki           
-fiyatlandirma bölümünü bence tab seklinde yapalim. yan yana ülkeler olsun. bastiginda kdv    
-orani yazsin ve yan yana netto - brutto fiyatlar kismi olsun. aralarinda bir kilit olsun.    
-bunlari birbirine baglayabilelim. mesela almanya icin konusuyorum. eger baglarsak birbirine  
-netto fiyat yazdiginda otomatik olarak brüt fiyati netto*1,19 olarak güncellenecek. hepsinin kendi icinde indirimli fiyati, uvp fiyati falan gözüksün. tabii bu varyasyonlar icin de     
-ayni olmali, varyasyonlarda belirlenen sku ya tiklandiginda ürünün icine girilmeli orada da  
-görünmeli, overviweda da ayarlanabilmeli. ürün ismi, aciklamasi, bullet pointi, görseli,     
-metafieldleri, yani acikcasi her yerde tab olmali ülke ülke. o yüzden simdi düsündüm de      
-hepsinde ayri ayri olmasi yerine ürünün icine girdiginde en üstte view in shop kisminin      
-soluna mevcut hangi dillerimiz var ise onlari yan yana yaz. bir ürün icin hangi dil          
-secildiyse o veriler ona göre güncellensin. fiyatttir isimdir carttir curttur ayri ayri      
-depolansin database de ve shopta da secilen dile göre hangi taba girdiysek o gözüksün.       
-mesela ülke olarak ispanya secildi shopta hemen ispanyolca dil gözükecek, es tabi altinda    
-girilen ürün bilgileri ve ispanya vergi orani falan gözükecek. ona göre brüt fiyat           
-gözükecek. tabi shoptaki globe a basinda dropdown güncellenmeli artik. genis büyük bir       
-dropdown insin söyle heybetli. solda country secici olsun, sagda language secici olsun.      
-mesela isvicre icin isvicre frangi olmali sellercentraldeki ürün verisi para birimi. shopta  
-dil almanca, para birimi frank olmali ülke isvicre secilince. 
+---------------------
+siparis
+- terkedilen sepet menüsü.
 - Siparis sayfasinda siparis listelerinin sagindaki 3 noktada iki tane markieren var. onlarin olmasini istemedim. ben direkt "Versenden" diye bir buton istedim siparisi göndermek icin. ayrica birden fazla siparis secilebilsin ve toplu bir sekilde gönderim yapilabilsin.
 +
 - shopta siparislerim sayfasinda siparislerin yaninda faturayi görmek istiyorum. kargoya verildiginde kargo takip numarasi da siparisin orada yer alsin. fatura olusturma modülü falan var stripe ta nasil yapilacaksa yap. yapmam gerekeni söyle. fatura icin nasil template hazirlayalim vs.

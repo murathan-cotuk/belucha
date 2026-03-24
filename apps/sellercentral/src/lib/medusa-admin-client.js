@@ -467,7 +467,7 @@ class MedusaAdminClient {
 
   async registerMediaUrl(data) {
     const base = (typeof getDefaultBaseUrl === 'function' ? getDefaultBaseUrl() : null) || this.baseURL
-    const res = await fetch(`${base}/admin-hub/v1/media/register-url`, {
+    const res = await fetch(`${base}/admin-hub/v1/media/add-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

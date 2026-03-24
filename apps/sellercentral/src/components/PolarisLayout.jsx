@@ -108,7 +108,7 @@ function getMenuItemsSettings(t) {
   return [{ url: "/settings", label: t("settings"), icon: SettingsIcon }];
 }
 
-const NextLink = forwardRef(function NextLink({ url, children, ...rest }, ref) {
+const NextLink = forwardRef(function NextLink({ url, children, external, ...rest }, ref) {
   return (
     <Link href={url || ""} ref={ref} {...rest}>
       {children}
@@ -116,7 +116,7 @@ const NextLink = forwardRef(function NextLink({ url, children, ...rest }, ref) {
   );
 });
 
-const UnsavedAwareLink = forwardRef(function UnsavedAwareLink({ url, children, ...rest }, ref) {
+const UnsavedAwareLink = forwardRef(function UnsavedAwareLink({ url, children, external, ...rest }, ref) {
   const ctx = useUnsavedChanges();
   const handleClick = (e) => {
     if (ctx?.isDirty && (url || "").trim() && !(url || "").startsWith("#")) {

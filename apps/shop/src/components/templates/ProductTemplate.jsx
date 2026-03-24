@@ -794,7 +794,7 @@ export default function ProductTemplate() {
     0;
   const inventorySafeNum = Number(inventorySafe);
   const inStock = inventorySafeNum > 0;
-  const maxQty = Math.min(inventorySafeNum || 10, 10);
+  const maxQty = inventorySafeNum || 9999;
   const publishDate = meta.publish_date ? new Date(meta.publish_date) : null;
   const isComingSoon = publishDate && !isNaN(publishDate.getTime()) && publishDate.getTime() > Date.now();
   const metaRows = buildMetaRows(meta);
@@ -1097,14 +1097,20 @@ export default function ProductTemplate() {
                 <QtyWrap>
                   <QtyLabel>Menge</QtyLabel>
                   <QtySelect
+                    as="input"
+                    type="number"
+                    min={1}
                     value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.floor(Number(e.target.value)) || 1);
+                      setQuantity(v);
+                    }}
+                    onBlur={(e) => {
+                      const v = Math.max(1, Math.floor(Number(e.target.value)) || 1);
+                      setQuantity(v);
+                    }}
                     disabled={!inStock || isComingSoon}
-                  >
-                    {Array.from({ length: maxQty }, (_, i) => i + 1).map((n) => (
-                      <option key={n} value={n}>{n}</option>
-                    ))}
-                  </QtySelect>
+                  />
                 </QtyWrap>
               </StockRow>
 

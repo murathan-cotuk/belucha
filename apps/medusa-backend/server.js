@@ -382,6 +382,10 @@ async function start() {
           );
         `)
         await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS bonus_points_reserved integer NOT NULL DEFAULT 0`).catch(() => {})
+        await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS email text`).catch(() => {})
+        await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS first_name text`).catch(() => {})
+        await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS last_name text`).catch(() => {})
+        await client.query(`ALTER TABLE store_carts ADD COLUMN IF NOT EXISTS phone text`).catch(() => {})
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_cart_items (
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -2570,7 +2574,7 @@ async function start() {
       }
     }
 
-    /** PATCH /store/carts/:id — bonus_points_reserved (25 pts = €1 off); requires auth if &gt; 0 */
+    /** PATCH /store/carts/:id — bonus_points_reserved + customer contact info */
     const storeCartPATCH = async (req, res) => {
       const cartId = (req.params.id || req.params.cartId || '').toString().trim()
       if (!cartId) return res.status(400).json({ message: 'Cart id required' })
@@ -2611,6 +2615,16 @@ async function start() {
           reserved = clampCartBonusRedemption(requested, balance, subtotalCents)
         }
 
+        // Save customer contact info if provided
+        if (body.email !== undefined || body.first_name !== undefined || body.last_name !== undefined || body.phone !== undefined) {
+          const fields = []; const vals = []
+          if (body.email !== undefined) { vals.push(body.email || null); fields.push(`email = $${vals.length}`) }
+          if (body.first_name !== undefined) { vals.push(body.first_name || null); fields.push(`first_name = $${vals.length}`) }
+          if (body.last_name !== undefined) { vals.push(body.last_name || null); fields.push(`last_name = $${vals.length}`) }
+          if (body.phone !== undefined) { vals.push(body.phone || null); fields.push(`phone = $${vals.length}`) }
+          vals.push(cartId)
+          await client.query(`UPDATE store_carts SET ${fields.join(', ')}, updated_at = now() WHERE id = $${vals.length}`, vals)
+        }
         await client.query('UPDATE store_carts SET bonus_points_reserved = $1, updated_at = now() WHERE id = $2', [
           reserved,
           cartId,
@@ -4274,15 +4288,16 @@ async function start() {
         fileUrl = `/uploads/${req.file.filename}`
       }
       const alt = (req.body && req.body.alt) || null
+      const folderId = (req.body && req.body.folder_id) || null
       try {
         await client.connect()
         const r = await client.query(
-          `INSERT INTO admin_hub_media (filename, url, mime_type, size, alt) VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, filename, url, mime_type, size, alt, created_at`,
-          [req.file.originalname || req.file.filename, fileUrl, req.file.mimetype || null, req.file.size || 0, alt]
+          `INSERT INTO admin_hub_media (filename, url, mime_type, size, alt, folder_id) VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, filename, url, mime_type, size, alt, folder_id, created_at`,
+          [req.file.originalname || req.file.filename, fileUrl, req.file.mimetype || null, req.file.size || 0, alt, folderId]
         )
         const row = r.rows[0]
-        res.status(201).json({ id: row.id, url: row.url, filename: row.filename, mime_type: row.mime_type, size: row.size, created_at: row.created_at })
+        res.status(201).json({ id: row.id, url: row.url, filename: row.filename, mime_type: row.mime_type, size: row.size, folder_id: row.folder_id, created_at: row.created_at })
       } catch (err) {
         console.error('Media upload error:', err)
         res.status(500).json({ message: (err && err.message) || 'Internal server error' })
@@ -5429,12 +5444,14 @@ async function start() {
         // Carts that have items but no corresponding order
         const r = await client.query(`
       SELECT c.id, c.created_at, c.updated_at,
+        c.email, c.first_name, c.last_name, c.phone,
         json_agg(json_build_object('id',ci.id,'title',ci.title,'quantity',ci.quantity,'unit_price_cents',ci.unit_price_cents,'thumbnail',ci.thumbnail,'product_handle',ci.product_handle)) as items,
-        SUM(ci.unit_price_cents * ci.quantity) as total_cents
+        COUNT(ci.id)::int as item_count,
+        SUM(ci.unit_price_cents * ci.quantity) as cart_total
       FROM store_carts c
       JOIN store_cart_items ci ON ci.cart_id = c.id
       WHERE NOT EXISTS (SELECT 1 FROM store_orders o WHERE o.cart_id = c.id)
-      GROUP BY c.id, c.created_at, c.updated_at
+      GROUP BY c.id, c.created_at, c.updated_at, c.email, c.first_name, c.last_name, c.phone
       ORDER BY c.updated_at DESC
       LIMIT 100
     `)
