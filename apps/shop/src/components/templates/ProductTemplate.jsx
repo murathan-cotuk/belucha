@@ -637,6 +637,7 @@ export default function ProductTemplate() {
   const [selectedOptions, setSelectedOptions] = useState({});
   const [sellerStoreName, setSellerStoreName] = useState("");
   const [cartNotice, setCartNotice] = useState({ text: "", visible: false });
+  const [productReviews, setProductReviews] = useState([]);
   const cartNoticeTimersRef = useRef({ hide: null, clear: null });
   const cartState = useContext(CartContext);
   const addToCart = cartState?.addToCart ?? (async () => null);
@@ -734,6 +735,12 @@ export default function ProductTemplate() {
     }).catch(() => {});
   }, [product]);
 
+  useEffect(() => {
+    if (!product?.id) return;
+    getMedusaClient().request(`/store/reviews?product_id=${encodeURIComponent(product.id)}`).then((res) => {
+      if (res?.reviews?.length) setProductReviews(res.reviews);
+    }).catch(() => {});
+  }, [product?.id]);
 
   if (loading) return <Container>Laden…</Container>;
   if (error) return <Container>Fehler: {error}</Container>;
@@ -782,17 +789,10 @@ export default function ProductTemplate() {
     ? Math.round(((priceCents - saleCents) / priceCents) * 100)
     : null;
   const bulletPoints = Array.isArray(meta.bullet_points) ? meta.bullet_points.filter(Boolean) : [];
-  const [productReviews, setProductReviews] = useState([]);
   const reviewCount = productReviews.length > 0 ? productReviews.length : (meta.review_count != null ? Number(meta.review_count) : 0);
   const reviewAvg = productReviews.length > 0
     ? productReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / productReviews.length
     : (meta.review_avg != null ? Number(meta.review_avg) : 0);
-  useEffect(() => {
-    if (!product?.id) return;
-    getMedusaClient().request(`/store/reviews?product_id=${encodeURIComponent(product.id)}`).then((res) => {
-      if (res?.reviews?.length) setProductReviews(res.reviews);
-    }).catch(() => {});
-  }, [product?.id]);
   const soldLastMonth = meta.sold_last_month != null ? Number(meta.sold_last_month) : null;
   const inventory = variant?.inventory_quantity ?? product.variants?.[0]?.inventory_quantity ?? 0;
   const inventorySafe =
