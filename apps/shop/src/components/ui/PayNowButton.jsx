@@ -23,7 +23,7 @@ const Base = styled.button`
   position: relative;
   padding: 12px 18px;
   font-size: 16px;
-  background: #1a1a1a;
+  background:${tokens.primary.DEFAULT};
   color: white;
   border: none;
   border-radius: 10px;
@@ -66,7 +66,7 @@ const Icon = styled.svg`
   left: 0;
   width: 24px;
   height: 24px;
-  color: ${tokens.primary.DEFAULT};
+  color:rgb(75, 19, 113);
   opacity: 0;
   visibility: hidden;
 `;

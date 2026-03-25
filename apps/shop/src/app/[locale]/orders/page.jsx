@@ -299,6 +299,13 @@ export default function OrdersPage() {
                         {returnExpired(order) && !activeReturn && (
                           <span className="text-xs text-gray-400">Rückgabefrist abgelaufen (14 Tage)</span>
                         )}
+                        <Link
+                          href="/reviews"
+                          className="text-sm font-semibold hover:underline"
+                          style={{ color: "#ff971c" }}
+                        >
+                          ★ Jetzt bewerten
+                        </Link>
                       </div>
                     </div>
 

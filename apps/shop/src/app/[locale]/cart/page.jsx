@@ -17,7 +17,6 @@ const PageWrap = styled.div`
   display: flex;
   flex-direction: column;
   background: ${tokens.background.main};
-  padding-top: calc(${tokens.navbar.height} + ${tokens.topBar.height});
 `;
 
 const Main = styled.main`
@@ -25,7 +24,7 @@ const Main = styled.main`
   max-width: 1100px;
   margin: 0 auto;
   width: 100%;
-  padding: 40px 24px 64px;
+  padding: 24px 24px 64px;
 `;
 
 const Title = styled.h1`
@@ -258,7 +257,7 @@ const EmptyState = styled.div`
 
 export default function CartPage() {
   const t = useTranslations("cart");
-  const { cart, loading, updateLineItem, removeLineItem, clearCart, subtotalCents } = useCart();
+  const { cart, loading, updateLineItem, removeLineItem, clearCart, subtotalCents, bonusDiscountCents } = useCart();
   const items = cart?.items || [];
 
   return (
@@ -372,13 +371,19 @@ export default function CartPage() {
                 <span>{t("subtotal")}</span>
                 <span>{formatPriceCents(subtotalCents)} €</span>
               </SummaryRow>
+              {bonusDiscountCents > 0 && (
+                <SummaryRow style={{ color: "#16a34a" }}>
+                  <span>Bonusrabatt</span>
+                  <span>−{formatPriceCents(bonusDiscountCents)} €</span>
+                </SummaryRow>
+              )}
               <SummaryRow>
                 <span>{t("shippingLabel")}</span>
                 <span>{t("shipping")}</span>
               </SummaryRow>
               <SummaryTotal>
                 <span>{t("total")}</span>
-                <span>{formatPriceCents(subtotalCents)} €</span>
+                <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents))} €</span>
               </SummaryTotal>
               <PayNowButton href="/checkout">{t("checkout")}</PayNowButton>
               <ContinueLink href="/">Weiter einkaufen</ContinueLink>

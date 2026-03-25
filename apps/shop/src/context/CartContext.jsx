@@ -151,6 +151,15 @@ export function CartProvider({ children }) {
 
   const itemCount = (cart?.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0);
   const subtotalCents = (cart?.items || []).reduce((sum, i) => sum + (i.quantity || 0) * (i.unit_price_cents || 0), 0);
+  const bonusDiscountCents = Math.floor((cart?.bonus_points_reserved || 0) / 25) * 100;
+
+  const clearBonusPoints = useCallback(async (authToken) => {
+    if (!cart?.id) return;
+    const client = getMedusaClient();
+    const out = await client.patchStoreCart(cart.id, { bonus_points_reserved: 0 }, authToken).catch(() => null);
+    setCart((prev) => prev ? { ...prev, bonus_points_reserved: 0 } : prev);
+    return out;
+  }, [cart?.id]);
 
   const value = {
     cart,
@@ -162,11 +171,13 @@ export function CartProvider({ children }) {
     updateLineItem,
     removeLineItem,
     clearCart,
+    clearBonusPoints,
     createCart,
     fetchCart,
     loading,
     itemCount,
     subtotalCents,
+    bonusDiscountCents,
   };
 
   return (

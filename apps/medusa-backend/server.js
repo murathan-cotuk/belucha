@@ -685,6 +685,23 @@ async function start() {
 
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_order_items_order_id ON store_order_items(order_id);')
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_orders_payment_intent_id ON store_orders(payment_intent_id);')
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS store_product_reviews (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            order_id uuid NOT NULL REFERENCES store_orders(id) ON DELETE CASCADE,
+            product_id text NOT NULL,
+            customer_id uuid REFERENCES store_customers(id) ON DELETE SET NULL,
+            rating integer NOT NULL CHECK (rating >= 1 AND rating <= 5),
+            comment text,
+            customer_name text,
+            created_at timestamptz DEFAULT now(),
+            updated_at timestamptz DEFAULT now(),
+            UNIQUE(order_id, product_id)
+          );
+        `).catch(() => {})
+        await client.query(`ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS product_id text`).catch(() => {})
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_product ON store_product_reviews(product_id)').catch(() => {})
+        await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_customer ON store_product_reviews(customer_id)').catch(() => {})
         await client.end()
         console.log('Admin Hub: admin_hub_menus, admin_hub_menu_locations, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
       } catch (migErr) {
@@ -3172,6 +3189,149 @@ async function start() {
       }
     }
 
+    // GET /store/reviews?product_id=... — public product reviews
+    const storeReviewsGET = async (req, res) => {
+      const productId = (req.query.product_id || '').trim()
+      if (!productId) return res.json({ reviews: [] })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `SELECT r.id, r.product_id, r.rating, r.comment, r.customer_name, r.created_at,
+                  COALESCE(c.first_name, '') as first_name, COALESCE(c.last_name, '') as last_name
+           FROM store_product_reviews r
+           LEFT JOIN store_customers c ON c.id = r.customer_id
+           WHERE r.product_id = $1
+           ORDER BY r.created_at DESC`,
+          [productId]
+        )
+        await client.end()
+        res.json({ reviews: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // POST /store/reviews — submit a product review (auth required)
+    const storeReviewsPOST = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!token) return res.status(401).json({ message: 'Unauthorized' })
+      let payload
+      try {
+        const { verifyCustomerToken } = require('./src/lib/jwt')
+        payload = verifyCustomerToken(token)
+      } catch {
+        return res.status(401).json({ message: 'Invalid token' })
+      }
+      if (!payload?.id) return res.status(401).json({ message: 'Invalid token' })
+      const { order_id, product_id, rating, comment } = req.body || {}
+      if (!product_id) return res.status(400).json({ message: 'product_id required' })
+      if (!order_id) return res.status(400).json({ message: 'order_id required' })
+      const ratingNum = Number(rating)
+      if (!ratingNum || ratingNum < 1 || ratingNum > 5) return res.status(400).json({ message: 'rating must be 1-5' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const orderCheck = await client.query(
+          `SELECT id FROM store_orders WHERE id = $1::uuid AND (customer_id = $2::uuid OR email = (SELECT email FROM store_customers WHERE id = $2::uuid))`,
+          [order_id, payload.id]
+        )
+        if (!orderCheck.rows[0]) {
+          await client.end()
+          return res.status(403).json({ message: 'Order not found or access denied' })
+        }
+        const custR = await client.query('SELECT first_name, last_name FROM store_customers WHERE id = $1', [payload.id])
+        const cust = custR.rows[0]
+        const customer_name = cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ') || null : null
+        const r = await client.query(
+          `INSERT INTO store_product_reviews (order_id, product_id, customer_id, rating, comment, customer_name)
+           VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6)
+           ON CONFLICT (order_id, product_id) DO UPDATE SET rating=$4, comment=$5, customer_name=$6, updated_at=now()
+           RETURNING *`,
+          [order_id, product_id, payload.id, ratingNum, comment?.trim() || null, customer_name]
+        )
+        const statsR = await client.query(
+          `SELECT COUNT(*)::int as cnt, ROUND(AVG(rating)::numeric, 2)::float as avg FROM store_product_reviews WHERE product_id = $1`,
+          [product_id]
+        )
+        const stats = statsR.rows[0]
+        await client.query(
+          `UPDATE admin_hub_products SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb WHERE id::text = $2`,
+          [JSON.stringify({ review_count: stats.cnt, review_avg: parseFloat(stats.avg || 0) }), product_id]
+        ).catch(() => {})
+        await client.end()
+        res.json({ review: r.rows[0] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /store/reviews/my — customer's own reviews
+    const storeReviewsMyGET = async (req, res) => {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!token) return res.status(401).json({ message: 'Unauthorized' })
+      let payload
+      try {
+        const { verifyCustomerToken } = require('./src/lib/jwt')
+        payload = verifyCustomerToken(token)
+      } catch {
+        return res.status(401).json({ message: 'Invalid token' })
+      }
+      if (!payload?.id) return res.status(401).json({ message: 'Invalid token' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `SELECT id, order_id, product_id, rating, comment, created_at FROM store_product_reviews WHERE customer_id = $1::uuid ORDER BY created_at DESC`,
+          [payload.id]
+        )
+        await client.end()
+        res.json({ reviews: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /admin-hub/reviews — all reviews for seller central
+    const adminHubReviewsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `SELECT r.id, r.order_id, r.product_id, r.rating, r.comment, r.customer_name, r.created_at,
+                  o.order_number,
+                  p.title as product_title, p.handle as product_handle
+           FROM store_product_reviews r
+           LEFT JOIN store_orders o ON o.id = r.order_id
+           LEFT JOIN admin_hub_products p ON p.id::text = r.product_id
+           ORDER BY r.created_at DESC
+           LIMIT 1000`
+        )
+        await client.end()
+        res.json({ reviews: r.rows || [] })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
     const storeWishlistGET = async (req, res) => {
       const authHeader = req.headers.authorization || ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
@@ -3507,14 +3667,27 @@ async function start() {
         const orderIds = (ordersR.rows || []).map(r => r.id)
         let itemsMap = {}
         if (orderIds.length > 0) {
-          const itemsR = await client.query(
-            `SELECT id, order_id, title, quantity, unit_price_cents, product_handle, thumbnail
-             FROM store_order_items WHERE order_id = ANY($1::uuid[])`,
-            [orderIds]
-          )
-          for (const it of (itemsR.rows || [])) {
-            if (!itemsMap[it.order_id]) itemsMap[it.order_id] = []
-            itemsMap[it.order_id].push(it)
+          try {
+            const itemsR = await client.query(
+              `SELECT id, order_id, title, quantity, unit_price_cents, product_id, product_handle, thumbnail
+               FROM store_order_items WHERE order_id = ANY($1::uuid[])`,
+              [orderIds]
+            )
+            for (const it of (itemsR.rows || [])) {
+              if (!itemsMap[it.order_id]) itemsMap[it.order_id] = []
+              itemsMap[it.order_id].push(it)
+            }
+          } catch {
+            // fallback without product_id if column not yet migrated
+            const itemsR = await client.query(
+              `SELECT id, order_id, title, quantity, unit_price_cents, product_handle, thumbnail
+               FROM store_order_items WHERE order_id = ANY($1::uuid[])`,
+              [orderIds]
+            )
+            for (const it of (itemsR.rows || [])) {
+              if (!itemsMap[it.order_id]) itemsMap[it.order_id] = []
+              itemsMap[it.order_id].push(it)
+            }
           }
         }
         // Also fetch return requests
@@ -5544,6 +5717,10 @@ async function start() {
     httpApp.delete('/store/wishlist/:productId', storeWishlistDELETE)
     httpApp.get('/store/orders/me', storeOrdersMeGET)
     httpApp.post('/store/orders/:id/return-request', storeReturnRequestPOST)
+    httpApp.get('/store/reviews/my', storeReviewsMyGET)
+    httpApp.get('/store/reviews', storeReviewsGET)
+    httpApp.post('/store/reviews', storeReviewsPOST)
+    httpApp.get('/admin-hub/reviews', adminHubReviewsGET)
 
     httpApp.get('/admin-hub/v1/orders', adminHubOrdersGET)
     httpApp.post('/admin-hub/v1/orders', adminHubOrderPOST)

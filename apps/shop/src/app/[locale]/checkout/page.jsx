@@ -32,7 +32,6 @@ const PageWrap = styled.div`
   display: flex;
   flex-direction: column;
   background: ${tokens.background.main};
-  padding-top: calc(${tokens.navbar.height} + ${tokens.topBar.height});
 `;
 
 const Main = styled.main`
@@ -40,7 +39,7 @@ const Main = styled.main`
   max-width: 1100px;
   margin: 0 auto;
   width: 100%;
-  padding: 40px 24px 64px;
+  padding: 24px 24px 64px;
 `;
 
 const Title = styled.h1`
@@ -876,7 +875,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
           disabled={!stripe || !elements || !paymentElementReady || processing}
           style={{ width: "100%", marginTop: 20 }}
         >
-          {processing ? t("processing") : `${t("placeOrder")} – ${formatPriceCents(subtotalCents)} €`}
+          {processing ? t("processing") : `${t("placeOrder")} – ${formatPriceCents(payCentsDisplay)} €`}
         </PayNowButton>
       </FormCard>
     </form>
@@ -893,14 +892,13 @@ function getStripe() {
 
 export default function CheckoutPage() {
   const t = useTranslations("checkout");
-  const { cart, subtotalCents, setCart } = useCart();
+  const { cart, subtotalCents, setCart, clearBonusPoints, bonusDiscountCents } = useCart();
   const items = cart?.items || [];
 
   const [clientSecret, setClientSecret] = useState(null);
   const [loadingPI, setLoadingPI] = useState(false);
   const [piError, setPiError] = useState(null);
   const [payCents, setPayCents] = useState(null);
-  const [bonusDiscountCents, setBonusDiscountCents] = useState(0);
   const [bonusDraft, setBonusDraft] = useState("");
   const [bonusErr, setBonusErr] = useState("");
   const [balancePoints, setBalancePoints] = useState(null);
@@ -913,7 +911,8 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    setBonusDraft(String(cart?.bonus_points_reserved ?? ""));
+    const pts = cart?.bonus_points_reserved ?? 0;
+    setBonusDraft(String(pts || ""));
   }, [cart?.bonus_points_reserved]);
 
   useEffect(() => {
@@ -949,8 +948,6 @@ export default function CheckoutPage() {
       const newPts = out.bonus_points_reserved ?? out.cart?.bonus_points_reserved ?? pts;
       setCart((prev) => (prev ? { ...prev, bonus_points_reserved: newPts } : prev));
       setBonusDraft(String(newPts));
-      // Apply discount immediately from PATCH response (no need to wait for PI refetch)
-      setBonusDiscountCents(Number(out.bonus_discount_cents || 0));
       // Trigger PI refetch with new discounted amount
       setPiRefreshKey((k) => k + 1);
       // Fetch updated balance in background
@@ -960,6 +957,21 @@ export default function CheckoutPage() {
     } catch (e) {
       setBonusErr(e?.message || t("bonusError"));
     } finally {
+      setBonusApplying(false);
+    }
+  };
+
+  const removeBonusRedemption = async () => {
+    setBonusErr("");
+    setBonusApplying(true);
+    try {
+      const tok = getToken("customer");
+      await clearBonusPoints(tok);
+      setBonusDraft("");
+      setPayCents(null);
+      setPiRefreshKey((k) => k + 1);
+    } catch (_) {}
+    finally {
       setBonusApplying(false);
     }
   };
@@ -976,7 +988,6 @@ export default function CheckoutPage() {
         setPiError(null);
         setLoadingPI(false);
         setPayCents(subtotalCents);
-        setBonusDiscountCents(0);
         return;
       }
     }
@@ -994,17 +1005,14 @@ export default function CheckoutPage() {
         if (data?.client_secret) {
           setClientSecret(data.client_secret);
           setPayCents(typeof data.amount_cents === "number" ? data.amount_cents : subtotalCents);
-          setBonusDiscountCents(Number(data.bonus_discount_cents || 0));
         } else {
           setPiError(data?.message || t("configError"));
           setPayCents(null);
-          setBonusDiscountCents(0);
         }
       })
       .catch(() => {
         setPiError(t("configError"));
         setPayCents(null);
-        setBonusDiscountCents(0);
       })
       .finally(() => setLoadingPI(false));
   }, [cart?.id, subtotalCents, t, items.length, piRefreshKey]);
@@ -1141,8 +1149,31 @@ export default function CheckoutPage() {
                 <span>{formatPriceCents(subtotalCents)} €</span>
               </SummaryRow>
               {bonusDiscountCents > 0 && (
-                <SummaryRow>
-                  <span>{t("bonusDiscount")}</span>
+                <SummaryRow style={{ color: "#16a34a" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {t("bonusDiscount")}
+                    <button
+                      type="button"
+                      onClick={removeBonusRedemption}
+                      disabled={bonusApplying}
+                      title="Bonusrabatt entfernen"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: bonusApplying ? "wait" : "pointer",
+                        color: "#6b7280",
+                        padding: "0 2px",
+                        fontSize: 14,
+                        lineHeight: 1,
+                        borderRadius: 4,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        opacity: bonusApplying ? 0.5 : 1,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
                   <span>−{formatPriceCents(bonusDiscountCents)} €</span>
                 </SummaryRow>
               )}

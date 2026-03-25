@@ -35,10 +35,12 @@
 
 
 ---------------------
-siparis
-- terkedilen sepet menüsü. ???
-- shopta adres olusturmak istiyorum ancak address_line1 required uyarisi aliyorum. halbuki her yeri doldurdum. ???
-- shopta warenkorba stok yazabiliyoruz artik. ancak o input kismi cok kötü. side warenkorbta ve warenkorb sayfasinda stok input yapma kismini prodct carddaki gibi yap. ???
+
+
+- sellercentralde sag en üstteki profil butonunda seller account yaziyor. Store Name ne ise o yazmali orada.
+- shopta cart ve checkout sayfalarinda ilk icerik ile header arasinda cok bosluk var. bu kadar gap olmasin. direkt hemen altinadn baslasin.???
+- shopta meine orders sayfasinda Fehler beim Laden der Bestellungen. uyarisi var. siparisler orada gözükmüyor. orada gözükmedigi icin bewertungen sayfasinda da gözükmüyor. 
+- bonus puani girdikten sonra checkout sayfasindaki gesamt kismi degisiyor ve ödeme butonu da güncelleniyor. süper. ancak ondan sonra side warenkorbu actigimda ve zurück zum warenkorb dedigimde bu indirimlerin orada güncellendigini göremiyorum. ayrica bonus puani indirim olarak ekledikten sonra vazgecip silmek isteyebilirim. o yüzden yanina carpi da koy belki vazgececegim.???
 - Shoptaki Bewertungen menüsü icinde verilen siparisler ve o siparislere verilen bewertunglar gözüksün. bewertung verilmemis siparisler de orada gözüksün ancak yildizla bos dursun ve jetzt bewerten desin. sonra shopta ürün sayfasinda ismin altindaki yildiz, bir siparis icin verilen tüm ortalama yorumlara göre dolsun, siparis sayfasinin en altinda yazilan yorumlar gözüksün, bewertunglar siparis bazli degil ürün bazli yapilsin. yani siparislerin icie girip bewerten dedigi zaman her ürün icin ayri ayri degerlendirme alani acilsin. ayrica sellercentralde de bu müsteri yorumlari bestellungen sayfasinda siparislerin saginda bir yerinde yildizlari gözüksün. yildiza bastiginda popup ciksin ve müsteri yorumunu görebilelim. ayrica liste seklinde müsteriler ana menüsünün altina submenü eklenip liste seklinde gözükebilir.
 - sellercentralde ürünlerin icine kargo metodunu secebilecegimiz bir acilir menü olsun. settings/Shipping sayfasinda belirledigimiz fiyatlandirmalar ciksin bu acilir menüde. ona göre shoptaki ürün sayfasinda +bilmem kac euor versand tarzi bir sey gözüksün ve sepette de hesaba katilsin. settings/shopping sayfasinda kargo sirketi girip fiyat grubu yazalim. fiyat grubunu her ülke icin ayri ayri ayarlayabilelim. atiyorum DHL sectim grup adi yazma kismina "Standart Paket" yazdim. fiyat kismi icin alt alta tüm ülkeler cikacak. secip yanlarina fiyatlari yazabilecegim.
 - shopta siparislerim sayfasinda siparislerin yaninda faturayi görmek istiyorum. kargoya verildiginde kargo takip numarasi da siparisin orada yer alsin. fatura olusturma modülü falan var stripe ta nasil yapilacaksa yap. yapmam gerekeni söyle. fatura icin nasil template hazirlayalim vs.

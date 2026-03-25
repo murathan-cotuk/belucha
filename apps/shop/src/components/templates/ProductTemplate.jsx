@@ -782,8 +782,17 @@ export default function ProductTemplate() {
     ? Math.round(((priceCents - saleCents) / priceCents) * 100)
     : null;
   const bulletPoints = Array.isArray(meta.bullet_points) ? meta.bullet_points.filter(Boolean) : [];
-  const reviewCount = meta.review_count != null ? Number(meta.review_count) : 0;
-  const reviewAvg = meta.review_avg != null ? Number(meta.review_avg) : 0;
+  const [productReviews, setProductReviews] = useState([]);
+  const reviewCount = productReviews.length > 0 ? productReviews.length : (meta.review_count != null ? Number(meta.review_count) : 0);
+  const reviewAvg = productReviews.length > 0
+    ? productReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / productReviews.length
+    : (meta.review_avg != null ? Number(meta.review_avg) : 0);
+  useEffect(() => {
+    if (!product?.id) return;
+    getMedusaClient().request(`/store/reviews?product_id=${encodeURIComponent(product.id)}`).then((res) => {
+      if (res?.reviews?.length) setProductReviews(res.reviews);
+    }).catch(() => {});
+  }, [product?.id]);
   const soldLastMonth = meta.sold_last_month != null ? Number(meta.sold_last_month) : null;
   const inventory = variant?.inventory_quantity ?? product.variants?.[0]?.inventory_quantity ?? 0;
   const inventorySafe =
@@ -1179,7 +1188,32 @@ export default function ProductTemplate() {
           Kundenbewertungen {reviewCount > 0 && `(${reviewCount})`}
         </SectionTitle>
         <StarRating average={reviewAvg} count={reviewCount} />
-        <p className="text-gray-500 text-sm mt-2">Hier können später die vollständigen Bewertungen angezeigt werden.</p>
+        {productReviews.length > 0 ? (
+          <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+            {productReviews.map((rv) => (
+              <div key={rv.id} style={{ padding: "16px 20px", background: "#f9fafb", borderRadius: 10, border: "1px solid #e5e7eb" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: "#111827" }}>
+                    {rv.customer_name || [rv.first_name, rv.last_name].filter(Boolean).join(" ") || "Kunde"}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16, letterSpacing: 1 }}>
+                      {[1,2,3,4,5].map((n) => (
+                        <span key={n} style={{ color: rv.rating >= n ? "#f59e0b" : "#d1d5db" }}>★</span>
+                      ))}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                      {new Date(rv.created_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                    </span>
+                  </div>
+                </div>
+                {rv.comment && <p style={{ margin: 0, fontSize: 14, color: "#374151", lineHeight: 1.6 }}>{rv.comment}</p>}
+              </div>
+            ))}
+          </div>
+        ) : reviewCount === 0 ? (
+          <p className="text-gray-500 text-sm mt-2">Noch keine Bewertungen vorhanden.</p>
+        ) : null}
       </ReviewsSection>
 
       {/* Full width below */}

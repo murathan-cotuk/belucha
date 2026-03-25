@@ -264,7 +264,7 @@ const Empty = styled.p`
 `;
 
 export default function CartSidebar() {
-  const { cart, sidebarOpen, closeCartSidebar, updateLineItem, removeLineItem, loading, subtotalCents } = useCart();
+  const { cart, sidebarOpen, closeCartSidebar, updateLineItem, removeLineItem, loading, subtotalCents, bonusDiscountCents } = useCart();
   const items = cart?.items || [];
 
   return (
@@ -342,13 +342,19 @@ export default function CartSidebar() {
               <span>Zwischensumme</span>
               <span>{formatPriceCents(subtotalCents)}</span>
             </Row>
+            {bonusDiscountCents > 0 && (
+              <Row style={{ color: "#16a34a" }}>
+                <span>Bonusrabatt</span>
+                <span>−{formatPriceCents(bonusDiscountCents)} €</span>
+              </Row>
+            )}
             <Row>
               <span>Versand</span>
               <span>Wird an der Kasse berechnet</span>
             </Row>
             <RowTotal>
               <span>Gesamt</span>
-              <span>{formatPriceCents(subtotalCents)}</span>
+              <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents))}</span>
             </RowTotal>
             <PrimaryBtn href="/cart" onClick={closeCartSidebar}>
               Zur Kasse

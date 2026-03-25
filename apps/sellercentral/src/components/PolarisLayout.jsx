@@ -65,7 +65,14 @@ function getMenuItemsMain(t) {
         { url: "/products/gift-cards", label: t("giftCards") },
       ],
     },
-    { url: "/customers", label: t("customers"), icon: ProfileIcon },
+    {
+      url: "/customers",
+      label: t("customers"),
+      icon: ProfileIcon,
+      subNavigationItems: [
+        { url: "/customers", label: "Liste" },
+      ],
+    },
     {
       url: "/marketing",
       label: t("marketing"),

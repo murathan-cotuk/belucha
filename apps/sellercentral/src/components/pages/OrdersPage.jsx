@@ -78,7 +78,7 @@ function ExpandedRow({ order }) {
 
   return (
     <tr>
-      <td colSpan={12} style={{ padding: 0, background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+      <td colSpan={13} style={{ padding: 0, background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
         <div style={{ padding: "10px 24px 14px" }}>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             <Button url={getOrderPdfDownloadUrl(order.id, "invoice")} external variant="secondary" size="slim">
@@ -475,6 +475,16 @@ export default function OrdersPage() {
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [versendModal, setVersendModal] = useState(null); // null | array of order objects
+  const [allReviews, setAllReviews] = useState([]); // all product reviews
+  const [reviewPopupOrderId, setReviewPopupOrderId] = useState(null);
+
+  const fetchReviews = useCallback(async () => {
+    try {
+      const client = getMedusaAdminClient();
+      const data = await client.request("/admin-hub/reviews");
+      setAllReviews(data?.reviews || []);
+    } catch { setAllReviews([]); }
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -491,7 +501,7 @@ export default function OrdersPage() {
     setLoading(false);
   }, [search, filterOrderStatus, filterPayStatus, filterDelivery, sort]);
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => { fetchOrders(); fetchReviews(); }, [fetchOrders, fetchReviews]);
 
   const toggleExpand = async (order) => {
     const id = order.id;
@@ -537,7 +547,7 @@ export default function OrdersPage() {
     } catch { }
   };
 
-  const COLS = ["☐", "", "Bestellnummer", "Kunde", "Adresse", "Betrag", "Bestellstatus", "Zahlungsstatus", "Lieferstatus", "Datum", "Land", ""];
+  const COLS = ["☐", "", "Bestellnummer", "Kunde", "Adresse", "Betrag", "Bestellstatus", "Zahlungsstatus", "Lieferstatus", "Datum", "Land", "Bewertung", ""];
 
   const allSelected = orders.length > 0 && orders.every(o => selected.has(o.id));
   const toggleAll = () => {
@@ -560,6 +570,12 @@ export default function OrdersPage() {
           orders={versendModal}
           onClose={() => setVersendModal(null)}
           onDone={() => { fetchOrders(); setSelected(new Set()); }}
+        />
+      )}
+      {reviewPopupOrderId && (
+        <ReviewPopup
+          reviews={allReviews.filter((r) => r.order_id === reviewPopupOrderId)}
+          onClose={() => setReviewPopupOrderId(null)}
         />
       )}
       {/* Header */}
@@ -652,10 +668,10 @@ export default function OrdersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={12} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Laden…</td></tr>
+              <tr><td colSpan={13} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Laden…</td></tr>
             )}
             {!loading && orders.length === 0 && (
-              <tr><td colSpan={12} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Keine Bestellungen gefunden</td></tr>
+              <tr><td colSpan={13} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Keine Bestellungen gefunden</td></tr>
             )}
             {orders.map((order) => (
               <React.Fragment key={order.id}>
@@ -735,6 +751,24 @@ export default function OrdersPage() {
                   <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 500 }}>
                     {order.country || "—"}
                   </td>
+                  {/* Review stars */}
+                  <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                    {(() => {
+                      const orderReviews = allReviews.filter((r) => r.order_id === order.id);
+                      if (orderReviews.length === 0) return <span style={{ color: "#d1d5db", fontSize: 14 }}>★★★★★</span>;
+                      const avg = orderReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / orderReviews.length;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setReviewPopupOrderId(order.id); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                          title={`${orderReviews.length} Bewertung${orderReviews.length !== 1 ? "en" : ""}`}
+                        >
+                          <MiniStars rating={avg} />
+                        </button>
+                      );
+                    })()}
+                  </td>
                   {/* Actions */}
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
@@ -760,3 +794,44 @@ export default function OrdersPage() {
 }
 
 const selStyle = { padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 12, background: "#fff", cursor: "pointer" };
+
+function MiniStars({ rating }) {
+  const r = Math.round(Number(rating) || 0);
+  return (
+    <span style={{ fontSize: 14, letterSpacing: 1, lineHeight: 1 }}>
+      {[1,2,3,4,5].map((n) => (
+        <span key={n} style={{ color: r >= n ? "#f59e0b" : "#d1d5db" }}>★</span>
+      ))}
+    </span>
+  );
+}
+
+function ReviewPopup({ reviews, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Kundenbewertungen</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>×</button>
+        </div>
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {reviews.map((rv) => (
+            <div key={rv.id} style={{ padding: "12px 16px", background: "#f9fafb", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+                <div>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#111827", display: "block" }}>
+                    {rv.product_title || rv.product_id}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>{rv.customer_name || "—"}</span>
+                </div>
+                <MiniStars rating={rv.rating} />
+              </div>
+              {rv.comment && <p style={{ margin: 0, fontSize: 13, color: "#374151", lineHeight: 1.5 }}>{rv.comment}</p>}
+            </div>
+          ))}
+          {reviews.length === 0 && <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>Keine Bewertungen vorhanden.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
