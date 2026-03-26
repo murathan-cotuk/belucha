@@ -132,7 +132,7 @@ export default function DashboardHome() {
     ? recentOrders.map((o) => [
         (o.id || o.display_id || "").toString().slice(-8),
         `€${typeof (o.total ?? o.total_amount) === "number" ? ((o.total ?? o.total_amount) / 100).toFixed(2) : "0.00"}`,
-        (o.status || "—") + (o.created_at ? ` · ${new Date(o.created_at).toLocaleDateString()}` : ""),
+        (o.status || "—") + (o.created_at ? ` · ${new Date(o.created_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""),
         <Button key={o.id} variant="plain" size="slim" onClick={() => router.push(`/orders`)}>View</Button>,
       ])
     : [["No orders yet", "—", "—", ""]];

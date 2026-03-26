@@ -3221,13 +3221,7 @@ async function start() {
       const authHeader = req.headers.authorization || ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
       if (!token) return res.status(401).json({ message: 'Unauthorized' })
-      let payload
-      try {
-        const { verifyCustomerToken } = require('./src/lib/jwt')
-        payload = verifyCustomerToken(token)
-      } catch {
-        return res.status(401).json({ message: 'Invalid token' })
-      }
+      const payload = verifyCustomerToken(token)
       if (!payload?.id) return res.status(401).json({ message: 'Invalid token' })
       const { order_id, product_id, rating, comment } = req.body || {}
       if (!product_id) return res.status(400).json({ message: 'product_id required' })
@@ -3280,13 +3274,7 @@ async function start() {
       const authHeader = req.headers.authorization || ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
       if (!token) return res.status(401).json({ message: 'Unauthorized' })
-      let payload
-      try {
-        const { verifyCustomerToken } = require('./src/lib/jwt')
-        payload = verifyCustomerToken(token)
-      } catch {
-        return res.status(401).json({ message: 'Invalid token' })
-      }
+      const payload = verifyCustomerToken(token)
       if (!payload?.id) return res.status(401).json({ message: 'Invalid token' })
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
       let client
@@ -3630,18 +3618,7 @@ async function start() {
       const authHeader = req.headers.authorization || ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
       if (!token) return res.status(401).json({ message: 'Unauthorized' })
-      let payload
-      try {
-        const { verifyCustomerToken } = require('./src/lib/jwt')
-        payload = verifyCustomerToken(token)
-      } catch {
-        try {
-          const jwt = require('jsonwebtoken')
-          payload = jwt.verify(token, process.env.JWT_SECRET || 'belucha_secret_key_2024')
-        } catch {
-          return res.status(401).json({ message: 'Invalid token' })
-        }
-      }
+      const payload = verifyCustomerToken(token)
       if (!payload?.email) return res.status(401).json({ message: 'Invalid token' })
       let client
       try {
@@ -3726,18 +3703,7 @@ async function start() {
       if (!token) return res.status(401).json({ message: 'Unauthorized' })
       const orderId = (req.params.id || '').trim()
       if (!orderId) return res.status(400).json({ message: 'order id required' })
-      let payload
-      try {
-        const { verifyCustomerToken } = require('./src/lib/jwt')
-        payload = verifyCustomerToken(token)
-      } catch {
-        try {
-          const jwt = require('jsonwebtoken')
-          payload = jwt.verify(token, process.env.JWT_SECRET || 'belucha_secret_key_2024')
-        } catch {
-          return res.status(401).json({ message: 'Invalid token' })
-        }
-      }
+      const payload = verifyCustomerToken(token)
       if (!payload?.email) return res.status(401).json({ message: 'Invalid token' })
       let client
       try {

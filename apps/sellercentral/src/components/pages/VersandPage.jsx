@@ -140,7 +140,7 @@ export default function VersandPage() {
   const handleSaveAll = async () => {
     setSaving(true);
     const carrierName = carrier === "Sonstige" ? customCarrier.trim() || "Sonstige" : carrier;
-    const dateStr = new Date().toLocaleDateString("de-DE");
+    const dateStr = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
     const shippedAt = new Date().toISOString();
     try {
       const client = getMedusaAdminClient();
@@ -163,7 +163,7 @@ export default function VersandPage() {
 
   const handlePrintAll = () => {
     const carrierName = carrier === "Sonstige" ? customCarrier.trim() || "Sonstige" : carrier;
-    const dateStr = new Date().toLocaleDateString("de-DE");
+    const dateStr = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
     const inner = buildShipLabelsHtml(orders, carrierName, trackings, dateStr);
     const win = window.open("", "_blank", "width=900,height=700");
     if (!win) return;
@@ -175,7 +175,7 @@ export default function VersandPage() {
 
   const handlePrintLieferscheinAll = () => {
     const carrierName = carrier === "Sonstige" ? customCarrier.trim() || "Sonstige" : carrier;
-    const dateStr = new Date().toLocaleDateString("de-DE");
+    const dateStr = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
     const inner = buildShipLieferscheinHtml(orders, carrierName, trackings, dateStr);
     const win = window.open("", "_blank", "width=900,height=700");
     if (!win) return;

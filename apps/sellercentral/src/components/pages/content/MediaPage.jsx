@@ -183,7 +183,7 @@ function DetailPanel({ item, folders, onClose, onDelete, onMoveToFolder }) {
               {item.created_at ? (
                 <div>
                   <div style={{ fontSize: 11, color: "#9ca3af" }}>Added</div>
-                  <div style={{ fontSize: 13, color: "#374151" }}>{new Date(item.created_at).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 13, color: "#374151" }}>{new Date(item.created_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</div>
                 </div>
               ) : null}
             </div>

@@ -57,7 +57,7 @@ export default function ShipOrdersModal({ orders, onClose, onDone }) {
 
   const carrierName = carrier === "Sonstige" ? customCarrier.trim() || "Sonstige" : carrier;
 
-  const dateStr = useMemo(() => new Date().toLocaleDateString("de-DE"), []);
+  const dateStr = useMemo(() => new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }), []);
 
   const openPrintWindow = (bodyInner) => {
     const win = window.open("", "_blank", "width=900,height=700");

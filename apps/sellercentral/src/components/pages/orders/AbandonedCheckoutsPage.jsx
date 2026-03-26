@@ -6,7 +6,7 @@ import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 function fmtDate(d) {
   if (!d) return "—";
   const dt = new Date(d);
-  return dt.toLocaleDateString("de-DE") + " " + dt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return dt.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + dt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtCents(c) {

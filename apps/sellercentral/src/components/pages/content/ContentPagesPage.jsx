@@ -148,7 +148,7 @@ export default function ContentPagesPage() {
     p.title || "—",
     `/${p.slug || ""}`,
     p.status || "draft",
-    p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—",
+    p.updated_at ? new Date(p.updated_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—",
     <InlineStack key={p.id} gap="200">
       <Button size="slim" onClick={() => openEdit(p)}>Edit</Button>
       <Button size="slim" tone="critical" onClick={() => handleDeleteRequest(p)}>Delete</Button>

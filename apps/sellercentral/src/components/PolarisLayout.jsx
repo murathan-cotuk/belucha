@@ -30,6 +30,7 @@ import {
 import dynamic from "next/dynamic";
 import en from "@shopify/polaris/locales/en.json";
 import "@shopify/polaris/build/esm/styles.css";
+import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 const discardBtnStyles = `
   .belucha-discard-topbar-btn,
@@ -157,10 +158,11 @@ export default function PolarisLayout({ children }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const storeName =
+  const [storeName, setStoreName] = useState(
     typeof window !== "undefined"
       ? localStorage.getItem("storeName") || "Seller Account"
-      : "Seller Account";
+      : "Seller Account"
+  );
 
   useEffect(() => {
     if (pathname === "/login" || pathname === "/register") return;
@@ -169,6 +171,16 @@ export default function PolarisLayout({ children }) {
       router.push("/login");
     } else {
       setIsAuthenticated(true);
+      // Fetch store name from backend if not cached
+      const cached = localStorage.getItem("storeName");
+      if (!cached) {
+        getMedusaAdminClient().getSellerSettings().then((data) => {
+          if (data?.store_name) {
+            localStorage.setItem("storeName", data.store_name);
+            setStoreName(data.store_name);
+          }
+        }).catch(() => {});
+      }
     }
   }, [pathname, router]);
 
