@@ -12,6 +12,7 @@ export function CartProvider({ children }) {
   const [cart, setCart] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [shippingGroups, setShippingGroups] = useState([]);
 
   const persistCartId = useCallback((id) => {
     if (typeof window !== "undefined" && id) {
@@ -59,6 +60,12 @@ export function CartProvider({ children }) {
     const id = getStoredCartId();
     if (id) fetchCart(id);
   }, [getStoredCartId, fetchCart]);
+
+  useEffect(() => {
+    getMedusaClient().request("/store/shipping-groups")
+      .then((d) => setShippingGroups(d?.groups || []))
+      .catch(() => {});
+  }, []);
 
   const addToCart = useCallback(async (variantId, quantity = 1) => {
     setLoading(true);
@@ -178,6 +185,7 @@ export function CartProvider({ children }) {
     itemCount,
     subtotalCents,
     bonusDiscountCents,
+    shippingGroups,
   };
 
   return (

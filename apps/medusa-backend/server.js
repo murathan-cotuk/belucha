@@ -700,7 +700,36 @@ async function start() {
             UNIQUE(order_id, product_id)
           );
         `).catch(() => {})
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS store_shipping_groups (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    carrier_id uuid REFERENCES store_shipping_carriers(id) ON DELETE SET NULL,
+    name varchar(200) NOT NULL,
+    created_at timestamp DEFAULT now(),
+    updated_at timestamp DEFAULT now()
+  );
+`).catch(() => {})
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS store_shipping_prices (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    group_id uuid NOT NULL REFERENCES store_shipping_groups(id) ON DELETE CASCADE,
+    country_code varchar(10) NOT NULL,
+    price_cents integer NOT NULL DEFAULT 0,
+    created_at timestamp DEFAULT now(),
+    UNIQUE(group_id, country_code)
+  );
+`).catch(() => {})
         await client.query(`ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS product_id text`).catch(() => {})
+        // Backfill product_id for old order items that have a product_handle
+        await client.query(`
+          UPDATE store_order_items soi
+          SET product_id = p.id::text
+          FROM admin_hub_products p
+          WHERE soi.product_id IS NULL
+            AND soi.product_handle IS NOT NULL
+            AND soi.product_handle <> ''
+            AND p.handle = soi.product_handle
+        `).catch(() => {})
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_product ON store_product_reviews(product_id)').catch(() => {})
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_customer ON store_product_reviews(customer_id)').catch(() => {})
         await client.end()
@@ -3270,6 +3299,227 @@ async function start() {
       }
     }
 
+    // --- Shipping Groups CRUD ---
+    const adminHubShippingGroupsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const groups = await client.query(`
+          SELECT g.*, c.name AS carrier_name
+          FROM store_shipping_groups g
+          LEFT JOIN store_shipping_carriers c ON c.id = g.carrier_id
+          ORDER BY g.created_at ASC
+        `)
+        const prices = await client.query('SELECT * FROM store_shipping_prices ORDER BY country_code')
+        await client.end()
+        const pricesByGroup = {}
+        for (const p of (prices.rows || [])) {
+          if (!pricesByGroup[p.group_id]) pricesByGroup[p.group_id] = []
+          pricesByGroup[p.group_id].push(p)
+        }
+        const result = (groups.rows || []).map(g => ({ ...g, prices: pricesByGroup[g.id] || [] }))
+        res.json({ groups: result })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ groups: [] })
+      }
+    }
+
+    const adminHubShippingGroupPOST = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const { name, carrier_id, prices } = req.body || {}
+      if (!name) return res.status(400).json({ message: 'name required' })
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query(
+          `INSERT INTO store_shipping_groups (name, carrier_id) VALUES ($1, $2) RETURNING *`,
+          [name.trim(), carrier_id || null]
+        )
+        const group = r.rows[0]
+        if (Array.isArray(prices) && prices.length > 0) {
+          for (const p of prices) {
+            if (!p.country_code) continue
+            await client.query(
+              `INSERT INTO store_shipping_prices (group_id, country_code, price_cents) VALUES ($1,$2,$3)
+               ON CONFLICT (group_id, country_code) DO UPDATE SET price_cents=$3`,
+              [group.id, p.country_code, Math.round(Number(p.price_cents) || 0)]
+            )
+          }
+        }
+        await client.end()
+        res.status(201).json({ group })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubShippingGroupPATCH = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      const { name, carrier_id, prices } = req.body || {}
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        if (name !== undefined || carrier_id !== undefined) {
+          const sets = []; const vals = []
+          if (name !== undefined) { vals.push(name.trim()); sets.push(`name=$${vals.length}`) }
+          if (carrier_id !== undefined) { vals.push(carrier_id || null); sets.push(`carrier_id=$${vals.length}`) }
+          sets.push(`updated_at=now()`)
+          vals.push(id)
+          await client.query(`UPDATE store_shipping_groups SET ${sets.join(',')} WHERE id=$${vals.length}::uuid`, vals)
+        }
+        if (Array.isArray(prices)) {
+          for (const p of prices) {
+            if (!p.country_code) continue
+            await client.query(
+              `INSERT INTO store_shipping_prices (group_id, country_code, price_cents) VALUES ($1,$2,$3)
+               ON CONFLICT (group_id, country_code) DO UPDATE SET price_cents=$3`,
+              [id, p.country_code, Math.round(Number(p.price_cents) || 0)]
+            )
+          }
+        }
+        const r = await client.query(`SELECT g.*, c.name AS carrier_name FROM store_shipping_groups g LEFT JOIN store_shipping_carriers c ON c.id=g.carrier_id WHERE g.id=$1::uuid`, [id])
+        const pr = await client.query('SELECT * FROM store_shipping_prices WHERE group_id=$1 ORDER BY country_code', [id])
+        await client.end()
+        const group = r.rows[0] ? { ...r.rows[0], prices: pr.rows || [] } : null
+        res.json({ group })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    const adminHubShippingGroupDELETE = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      const id = (req.params.id || '').trim()
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        await client.query('DELETE FROM store_shipping_groups WHERE id=$1::uuid', [id])
+        await client.end()
+        res.json({ success: true })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /store/shipping-groups — public, for shop to show prices
+    const storeShippingGroupsGET = async (req, res) => {
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const groups = await client.query('SELECT id, name FROM store_shipping_groups ORDER BY created_at ASC')
+        const prices = await client.query('SELECT group_id, country_code, price_cents FROM store_shipping_prices')
+        await client.end()
+        const pricesByGroup = {}
+        for (const p of (prices.rows || [])) {
+          if (!pricesByGroup[p.group_id]) pricesByGroup[p.group_id] = {}
+          pricesByGroup[p.group_id][p.country_code] = Number(p.price_cents)
+        }
+        const result = (groups.rows || []).map(g => ({ id: g.id, name: g.name, prices: pricesByGroup[g.id] || {} }))
+        res.json({ groups: result })
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        res.json({ groups: [] })
+      }
+    }
+
+    // GET /store/orders/:id/invoice — customer downloads their own invoice as PDF
+    const storeOrderInvoicePdfGET = async (req, res) => {
+      const orderId = (req.params.id || '').trim()
+      if (!orderId) return res.status(400).json({ message: 'id required' })
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!token) return res.status(401).json({ message: 'Unauthorized' })
+      const payload = verifyCustomerToken(token)
+      if (!payload?.email) return res.status(401).json({ message: 'Invalid token' })
+      const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+      let client
+      try {
+        const PDFDocument = require('pdfkit')
+        const { Client } = require('pg')
+        client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        // Verify order belongs to this customer
+        const oRes = await client.query(
+          `SELECT * FROM store_orders WHERE id = $1::uuid
+            AND (LOWER(TRIM(email)) = LOWER(TRIM($2)) OR (customer_id IS NOT NULL AND customer_id = $3::uuid))`,
+          [orderId, payload.email, payload.id]
+        )
+        const row = oRes.rows && oRes.rows[0]
+        if (!row) { await client.end(); return res.status(404).json({ message: 'Order not found' }) }
+        const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [orderId])
+        const itemRows = iRes.rows || []
+        await client.end(); client = null
+        const on = row.order_number != null ? String(row.order_number) : String(orderId).slice(0, 8)
+        const shopName = process.env.SHOP_INVOICE_NAME || 'Belucha'
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `attachment; filename="Rechnung-${on}.pdf"`)
+        const doc = new PDFDocument({ margin: 48, size: 'A4' })
+        doc.pipe(res)
+        doc.fontSize(20).fillColor('#111').text(pdfDeLatin('Rechnung'), { align: 'right' })
+        doc.moveDown(0.2)
+        doc.fontSize(9).fillColor('#666').text(pdfDeLatin(shopName), { align: 'right' })
+        doc.fillColor('#111')
+        doc.moveDown(1.2)
+        doc.fontSize(10).text(`Rechnungs-Nr.: ${on}`)
+        doc.text(`Datum: ${pdfFmtDate(row.created_at)}`)
+        doc.text(`Bestell-ID: ${orderId}`)
+        doc.moveDown(0.6)
+        const custName = [row.first_name, row.last_name].filter(Boolean).join(' ')
+        doc.text(`Kunde: ${pdfDeLatin(custName || '—')}`)
+        if (row.email) doc.text(`E-Mail: ${pdfDeLatin(row.email)}`)
+        doc.moveDown(0.6)
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Lieferadresse'))
+        doc.font('Helvetica').fontSize(9)
+        ;[custName, row.address_line1, row.address_line2, [row.postal_code, row.city].filter(Boolean).join(' '), row.country].filter(Boolean).forEach((line) => doc.text(pdfDeLatin(line)))
+        const billDiff = row.billing_same_as_shipping === false && row.billing_address_line1
+        if (billDiff) {
+          doc.moveDown(0.5)
+          doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Rechnungsadresse'))
+          doc.font('Helvetica').fontSize(9)
+          ;[[row.first_name, row.last_name].filter(Boolean).join(' '), row.billing_address_line1, row.billing_address_line2, [row.billing_postal_code, row.billing_city].filter(Boolean).join(' '), row.billing_country].filter(Boolean).forEach((line) => doc.text(pdfDeLatin(line)))
+        }
+        doc.moveDown(0.8)
+        doc.fontSize(10).font('Helvetica-Bold').text(pdfDeLatin('Positionen'))
+        doc.font('Helvetica').fontSize(9)
+        itemRows.forEach((it) => {
+          const qty = Number(it.quantity || 1)
+          const unit = Number(it.unit_price_cents || 0)
+          doc.text(`${qty} x ${pdfDeLatin(it.title || 'Artikel')} — ${pdfCents(unit)} / Stk. — ${pdfCents(unit * qty)}`, { width: 500 })
+        })
+        doc.moveDown(0.6)
+        const sub = row.subtotal_cents != null ? Number(row.subtotal_cents) : itemRows.reduce((s, it) => s + Number(it.unit_price_cents || 0) * Number(it.quantity || 1), 0)
+        const ship = Number(row.shipping_cents || 0)
+        const disc = Number(row.discount_cents || 0)
+        doc.text(`Zwischensumme: ${pdfCents(sub)}`)
+        doc.text(`Versand: ${ship > 0 ? pdfCents(ship) : '0,00 EUR (kostenlos)'}`)
+        if (disc > 0) doc.text(`Rabatt: -${pdfCents(disc)}`)
+        doc.font('Helvetica-Bold').fontSize(11).text(`Gesamt: ${pdfCents(row.total_cents != null ? row.total_cents : sub + ship - disc)}`)
+        doc.font('Helvetica').fontSize(8).fillColor('#666').moveDown(1)
+        doc.text(pdfDeLatin('Hinweis: Es handelt sich um eine vereinfachte Rechnung. Bei Fragen wenden Sie sich an den Verkäufer.'), { width: 480 })
+        doc.end()
+      } catch (e) {
+        if (client) try { await client.end() } catch (_) {}
+        if (!res.headersSent) res.status(500).json({ message: e?.message || 'PDF error' })
+      }
+    }
+
     // GET /store/reviews/my — customer's own reviews
     const storeReviewsMyGET = async (req, res) => {
       const authHeader = req.headers.authorization || ''
@@ -4883,6 +5133,12 @@ async function start() {
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         await client.query(`UPDATE store_orders SET ${sets.join(', ')} WHERE id = $${params.length}::uuid`, params)
+        // Auto-complete: if payment is paid and delivery is delivered, mark order as completed
+        await client.query(
+          `UPDATE store_orders SET order_status = 'abgeschlossen', updated_at = now()
+           WHERE id = $1::uuid AND payment_status = 'bezahlt' AND delivery_status = 'zugestellt' AND order_status != 'abgeschlossen'`,
+          [id]
+        )
         const oRes = await client.query('SELECT * FROM store_orders WHERE id = $1::uuid', [id])
         const row = oRes.rows && oRes.rows[0]
         const iRes = await client.query('SELECT * FROM store_order_items WHERE order_id = $1 ORDER BY created_at', [id])
@@ -4929,6 +5185,8 @@ async function start() {
           newsletter_opted_in = false,
         } = req.body || {}
         if (!email) return res.status(400).json({ message: 'email required' })
+        // Auto-complete: if both paid and delivered, set completed
+        const effectiveOrderStatus = (payment_status === 'bezahlt' && delivery_status === 'zugestellt') ? 'abgeschlossen' : order_status
         // Calculate total
         const itemsTotal = items.reduce((s, it) => s + (Number(it.unit_price_cents||0) * Number(it.quantity||1)), 0)
         const total_cents = itemsTotal + Number(shipping_cents||0) - Number(discount_cents||0)
@@ -4943,7 +5201,7 @@ async function start() {
           [email, first_name||null, last_name||null, phone||null, country||null,
            address_line1||null, address_line2||null, zip_code||null, city||null,
            total_cents, subtotal_cents, Number(shipping_cents||0), Number(discount_cents||0),
-           order_status, payment_status, delivery_status, payment_method||null, currency, notes||null, newsletter_opted_in]
+           effectiveOrderStatus, payment_status, delivery_status, payment_method||null, currency, notes||null, newsletter_opted_in]
         )
         const order = orderR.rows[0]
         // Insert items
@@ -5684,6 +5942,12 @@ async function start() {
     httpApp.post('/store/wishlist', storeWishlistPOST)
     httpApp.delete('/store/wishlist/:productId', storeWishlistDELETE)
     httpApp.post('/store/orders/:id/return-request', storeReturnRequestPOST)
+    httpApp.get('/admin-hub/v1/shipping-groups', adminHubShippingGroupsGET)
+    httpApp.post('/admin-hub/v1/shipping-groups', adminHubShippingGroupPOST)
+    httpApp.patch('/admin-hub/v1/shipping-groups/:id', adminHubShippingGroupPATCH)
+    httpApp.delete('/admin-hub/v1/shipping-groups/:id', adminHubShippingGroupDELETE)
+    httpApp.get('/store/shipping-groups', storeShippingGroupsGET)
+    httpApp.get('/store/orders/:id/invoice', storeOrderInvoicePdfGET)
     httpApp.get('/store/reviews/my', storeReviewsMyGET)
     httpApp.get('/store/reviews', storeReviewsGET)
     httpApp.post('/store/reviews', storeReviewsPOST)

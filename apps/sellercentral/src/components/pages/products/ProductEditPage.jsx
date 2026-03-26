@@ -255,6 +255,7 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
   const [duplicateOptions, setDuplicateOptions] = useState(DEFAULT_DUPLICATE_OPTIONS);
   const [duplicateSaving, setDuplicateSaving] = useState(false);
   const editingCountry = COUNTRY_FOR_UI_LOCALE[locale] || "DE";
+  const [shippingGroupsList, setShippingGroupsList] = useState([]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -304,6 +305,15 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     client.getAdminHubProducts({ limit: 200 }).then((r) => {
       if (!cancelled && r?.products) setRelatedProductsList(r.products);
     }).catch(() => { if (!cancelled) setRelatedProductsList([]); });
+    return () => { cancelled = true; };
+  }, [client]);
+
+  // Load shipping groups for the dropdown
+  useEffect(() => {
+    let cancelled = false;
+    client.request("/admin-hub/v1/shipping-groups").then((r) => {
+      if (!cancelled) setShippingGroupsList(r?.groups || []);
+    }).catch(() => { if (!cancelled) setShippingGroupsList([]); });
     return () => { cancelled = true; };
   }, [client]);
 
@@ -1845,6 +1855,19 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 ))
               ) : null}
               <Button variant="secondary" size="slim" onClick={() => updateMeta("metafields", [...metafieldsList, { key: "", value: "" }])}>+ Metafield</Button>
+
+              <Divider />
+              <Text as="h2" variant="bodyMd" fontWeight="regular">Versand</Text>
+              <Select
+                label="Versandgruppe"
+                options={[
+                  { label: "— Keine Versandgruppe —", value: "" },
+                  ...shippingGroupsList.map((g) => ({ label: g.name, value: g.id })),
+                ]}
+                value={meta.shipping_group_id ?? ""}
+                onChange={(v) => updateMeta("shipping_group_id", v || undefined)}
+                helpText="Versandpreise werden anhand der zugewiesenen Versandgruppe im Shop angezeigt."
+              />
 
               <Divider />
               <Text as="h2" variant="bodyMd" fontWeight="regular">Produktsicherheitsinformationen (GPSR, optional)</Text>

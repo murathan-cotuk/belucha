@@ -258,7 +258,13 @@ export default function OrderDetailPage() {
                 {items.length === 0 && (
                   <tr><td colSpan={4} style={{ padding: "20px 0", color: "#9ca3af", textAlign: "center" }}>Keine Artikel</td></tr>
                 )}
-                {items.map((it, i) => (
+                {items.map((it, i) => {
+                  const productUrl = it.product_id
+                    ? `/${locale}/products/${it.product_id}`
+                    : it.product_handle
+                    ? `/${locale}/products?search=${encodeURIComponent(it.product_handle)}`
+                    : null;
+                  return (
                   <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={{ padding: "10px 0" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -266,7 +272,13 @@ export default function OrderDetailPage() {
                           <img src={it.thumbnail} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e7eb" }} />
                         )}
                         <div>
-                          <div style={{ fontWeight: 500 }}>{it.title || "—"}</div>
+                          {productUrl ? (
+                            <a href={productUrl} style={{ fontWeight: 500, color: "#111827", textDecoration: "underline", textDecorationColor: "#d1d5db" }}>
+                              {it.title || "—"}
+                            </a>
+                          ) : (
+                            <div style={{ fontWeight: 500 }}>{it.title || "—"}</div>
+                          )}
                           {it.product_handle && <div style={{ fontSize: 11, color: "#9ca3af" }}>{it.product_handle}</div>}
                         </div>
                       </div>
@@ -275,7 +287,8 @@ export default function OrderDetailPage() {
                     <td style={{ textAlign: "right", padding: "10px 0", color: "#374151" }}>{fmtCents(it.unit_price_cents)}</td>
                     <td style={{ textAlign: "right", padding: "10px 0", fontWeight: 600 }}>{fmtCents((it.unit_price_cents || 0) * (it.quantity || 1))}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr>

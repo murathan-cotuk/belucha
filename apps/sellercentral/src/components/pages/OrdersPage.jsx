@@ -62,7 +62,7 @@ function fmtCentsWithSymbol(c, symbol = "€") {
   return symbol === "€" ? val + " €" : symbol + " " + val;
 }
 
-function ExpandedRow({ order }) {
+function ExpandedRow({ order, locale = "de" }) {
   const items = order._items || [];
   const subtotal = items.reduce((s, it) => s + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0);
   const total = order.total_cents || order.subtotal_cents || 0;
@@ -134,7 +134,11 @@ function ExpandedRow({ order }) {
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {it.thumbnail && <img src={it.thumbnail} alt="" style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }} />}
                         <div>
-                          <div>{it.title || "—"}</div>
+                          {it.product_id ? (
+                            <a href={`/${locale}/products/${it.product_id}`} style={{ color: "#111827", textDecoration: "underline", textDecorationColor: "#d1d5db" }}>{it.title || "—"}</a>
+                          ) : (
+                            <div>{it.title || "—"}</div>
+                          )}
                           {vat.rate > 0 && (
                             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
                               Netto: {fmtCents(Math.round((it.unit_price_cents || 0) / (1 + vat.rate / 100)))} · +{vat.label} {vat.rate}%: {fmtCents(Math.round((it.unit_price_cents || 0) - (it.unit_price_cents || 0) / (1 + vat.rate / 100)))}
@@ -783,7 +787,7 @@ export default function OrdersPage() {
                     </div>
                   </td>
                 </tr>
-                {expanded[order.id] && <ExpandedRow order={order} />}
+                {expanded[order.id] && <ExpandedRow order={order} locale={locale} />}
               </React.Fragment>
             ))}
           </tbody>

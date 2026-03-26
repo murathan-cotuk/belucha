@@ -638,6 +638,7 @@ export default function ProductTemplate() {
   const [sellerStoreName, setSellerStoreName] = useState("");
   const [cartNotice, setCartNotice] = useState({ text: "", visible: false });
   const [productReviews, setProductReviews] = useState([]);
+  const [shippingGroups, setShippingGroups] = useState([]);
   const cartNoticeTimersRef = useRef({ hide: null, clear: null });
   const cartState = useContext(CartContext);
   const addToCart = cartState?.addToCart ?? (async () => null);
@@ -742,6 +743,12 @@ export default function ProductTemplate() {
     }).catch(() => {});
   }, [product?.id]);
 
+  useEffect(() => {
+    getMedusaClient().request("/store/shipping-groups").then((res) => {
+      setShippingGroups(res?.groups || []);
+    }).catch(() => {});
+  }, []);
+
   if (loading) return <Container>Laden…</Container>;
   if (error) return <Container>Fehler: {error}</Container>;
   if (!product) return <Container>Produkt nicht gefunden.</Container>;
@@ -757,6 +764,13 @@ export default function ProductTemplate() {
         : [];
   const images = rawImages.map((img) => ({ ...img, url: resolveImageUrl(img?.url || img) || img?.url || img }));
   const meta = product.metadata || {};
+  const shippingGroupId = meta.shipping_group_id;
+  const shippingGroup = shippingGroups.find((g) => g.id === shippingGroupId);
+  const defaultCountry = "DE";
+  const shippingPriceCents = shippingGroup?.prices?.[defaultCountry];
+  const shippingDisplay = shippingGroupId && shippingGroup
+    ? (shippingPriceCents != null ? `${(shippingPriceCents / 100).toLocaleString("de-DE", { minimumFractionDigits: 2 })} € Versand` : shippingGroup.name)
+    : (meta.shipping_info || meta.versand || "Standardversand");
   const rawVariants = product.variants || [];
   const variationGroups = product.variation_groups || null;
   const variants = normalizeVariants(rawVariants, variationGroups);
@@ -1148,7 +1162,7 @@ export default function ProductTemplate() {
 
               <InfoList>
                 {[
-                  { label: "Versand", value: meta.shipping_info || meta.versand || "Standardversand" },
+                  { label: "Versand", value: shippingDisplay },
                   { label: "Rückgabe", value: `${returnDays} Tage, ${returnCost}` },
                   { label: "Verkäufer", value: storeName },
                   ...((variant?.ean || meta.ean) ? [{ label: "EAN", value: variant?.ean || meta.ean }] : []),

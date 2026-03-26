@@ -8,26 +8,68 @@ import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
 import AccountSidebar from "@/components/account/AccountSidebar";
 import { getMedusaClient } from "@/lib/medusa-client";
-import { formatPriceCents } from "@/lib/format";
 
-const STATUS_MAP = {
-  offen: { label: "Offen", cls: "bg-yellow-100 text-yellow-800" },
-  in_bearbeitung: { label: "In Bearbeitung", cls: "bg-blue-100 text-blue-800" },
-  versendet: { label: "Versendet", cls: "bg-purple-100 text-purple-800" },
-  zugestellt: { label: "Zugestellt", cls: "bg-green-100 text-green-800" },
-  abgeschlossen: { label: "Abgeschlossen", cls: "bg-green-100 text-green-800" },
-  storniert: { label: "Storniert", cls: "bg-red-100 text-red-800" },
-  bezahlt: { label: "Bezahlt", cls: "bg-green-100 text-green-800" },
-  pending: { label: "Offen", cls: "bg-yellow-100 text-yellow-800" },
-  shipped: { label: "Versendet", cls: "bg-purple-100 text-purple-800" },
-  delivered: { label: "Zugestellt", cls: "bg-green-100 text-green-800" },
-  completed: { label: "Abgeschlossen", cls: "bg-green-100 text-green-800" },
-  cancelled: { label: "Storniert", cls: "bg-red-100 text-red-800" },
+const STATUS_LABEL = {
+  offen: "Offen",
+  in_bearbeitung: "In Bearbeitung",
+  versendet: "Versendet",
+  zugestellt: "Zugestellt",
+  abgeschlossen: "Abgeschlossen",
+  storniert: "Storniert",
+  bezahlt: "Bezahlt",
+  pending: "Offen",
+  shipped: "Versendet",
+  delivered: "Zugestellt",
+  completed: "Abgeschlossen",
+  cancelled: "Storniert",
 };
 
-function Badge({ status }) {
-  const s = STATUS_MAP[status?.toLowerCase()] || { label: status || "—", cls: "bg-gray-100 text-gray-700" };
-  return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.cls}`}>{s.label}</span>;
+const STATUS_COLOR = {
+  offen: "#92400e",
+  in_bearbeitung: "#1e40af",
+  versendet: "#6d28d9",
+  zugestellt: "#166534",
+  abgeschlossen: "#166534",
+  storniert: "#991b1b",
+  bezahlt: "#166534",
+  pending: "#92400e",
+  shipped: "#6d28d9",
+  delivered: "#166534",
+  completed: "#166534",
+  cancelled: "#991b1b",
+};
+
+function StatusPill({ status }) {
+  const key = (status || "").toLowerCase();
+  const label = STATUS_LABEL[key] || status || "—";
+  const color = STATUS_COLOR[key] || "#6b7280";
+  return (
+    <span style={{
+      display: "inline-block",
+      fontSize: 11,
+      fontWeight: 600,
+      color,
+      background: color + "18",
+      borderRadius: 20,
+      padding: "2px 8px",
+      letterSpacing: 0.2,
+    }}>
+      {label}
+    </span>
+  );
+}
+
+function getTrackingUrl(carrier, number) {
+  if (!number) return null;
+  const c = (carrier || "").toLowerCase().trim();
+  if (c.includes("dhl")) return `https://www.dhl.de/de/privatkunden/dhl-sendungsverfolgung.html?piececode=${number}`;
+  if (c.includes("dpd")) return `https://tracking.dpd.de/status/de_DE/parcel/${number}`;
+  if (c.includes("ups")) return `https://www.ups.com/track?tracknum=${number}`;
+  if (c.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
+  if (c.includes("hermes") || c.includes("evri")) return `https://www.myhermes.de/empfangen/sendungsverfolgung/sendungsdetails/#/${number}`;
+  if (c.includes("gls")) return `https://gls-group.com/DE/de/paketverfolgung?match=${number}`;
+  if (c.includes("post") || c.includes("brief")) return `https://www.deutschepost.de/de/s/sendungsverfolgung.html?barcode=${number}`;
+  return null;
 }
 
 function fmtDate(d) {
@@ -35,44 +77,25 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-function printInvoice(order) {
-  const win = window.open("", "_blank", "width=900,height=700");
-  const date = fmtDate(order.created_at);
-  const items = (order.items || []).map(it => `
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee">${it.title || "—"}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:center">${it.quantity}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right">${((Number(it.unit_price_cents||0)*Number(it.quantity||1))/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</td>
-    </tr>`).join("");
-  win.document.write(`<!DOCTYPE html><html><head><title>Rechnung #${order.order_number||order.id?.slice(0,8)}</title>
-  <style>body{font-family:Arial,sans-serif;margin:40px;color:#1f2937}h1{margin:0 0 4px}table{width:100%;border-collapse:collapse}th{background:#f9fafb;padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase}@media print{.noprint{display:none}}</style></head>
-  <body>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px">
-      <div><h1 style="font-size:28px;font-weight:700">RECHNUNG</h1><div style="color:#6b7280;margin-top:4px">Rechnungsnummer: #${order.order_number||"—"}</div><div style="color:#6b7280">Datum: ${date}</div></div>
-      <div style="text-align:right"><div style="font-size:20px;font-weight:700">Belucha</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:40px">
-      <div><div style="font-size:11px;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Lieferadresse</div>
-        <div><strong>${[order.first_name,order.last_name].filter(Boolean).join(" ")||"—"}</strong></div>
-        <div>${order.address_line1||"—"}</div><div>${[order.postal_code,order.city].filter(Boolean).join(" ")}</div><div>${order.country||""}</div>
-      </div>
-      <div><div style="font-size:11px;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Rechnungsadresse</div>
-        ${order.billing_same_as_shipping===false && order.billing_address_line1 ? `<div>${order.billing_address_line1}</div><div>${[order.billing_postal_code,order.billing_city].filter(Boolean).join(" ")}</div><div>${order.billing_country||""}</div>` : `<div>${order.address_line1||"—"}</div><div>${[order.postal_code,order.city].filter(Boolean).join(" ")}</div><div>${order.country||""}</div>`}
-      </div>
-    </div>
-    <table>
-      <thead><tr><th>Artikel</th><th style="text-align:center">Menge</th><th style="text-align:right">Betrag</th></tr></thead>
-      <tbody>${items}</tbody>
-      <tfoot>
-        ${Number(order.shipping_cents||0)>0?`<tr><td colspan="2" style="padding:8px 12px;text-align:right;color:#6b7280">Versand</td><td style="padding:8px 12px;text-align:right">${(Number(order.shipping_cents)/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</td></tr>`:""}
-        ${Number(order.discount_cents||0)>0?`<tr><td colspan="2" style="padding:8px 12px;text-align:right;color:#059669">Rabatt</td><td style="padding:8px 12px;text-align:right;color:#059669">−${(Number(order.discount_cents)/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</td></tr>`:""}
-        <tr><td colspan="2" style="padding:12px;text-align:right;font-weight:700;border-top:2px solid #e5e7eb">Gesamt</td><td style="padding:12px;text-align:right;font-weight:700;border-top:2px solid #e5e7eb">${(Number(order.total_cents||0)/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</td></tr>
-      </tfoot>
-    </table>
-    ${order.tracking_number?`<div style="margin-top:32px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px"><div style="font-weight:600;color:#065f46;margin-bottom:4px">📦 Sendungsverfolgung</div><div style="color:#047857">${order.carrier_name||"Carrier"}: <strong>${order.tracking_number}</strong></div></div>`:""}
-    <script>window.onload=()=>window.print()</script>
-  </body></html>`);
-  win.document.close();
+function fmtEur(cents) {
+  return (Number(cents || 0) / 100).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
+
+async function downloadInvoice(order) {
+  const token = getToken("customer");
+  const res = await fetch(`/api/store-invoice/${order.id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) { alert("Rechnung konnte nicht heruntergeladen werden."); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Rechnung-${order.order_number || order.id?.slice(0, 8)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function RetourModal({ order, onClose, onSubmitted }) {
@@ -103,13 +126,13 @@ function RetourModal({ order, onClose, onSubmitted }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Retoure anfragen — #{order.order_number || "—"}</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280" }}>×</button>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Retoure anfragen — #{order.order_number || "—"}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af", lineHeight: 1 }}>×</button>
         </div>
-        <div style={{ padding: 24 }}>
-          <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6 }}>Rückgabegrund *</label>
-          <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, marginBottom: 14 }}>
+        <div style={{ padding: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 5, color: "#374151" }}>Rückgabegrund *</label>
+          <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, marginBottom: 12 }}>
             <option value="">Bitte wählen…</option>
             <option value="defekt">Artikel defekt / beschädigt</option>
             <option value="falsch">Falscher Artikel erhalten</option>
@@ -119,19 +142,34 @@ function RetourModal({ order, onClose, onSubmitted }) {
             <option value="nicht_erwartet">Entspricht nicht der Beschreibung</option>
             <option value="sonstiges">Sonstiges</option>
           </select>
-          <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 6 }}>Anmerkungen (optional)</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} style={{ width: "100%", padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, resize: "vertical", boxSizing: "border-box" }} placeholder="Weitere Details…" />
-          {err && <p style={{ color: "#ef4444", fontSize: 12, marginTop: 8 }}>{err}</p>}
+          <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 5, color: "#374151" }}>Anmerkungen (optional)</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, resize: "vertical", boxSizing: "border-box" }} placeholder="Weitere Details…" />
+          {err && <p style={{ color: "#ef4444", fontSize: 12, marginTop: 6 }}>{err}</p>}
         </div>
-        <div style={{ padding: "12px 24px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button onClick={onClose} style={{ padding: "8px 16px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, cursor: "pointer" }}>Abbrechen</button>
-          <button onClick={handleSubmit} disabled={saving} style={{ padding: "8px 16px", background: "#ff971c", color: "#fff", border: "2px solid #000", borderRadius: 7, fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: "0 2px 0 2px #000" }}>
+        <div style={{ padding: "12px 20px", borderTop: "1px solid #f3f4f6", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={onClose} style={{ padding: "7px 14px", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, cursor: "pointer", background: "#fff" }}>Abbrechen</button>
+          <button onClick={handleSubmit} disabled={saving} style={{ padding: "7px 14px", background: "#ff971c", color: "#fff", border: "2px solid #000", borderRadius: 7, fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: "0 2px 0 2px #000" }}>
             {saving ? "…" : "Retoure anfragen"}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function StarDisplay({ rating }) {
+  const full = Math.round(rating);
+  return (
+    <span style={{ color: "#f59e0b", fontSize: 13, letterSpacing: 1 }}>
+      {[1,2,3,4,5].map(i => i <= full ? "★" : "☆").join("")}
+    </span>
+  );
+}
+
+// Strip variant from title: "Product Name (Variant)" → "Product Name"
+function shortTitle(raw) {
+  const m = (raw || "").match(/^(.*)\s+\(.+\)$/);
+  return m ? m[1] : (raw || "");
 }
 
 export default function OrdersPage() {
@@ -145,20 +183,29 @@ export default function OrdersPage() {
   const [expanded, setExpanded] = useState({});
   const [retourModal, setRetourModal] = useState(null);
   const [successMsg, setSuccessMsg] = useState("");
+  const [reviewMap, setReviewMap] = useState({});
 
   const fetchOrders = async () => {
     try {
       const token = getToken("customer");
       if (!token) { setLoading(false); return; }
       const client = getMedusaClient();
-      const res = await client.request("/store/orders/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res?.__error) {
-        setError(res.message || "Fehler");
+      const [ordersRes, reviewsRes] = await Promise.all([
+        client.request("/store/orders/me", { headers: { Authorization: `Bearer ${token}` } }),
+        client.request("/store/reviews/my", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      if (ordersRes?.__error) {
+        setError(ordersRes.message || "Fehler");
         setOrders([]);
       } else {
-        setOrders(res?.orders || []);
+        setOrders(ordersRes?.orders || []);
+      }
+      if (!reviewsRes?.__error) {
+        const map = {};
+        for (const r of (reviewsRes?.reviews || [])) {
+          if (r.order_id && r.product_id) map[`${r.order_id}:${r.product_id}`] = r;
+        }
+        setReviewMap(map);
       }
     } catch (err) {
       setError(err.message);
@@ -168,6 +215,22 @@ export default function OrdersPage() {
   };
 
   useEffect(() => { fetchOrders(); }, []);
+
+  const getOrderReviewState = (order) => {
+    const items = (order.items || []).filter(it => it.product_id);
+    if (items.length === 0) return null;
+    const reviewed = items.filter(it => reviewMap[`${order.id}:${it.product_id}`]);
+    if (reviewed.length === 0) return "none";
+    if (reviewed.length < items.length) return "partial";
+    return "full";
+  };
+
+  const getOrderAvgRating = (order) => {
+    const items = (order.items || []).filter(it => it.product_id);
+    const ratings = items.map(it => reviewMap[`${order.id}:${it.product_id}`]?.rating).filter(Boolean);
+    if (!ratings.length) return 0;
+    return ratings.reduce((s, r) => s + Number(r), 0) / ratings.length;
+  };
 
   const canReturn = (order) => {
     if (order.order_status === "storniert") return false;
@@ -184,8 +247,11 @@ export default function OrdersPage() {
     return (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24) > 14;
   };
 
+  // Effective display status: prefer order_status
+  const displayStatus = (order) => order.order_status || order.delivery_status || "offen";
+
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#fafafa" }}>
       <ShopHeader />
       {retourModal && (
         <RetourModal
@@ -194,179 +260,241 @@ export default function OrdersPage() {
           onSubmitted={() => { setSuccessMsg("Retouranfrage wurde erfolgreich eingereicht. Wir melden uns bei dir!"); fetchOrders(); }}
         />
       )}
-      <main className="flex-grow bg-[#fafafa]">
-        <div className="max-w-[1100px] mx-auto px-4 py-12">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Meine Bestellungen</h1>
-          <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
+      <main style={{ flex: 1 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 20px 64px" }}>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 28px" }}>Meine Bestellungen</h1>
+          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 24, alignItems: "start" }}>
             <AccountSidebar onLogout={() => { logout(); router.push("/"); }} />
-            <div className="min-w-0">
-          {successMsg && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
-              ✓ {successMsg}
-            </div>
-          )}
+            <div>
+              {successMsg && (
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d", padding: "10px 14px", borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                  {successMsg}
+                </div>
+              )}
 
-          {loading && (
-            <div className="text-center py-16 text-gray-400">
-              <p className="mt-3">Laden…</p>
-            </div>
-          )}
+              {loading && (
+                <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af", fontSize: 14 }}>Laden…</div>
+              )}
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              Fehler beim Laden der Bestellungen.
-            </div>
-          )}
+              {error && (
+                <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 13 }}>
+                  Fehler beim Laden der Bestellungen.
+                </div>
+              )}
 
-          {!loading && !error && orders.length === 0 && (
-            <div className="text-center py-16">
-              <p className="text-gray-500 text-lg">Noch keine Bestellungen vorhanden.</p>
-              <Link href="/" style={{ marginTop: 16, display: "inline-block", background: "#ff971c", color: "#fff", padding: "10px 24px", borderRadius: 10, fontWeight: 700, textDecoration: "none", border: "2px solid #000", boxShadow: "0 2px 0 2px #000" }}>
-                Zum Shop
-              </Link>
-            </div>
-          )}
+              {!loading && !error && orders.length === 0 && (
+                <div style={{ textAlign: "center", padding: "60px 0" }}>
+                  <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 16 }}>Noch keine Bestellungen vorhanden.</p>
+                  <Link href="/" style={{ background: "#ff971c", color: "#fff", padding: "9px 22px", borderRadius: 10, fontWeight: 700, textDecoration: "none", border: "2px solid #000", boxShadow: "0 2px 0 2px #000", fontSize: 13 }}>
+                    Zum Shop
+                  </Link>
+                </div>
+              )}
 
-          {orders.length > 0 && (
-            <div className="space-y-4">
-              {orders.map((order) => {
-                const total = order.total_cents != null ? (Number(order.total_cents)/100).toLocaleString("de-DE",{minimumFractionDigits:2})+" €" : "—";
-                const isExpanded = expanded[order.id];
-                const activeReturn = order.returns?.find(r => r.status !== "abgelehnt");
+              {orders.length > 0 && (
+                <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
+                  {orders.map((order, idx) => {
+                    const isExpanded = expanded[order.id];
+                    const activeReturn = order.returns?.find(r => r.status !== "abgelehnt");
+                    const items = order.items || [];
+                    const subtotal = Number(order.subtotal_cents || 0);
+                    const shipping = Number(order.shipping_cents || 0);
+                    const discount = Number(order.discount_cents || 0);
+                    const total = Number(order.total_cents || 0);
+                    const reviewState = getOrderReviewState(order);
+                    const trackUrl = getTrackingUrl(order.carrier_name, order.tracking_number);
 
-                return (
-                  <div key={order.id} className="border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
-                    {/* Order header */}
-                    <div className="p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-gray-900 text-lg">#{order.order_number || order.id?.slice(0,8)}</p>
-                          <p className="text-sm text-gray-500 mt-0.5">{fmtDate(order.created_at)}</p>
-                          <div className="flex gap-2 mt-2 flex-wrap">
-                            <Badge status={order.order_status || order.delivery_status || "offen"} />
-                            <Badge status={order.payment_status} />
-                            {order.delivery_status && order.delivery_status !== order.order_status && (
-                              <Badge status={order.delivery_status} />
+                    return (
+                      <div
+                        key={order.id}
+                        style={{ borderTop: idx > 0 ? "1px solid #f3f4f6" : "none" }}
+                      >
+                        {/* Main row */}
+                        <div style={{ padding: "14px 18px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                          {/* Left meta */}
+                          <div style={{ minWidth: 110, flexShrink: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>
+                              #{order.order_number || order.id?.slice(0, 8)}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{fmtDate(order.created_at)}</div>
+                            <div style={{ marginTop: 6 }}>
+                              <StatusPill status={displayStatus(order)} />
+                            </div>
+                          </div>
+
+                          {/* Items inline */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {items.map((item, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: i < items.length - 1 ? 6 : 0 }}>
+                                {item.thumbnail && (
+                                  <img
+                                    src={item.thumbnail}
+                                    alt=""
+                                    style={{ width: 32, height: 32, borderRadius: 5, objectFit: "cover", flexShrink: 0, border: "1px solid #f3f4f6" }}
+                                  />
+                                )}
+                                <span style={{ fontSize: 13, color: "#374151", lineHeight: 1.3 }}>
+                                  {item.product_handle ? (
+                                    <Link href={`/produkt/${item.product_handle}`} style={{ color: "#374151", textDecoration: "none" }}>
+                                      {shortTitle(item.title)}
+                                    </Link>
+                                  ) : shortTitle(item.title)}
+                                  {item.quantity > 1 && (
+                                    <span style={{ color: "#9ca3af", marginLeft: 4 }}>×{item.quantity}</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                            {order.tracking_number && (
+                              <div style={{ marginTop: 7, fontSize: 11, color: "#6b7280" }}>
+                                {order.carrier_name && <span style={{ marginRight: 4 }}>{order.carrier_name}:</span>}
+                                {trackUrl ? (
+                                  <a href={trackUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6b7280", fontFamily: "monospace", textDecoration: "underline" }}>
+                                    {order.tracking_number}
+                                  </a>
+                                ) : (
+                                  <span style={{ fontFamily: "monospace" }}>{order.tracking_number}</span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-gray-900 text-xl">{total}</p>
-                          {order.delivery_date && (
-                            <p className="text-xs text-gray-500 mt-1">Zugestellt: {fmtDate(order.delivery_date)}</p>
-                          )}
-                        </div>
-                      </div>
 
-                      {/* Tracking info */}
-                      {order.tracking_number && (
-                        <div className="mt-3 bg-blue-50 border border-blue-100 rounded-lg p-3">
-                          <p className="text-sm font-semibold text-blue-900">📦 Sendungsverfolgung</p>
-                          <p className="text-sm text-blue-700 mt-0.5">
-                            {order.carrier_name || "Carrier"}: <span className="font-mono font-bold">{order.tracking_number}</span>
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Active return notice */}
-                      {activeReturn && (
-                        <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                          <p className="text-sm font-semibold text-yellow-800">🔄 Retoure #{activeReturn.return_number || "—"}</p>
-                          <p className="text-sm text-yellow-700">Status: {activeReturn.status}</p>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="mt-4 flex gap-3 flex-wrap">
-                        <button
-                          onClick={() => setExpanded(e => ({ ...e, [order.id]: !e[order.id] }))}
-                          className="text-sm text-blue-600 hover:underline"
-                        >
-                          {isExpanded ? "Weniger anzeigen ▲" : "Details anzeigen ▼"}
-                        </button>
-                        <button
-                          onClick={() => printInvoice(order)}
-                          className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
-                        >
-                          🖨 Rechnung drucken
-                        </button>
-                        {canReturn(order) && !activeReturn && (
-                          <button
-                            onClick={() => setRetourModal(order)}
-                            className="text-sm text-red-600 hover:underline"
-                          >
-                            ↩ Retoure anfragen
-                          </button>
-                        )}
-                        {returnExpired(order) && !activeReturn && (
-                          <span className="text-xs text-gray-400">Rückgabefrist abgelaufen (14 Tage)</span>
-                        )}
-                        <Link
-                          href="/reviews"
-                          className="text-sm font-semibold hover:underline"
-                          style={{ color: "#ff971c" }}
-                        >
-                          ★ Jetzt bewerten
-                        </Link>
-                      </div>
-                    </div>
-
-                    {/* Expanded items */}
-                    {isExpanded && (
-                      <div className="border-t border-gray-100 bg-gray-50 p-5">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Bestellpositionen</h4>
-                        <div className="space-y-2">
-                          {(order.items || []).map((item, i) => (
-                            <div key={i} className="flex justify-between items-center text-sm">
-                              <div className="flex items-center gap-3">
-                                {item.thumbnail && <img src={item.thumbnail} alt="" className="w-10 h-10 rounded object-cover" />}
-                                <span>{item.title} × {item.quantity}</span>
-                              </div>
-                              <span className="font-medium">
-                                {((Number(item.unit_price_cents||0)*Number(item.quantity||1))/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €
-                              </span>
+                          {/* Right: total + actions */}
+                          <div style={{ flexShrink: 0, textAlign: "right" }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>
+                              {fmtEur(total)}
                             </div>
-                          ))}
-                        </div>
-                        {(order.tracking_number || order.carrier_name) && (
-                          <div className="mt-3 p-3 bg-gray-100 rounded-lg text-sm">
-                            <p className="font-semibold text-gray-800">Sendungsverfolgung</p>
-                            <p className="text-gray-700 mt-1">
-                              {[order.carrier_name, order.tracking_number].filter(Boolean).join(" · ") || "—"}
-                            </p>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, marginTop: 8 }}>
+                              <button
+                                onClick={() => setExpanded(e => ({ ...e, [order.id]: !e[order.id] }))}
+                                style={{ fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", textDecorationColor: "#d1d5db" }}
+                              >
+                                {isExpanded ? "Weniger ▲" : "Details ▼"}
+                              </button>
+                              <button
+                                onClick={() => downloadInvoice(order)}
+                                style={{ fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", textDecorationColor: "#d1d5db" }}
+                              >
+                                Rechnung
+                              </button>
+                              {canReturn(order) && !activeReturn && (
+                                <button
+                                  onClick={() => setRetourModal(order)}
+                                  style={{ fontSize: 11, color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", textDecorationColor: "#fca5a5" }}
+                                >
+                                  Retoure
+                                </button>
+                              )}
+                              {returnExpired(order) && !activeReturn && (
+                                <span style={{ fontSize: 10, color: "#d1d5db" }}>Frist abgelaufen</span>
+                              )}
+                              {(() => {
+                                if (reviewState === null) return null;
+                                if (reviewState === "full") {
+                                  const avg = getOrderAvgRating(order);
+                                  return (
+                                    <Link href="/reviews" style={{ fontSize: 11, color: "#16a34a", textDecoration: "none" }}>
+                                      <StarDisplay rating={avg} />
+                                    </Link>
+                                  );
+                                }
+                                return (
+                                  <Link href="/reviews" style={{ fontSize: 11, color: "#ff971c", textDecoration: "underline", textDecorationColor: "#fde68a" }}>
+                                    {reviewState === "partial" ? "Weiter bewerten" : "Bewerten"}
+                                  </Link>
+                                );
+                              })()}
+                            </div>
                           </div>
-                        )}
-                        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1 text-sm">
-                          {Number(order.shipping_cents||0)>0 && (
-                            <div className="flex justify-between text-gray-600"><span>Versand</span><span>+{(Number(order.shipping_cents)/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</span></div>
-                          )}
-                          {Number(order.discount_cents||0)>0 && (
-                            <div className="flex justify-between text-green-600"><span>Rabatt</span><span>−{(Number(order.discount_cents)/100).toLocaleString("de-DE",{minimumFractionDigits:2})} €</span></div>
-                          )}
-                          <div className="flex justify-between font-bold"><span>Gesamt</span><span>{total}</span></div>
                         </div>
 
-                        {/* Addresses */}
-                        <div className="mt-4 grid grid-cols-2 gap-4 text-xs text-gray-500">
-                          <div>
-                            <p className="font-semibold text-gray-700 mb-1">Lieferadresse</p>
-                            <p>{[order.first_name,order.last_name].filter(Boolean).join(" ")}</p>
-                            <p>{order.address_line1}</p>
-                            <p>{[order.postal_code,order.city].filter(Boolean).join(" ")}</p>
-                            <p>{order.country}</p>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-700 mb-1">Zahlungsmethode</p>
-                            <p>{order.payment_method || "—"}</p>
-                          </div>
-                        </div>
+                        {/* Expanded details */}
+                        {isExpanded && (() => {
+                          const VAT = 0.19;
+                          // Brutto subtotal = sum of item brutto prices
+                          const zwischensumme = items.reduce((s, it) => s + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0);
+                          const nettoTotal = Math.round(zwischensumme / (1 + VAT));
+                          const mwstTotal = zwischensumme - nettoTotal;
+                          const thStyle = { textAlign: "right", padding: "5px 8px 8px", fontSize: 11, fontWeight: 600, color: "#9ca3af", whiteSpace: "nowrap" };
+                          const tdR = { textAlign: "right", padding: "9px 8px", fontSize: 13, color: "#374151", whiteSpace: "nowrap" };
+                          const tdL = { padding: "9px 8px", fontSize: 13 };
+                          const footRow = (label, value, opts = {}) => (
+                            <tr style={{ borderTop: opts.topBorder ? "2px solid #e5e7eb" : "1px solid #f3f4f6" }}>
+                              <td colSpan={3} style={{ ...tdL, color: opts.bold ? "#111827" : "#6b7280", fontWeight: opts.bold ? 700 : 400, fontSize: opts.bold ? 14 : 13 }}>{label}</td>
+                              <td style={{ ...tdR, fontWeight: opts.bold ? 700 : 400, fontSize: opts.bold ? 14 : 13, color: opts.green ? "#16a34a" : opts.bold ? "#111827" : "#374151" }}>{value}</td>
+                            </tr>
+                          );
+                          return (
+                            <div style={{ borderTop: "1px solid #f3f4f6", background: "#fafafa", padding: "16px 18px 20px" }}>
+                              <div style={{ overflowX: "auto" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+                                  <thead>
+                                    <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                      <th style={{ ...thStyle, textAlign: "left" }}>Produkt</th>
+                                      <th style={thStyle}>Menge</th>
+                                      <th style={thStyle}>Einzelpreis (brutto)</th>
+                                      <th style={thStyle}>Gesamt (brutto)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {items.map((it, i) => {
+                                      const bruttoUnit = Number(it.unit_price_cents || 0);
+                                      const qty = Number(it.quantity || 1);
+                                      const bruttoGesamt = bruttoUnit * qty;
+                                      const nettoUnit = Math.round(bruttoUnit / (1 + VAT));
+                                      const mwstUnit = bruttoUnit - nettoUnit;
+                                      const raw = it.title || "";
+                                      const m = raw.match(/^(.*)\s+\((.+)\)$/);
+                                      const name = m ? m[1] : raw;
+                                      const variant = m ? m[2] : null;
+                                      const variantParts = variant ? variant.split(/\s*\/\s*/).filter(Boolean) : [];
+                                      return (
+                                        <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                                          <td style={{ ...tdL, maxWidth: 320 }}>
+                                            {it.product_handle ? (
+                                              <Link href={`/produkt/${it.product_handle}`} style={{ fontWeight: 500, color: "#111827", textDecoration: "none" }}>{name}</Link>
+                                            ) : (
+                                              <span style={{ fontWeight: 500, color: "#111827" }}>{name}</span>
+                                            )}
+                                            {variantParts.length > 0 && (
+                                              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>
+                                                {variantParts.join(" · ")}
+                                              </div>
+                                            )}
+                                            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>
+                                              Netto: {fmtEur(nettoUnit)} · +MwSt. 19%: {fmtEur(mwstUnit)}
+                                            </div>
+                                          </td>
+                                          <td style={{ ...tdR }}>{qty}</td>
+                                          <td style={{ ...tdR }}>{fmtEur(bruttoUnit)}</td>
+                                          <td style={{ ...tdR, fontWeight: 600 }}>{fmtEur(bruttoGesamt)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot>
+                                    {footRow("Netto (exkl. MwSt.)", fmtEur(nettoTotal))}
+                                    {footRow("MwSt. (19%)", fmtEur(mwstTotal))}
+                                    {footRow("Zwischensumme (brutto)", fmtEur(zwischensumme))}
+                                    {footRow("Versandkosten", shipping > 0 ? fmtEur(shipping) : "Kostenlos")}
+                                    {footRow("Rabatt", discount > 0 ? `−${fmtEur(discount)}` : "—", { green: discount > 0 })}
+                                    {footRow("Gesamt", fmtEur(total), { bold: true, topBorder: true })}
+                                  </tfoot>
+                                </table>
+                              </div>
+                              {activeReturn && (
+                                <div style={{ marginTop: 12, fontSize: 12, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
+                                  Retoure #{activeReturn.return_number || "—"} · {activeReturn.status}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
