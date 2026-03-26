@@ -136,6 +136,8 @@ function RetourModal({ order, onClose, onSubmitted }) {
 
 export default function OrdersPage() {
   useAuthGuard({ requiredRole: "customer", redirectTo: "/login" });
+  const { logout } = useAuth();
+  const router = useRouter();
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);

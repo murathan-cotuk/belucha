@@ -4027,8 +4027,9 @@ async function start() {
     // Routes
     httpApp.post('/store/payment-intent', storePaymentIntentPOST)
     httpApp.post('/store/orders', storeOrdersPOST)
+    httpApp.get('/store/orders/me', storeOrdersMeGET)
     httpApp.get('/store/orders/:id', storeOrdersGET)
-    console.log('Store routes: POST /store/payment-intent, POST /store/orders, GET /store/orders/:id')
+    console.log('Store routes: POST /store/payment-intent, POST /store/orders, GET /store/orders/me, GET /store/orders/:id')
 
     const storeCollectionsGET = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
@@ -5681,7 +5682,6 @@ async function start() {
     httpApp.get('/store/wishlist', storeWishlistGET)
     httpApp.post('/store/wishlist', storeWishlistPOST)
     httpApp.delete('/store/wishlist/:productId', storeWishlistDELETE)
-    httpApp.get('/store/orders/me', storeOrdersMeGET)
     httpApp.post('/store/orders/:id/return-request', storeReturnRequestPOST)
     httpApp.get('/store/reviews/my', storeReviewsMyGET)
     httpApp.get('/store/reviews', storeReviewsGET)
