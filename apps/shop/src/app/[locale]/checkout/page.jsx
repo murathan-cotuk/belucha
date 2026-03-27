@@ -22,6 +22,7 @@ import { tokens } from "@/design-system/tokens";
 import PayNowButton from "@/components/ui/PayNowButton";
 import { getToken, useCustomerAuth as useCustomerAuthHook } from "@belucha/lib";
 import { getMedusaClient } from "@/lib/medusa-client";
+import { useMarketPrefix } from "@/context/MarketPrefixContext";
 
 const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
 
@@ -892,8 +893,59 @@ function getStripe() {
 
 export default function CheckoutPage() {
   const t = useTranslations("checkout");
-  const { cart, subtotalCents, setCart, clearBonusPoints, bonusDiscountCents } = useCart();
+  const { cart, subtotalCents, setCart, clearBonusPoints, bonusDiscountCents, shippingGroups } = useCart();
   const items = cart?.items || [];
+
+  const prefix = useMarketPrefix();
+  const countryCode = (prefix?.split("/").filter(Boolean)[0] || "de").toUpperCase();
+
+  const [allThresholds, setAllThresholds] = useState(null);
+  useEffect(() => {
+    fetch("/api/store-seller-settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.free_shipping_thresholds && typeof d.free_shipping_thresholds === "object") {
+          setAllThresholds(d.free_shipping_thresholds);
+        } else if (d?.free_shipping_threshold_cents != null) {
+          setAllThresholds({ DE: d.free_shipping_threshold_cents });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const freeShippingThreshold = allThresholds?.[countryCode] ?? allThresholds?.["DE"] ??
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_FREE_SHIPPING_THRESHOLD_CENTS
+      ? Number(process.env.NEXT_PUBLIC_FREE_SHIPPING_THRESHOLD_CENTS) : null);
+  const effectiveSubtotal = subtotalCents - bonusDiscountCents;
+
+  function getGroupPrice(group, country) {
+    if (!group) return 0;
+    if (Array.isArray(group.prices)) {
+      const entry = group.prices.find((p) => p.country_code === country) || group.prices.find((p) => p.country_code === "DE");
+      return entry?.price_cents ?? 0;
+    }
+    if (group.prices && typeof group.prices === "object") {
+      return group.prices[country] ?? group.prices["DE"] ?? 0;
+    }
+    return 0;
+  }
+  let shippingCents = null;
+  for (const item of items) {
+    const groupId = item.shipping_group_id || item.metadata?.shipping_group_id || item.variant?.product?.metadata?.shipping_group_id || item.product?.metadata?.shipping_group_id;
+    if (!groupId) continue;
+    const group = (shippingGroups || []).find((g) => g.id === groupId);
+    if (!group) continue;
+    const p = getGroupPrice(group, countryCode);
+    if (shippingCents === null || p > shippingCents) shippingCents = p;
+  }
+  const isFreeShipping = freeShippingThreshold != null && effectiveSubtotal >= freeShippingThreshold;
+  const shippingLabel = isFreeShipping
+    ? t("freeShipping")
+    : shippingCents != null
+      ? `${formatPriceCents(shippingCents)} €`
+      : freeShippingThreshold != null
+        ? `Ab ${formatPriceCents(freeShippingThreshold)} € versandkostenfrei`
+        : t("freeShipping");
 
   const [clientSecret, setClientSecret] = useState(null);
   const [loadingPI, setLoadingPI] = useState(false);
@@ -1179,7 +1231,7 @@ export default function CheckoutPage() {
               )}
               <SummaryRow>
                 <span>{t("shipping")}</span>
-                <span>{t("freeShipping")}</span>
+                <span style={{ color: isFreeShipping ? "#16a34a" : undefined }}>{shippingLabel}</span>
               </SummaryRow>
               <SummaryTotal>
                 <span>{t("total")}</span>

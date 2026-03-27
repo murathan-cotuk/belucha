@@ -99,7 +99,7 @@ class MedusaClient {
 
   async getCart(cartId) {
     if (!cartId) return { cart: null }
-    const res = await this.request(`/store/carts/${cartId}`)
+    const res = await this.request(`/store/carts/${cartId}?expand=items.variant.product`)
     if (res?.__error) return { cart: null }
     return res
   }
@@ -107,13 +107,10 @@ class MedusaClient {
   async addToCart(cartId, variantId, quantity = 1) {
     const res = await this.request(`/store/carts/${cartId}/line-items`, {
       method: 'POST',
-      body: JSON.stringify({
-        variant_id: variantId,
-        quantity,
-      }),
+      body: JSON.stringify({ variant_id: variantId, quantity }),
     })
     if (res?.__error) return { cart: null }
-    return res
+    return this.getCart(cartId)
   }
 
   async updateLineItem(cartId, lineId, quantity) {
@@ -122,7 +119,7 @@ class MedusaClient {
       body: JSON.stringify({ quantity }),
     })
     if (res?.__error) return { cart: null }
-    return res
+    return this.getCart(cartId)
   }
 
   async removeLineItem(cartId, lineId) {
@@ -130,7 +127,7 @@ class MedusaClient {
       method: 'DELETE',
     })
     if (res?.__error) return { cart: null }
-    return res
+    return this.getCart(cartId)
   }
 
   async clearCart(cartId) {
@@ -138,7 +135,7 @@ class MedusaClient {
       method: 'DELETE',
     })
     if (res?.__error) return { cart: null }
-    return res
+    return this.getCart(cartId)
   }
 
   /** Bonus einlösen: 25 Punkte = 1 € Rabatt (nur mit Kunden-Token). */

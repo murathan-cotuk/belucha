@@ -285,6 +285,18 @@ function useShippingThresholds() {
   return thresholds;
 }
 
+function getGroupPrice(group, country) {
+  if (!group) return 0;
+  if (Array.isArray(group.prices)) {
+    const entry = group.prices.find((p) => p.country_code === country) || group.prices.find((p) => p.country_code === "DE");
+    return entry?.price_cents ?? 0;
+  }
+  if (group.prices && typeof group.prices === "object") {
+    return group.prices[country] ?? group.prices["DE"] ?? 0;
+  }
+  return 0;
+}
+
 function calcShipping(items, shippingGroups, country = "DE") {
   let maxCents = 0;
   let found = false;
@@ -292,11 +304,12 @@ function calcShipping(items, shippingGroups, country = "DE") {
     const groupId =
       item.shipping_group_id ||
       item.metadata?.shipping_group_id ||
+      item.variant?.product?.metadata?.shipping_group_id ||
       item.product?.metadata?.shipping_group_id;
     if (!groupId) continue;
-    const group = shippingGroups.find((g) => g.id === groupId);
+    const group = (shippingGroups || []).find((g) => g.id === groupId);
     if (!group) continue;
-    const priceCents = group.prices?.[country] ?? group.prices?.["DE"] ?? 0;
+    const priceCents = getGroupPrice(group, country);
     if (priceCents > maxCents) maxCents = priceCents;
     found = true;
   }
