@@ -272,7 +272,7 @@ function applyToField(field, value) {
   field.onChange({ target: { value: value ?? "" } });
 }
 
-function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents }) {
+function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents, shippingCents }) {
   const t = useTranslations("checkout");
   const stripe = useStripe();
   const elements = useElements();
@@ -418,6 +418,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
           body: JSON.stringify({
             cart_id: cartId,
             payment_intent_id: paymentIntent.id,
+            shipping_cents: shippingCents ?? 0,
             email: snapshot.email,
             first_name: snapshot.first_name,
             last_name: snapshot.last_name,
@@ -580,6 +581,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
           body: JSON.stringify({
             cart_id: cartId,
             payment_intent_id: paymentIntent.id,
+            shipping_cents: shippingCents ?? 0,
             email: email.value.trim(),
             first_name: firstName.value.trim(),
             last_name: lastName.value.trim(),
@@ -1036,16 +1038,17 @@ export default function CheckoutPage() {
     setLoadingPI(true);
     setPiError(null);
     setClientSecret(null);
+    const effectiveShippingCents = isFreeShipping ? 0 : (shippingCents ?? 0);
     fetch("/api/store-payment-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cart_id: cart.id }),
+      body: JSON.stringify({ cart_id: cart.id, shipping_cents: effectiveShippingCents }),
     })
       .then((r) => r.json())
       .then((data) => {
         if (data?.client_secret) {
           setClientSecret(data.client_secret);
-          setPayCents(typeof data.amount_cents === "number" ? data.amount_cents : subtotalCents);
+          setPayCents(typeof data.amount_cents === "number" ? data.amount_cents : subtotalCents + effectiveShippingCents);
         } else {
           setPiError(data?.message || t("configError"));
           setPayCents(null);
@@ -1056,7 +1059,7 @@ export default function CheckoutPage() {
         setPayCents(null);
       })
       .finally(() => setLoadingPI(false));
-  }, [cart?.id, subtotalCents, t, items.length, piRefreshKey]);
+  }, [cart?.id, subtotalCents, shippingCents, isFreeShipping, t, items.length, piRefreshKey]);
 
   const stripeInstance = getStripe();
 
@@ -1102,6 +1105,7 @@ export default function CheckoutPage() {
                     items={items}
                     subtotalCents={subtotalCents}
                     amountToPayCents={payCents}
+                    shippingCents={isFreeShipping ? 0 : (shippingCents ?? 0)}
                   />
                 </Elements>
               )}

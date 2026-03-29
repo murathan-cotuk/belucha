@@ -409,7 +409,7 @@ export default function CartSidebar() {
             </Row>
             <RowTotal>
               <span>Gesamt</span>
-              <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents))}</span>
+              <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents + (isFree || shippingCents === null ? 0 : shippingCents)))} €</span>
             </RowTotal>
             <PrimaryBtn href="/cart" onClick={closeCartSidebar}>
               Zur Kasse

@@ -458,6 +458,7 @@ async function start() {
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_date timestamp;`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS discount_cents integer NOT NULL DEFAULT 0`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS shipping_cents integer NOT NULL DEFAULT 0`).catch(() => {})
+        await client.query(`ALTER TABLE admin_hub_seller_settings ADD COLUMN IF NOT EXISTS free_shipping_thresholds jsonb`).catch(() => {})
         await client.query(`ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS bonus_points_redeemed integer NOT NULL DEFAULT 0`).catch(() => {})
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_shipping_carriers (
@@ -2180,11 +2181,12 @@ async function start() {
         const client = getProductsDbClient()
         if (!client) return res.json({ store_name: '' })
         await client.connect()
-        const r = await client.query('SELECT store_name FROM admin_hub_seller_settings WHERE seller_id = $1', [sellerId])
+        const r = await client.query('SELECT store_name, free_shipping_thresholds FROM admin_hub_seller_settings WHERE seller_id = $1', [sellerId])
         await client.end()
         const row = r.rows && r.rows[0]
         const store_name = row && row.store_name != null ? String(row.store_name) : ''
-        res.json({ store_name })
+        const free_shipping_thresholds = (row && row.free_shipping_thresholds) || null
+        res.json({ store_name, free_shipping_thresholds })
       } catch (err) {
         console.error('sellerSettingsGET:', err)
         res.json({ store_name: '' })
@@ -2195,16 +2197,18 @@ async function start() {
         const body = req.body || {}
         const store_name = (body.store_name != null ? String(body.store_name) : '').trim()
         const sellerId = (body.seller_id || req.query.seller_id || 'default').toString().trim() || 'default'
+        const free_shipping_thresholds = (body.free_shipping_thresholds && typeof body.free_shipping_thresholds === 'object')
+          ? body.free_shipping_thresholds : null
         const client = getProductsDbClient()
         if (!client) return res.status(500).json({ message: 'Database unavailable' })
         await client.connect()
         await client.query(
-          `INSERT INTO admin_hub_seller_settings (seller_id, store_name, updated_at) VALUES ($1, $2, now())
-           ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, updated_at = now()`,
-          [sellerId, store_name || null]
+          `INSERT INTO admin_hub_seller_settings (seller_id, store_name, free_shipping_thresholds, updated_at) VALUES ($1, $2, $3, now())
+           ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, free_shipping_thresholds = COALESCE($3, admin_hub_seller_settings.free_shipping_thresholds), updated_at = now()`,
+          [sellerId, store_name || null, free_shipping_thresholds ? JSON.stringify(free_shipping_thresholds) : null]
         )
         await client.end()
-        res.json({ store_name: store_name || '' })
+        res.json({ store_name: store_name || '', free_shipping_thresholds })
       } catch (err) {
         console.error('sellerSettingsPATCH:', err)
         res.status(500).json({ message: err && err.message })
@@ -2218,10 +2222,19 @@ async function start() {
     const storeSellerSettingsGET = async (req, res) => {
       try {
         const sellerId = (req.query.seller_id || 'default').toString().trim() || 'default'
-        const store_name = (await getSellerStoreName(sellerId)) || ''
-        res.json({ store_name })
+        const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
+        if (!dbUrl || !dbUrl.startsWith('postgres')) return res.json({ store_name: '', free_shipping_thresholds: null })
+        const { Client } = require('pg')
+        const client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
+        await client.connect()
+        const r = await client.query('SELECT store_name, free_shipping_thresholds FROM admin_hub_seller_settings WHERE seller_id = $1', [sellerId])
+        await client.end()
+        const row = r.rows && r.rows[0]
+        const store_name = row && row.store_name != null ? String(row.store_name) : ''
+        const free_shipping_thresholds = (row && row.free_shipping_thresholds) || null
+        res.json({ store_name, free_shipping_thresholds })
       } catch (err) {
-        res.json({ store_name: '' })
+        res.json({ store_name: '', free_shipping_thresholds: null })
       }
     }
     httpApp.get('/store/seller-settings', storeSellerSettingsGET)
@@ -2876,7 +2889,8 @@ async function start() {
         const subtotalCents = items.reduce((sum, it) => sum + (Number(it.unit_price_cents || 0) * Number(it.quantity || 1)), 0)
         const reservedPts = Number(cart.bonus_points_reserved || 0)
         const discountCents = discountCentsFromBonusPoints(reservedPts)
-        const payCents = Math.max(0, subtotalCents - discountCents)
+        const shippingCents = Math.max(0, Number(body.shipping_cents || 0))
+        const payCents = Math.max(0, subtotalCents - discountCents + shippingCents)
         if (payCents <= 0) {
           return res.status(400).json({
             message:
@@ -2903,6 +2917,7 @@ async function start() {
           payment_intent_id: paymentIntent.id,
           amount_cents: payCents,
           subtotal_cents: subtotalCents,
+          shipping_cents: shippingCents,
           bonus_discount_cents: discountCents,
           bonus_points_reserved: reservedPts,
         })

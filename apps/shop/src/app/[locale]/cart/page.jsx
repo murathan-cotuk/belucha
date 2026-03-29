@@ -422,7 +422,7 @@ export default function CartPage() {
               </SummaryRow>
               <SummaryTotal>
                 <span>{t("total")}</span>
-                <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents))} €</span>
+                <span>{formatPriceCents(Math.max(0, subtotalCents - bonusDiscountCents + (isFree || shippingCents === null ? 0 : shippingCents)))} €</span>
               </SummaryTotal>
               <PayNowButton href="/checkout">{t("checkout")}</PayNowButton>
               <ContinueLink href="/">Weiter einkaufen</ContinueLink>
