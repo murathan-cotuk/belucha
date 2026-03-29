@@ -272,7 +272,7 @@ function applyToField(field, value) {
   field.onChange({ target: { value: value ?? "" } });
 }
 
-function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents, shippingCents }) {
+function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayCents, shippingCents, onCountryChange, defaultCountry }) {
   const t = useTranslations("checkout");
   const stripe = useStripe();
   const elements = useElements();
@@ -296,7 +296,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
   const address2 = useField("");
   const city = useField("");
   const postalCode = useField("");
-  const country = useField("DE");
+  const country = useField(defaultCountry || "DE");
 
   const [billingSameAsShipping, setBillingSameAsShipping] = useState(true);
   const billingAddress = useField("");
@@ -344,6 +344,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
         applyToField(city, def.city || "");
         applyToField(postalCode, def.zip_code || "");
         applyToField(country, def.country || "DE");
+        onCountryChange?.(def.country || "DE");
       }
       const defB = addrs.find((a) => a.is_default_billing) || def;
       if (defB?.id) setBillAddrId(defB.id);
@@ -700,6 +701,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
                   applyToField(city, a.city || "");
                   applyToField(postalCode, a.zip_code || "");
                   applyToField(country, a.country || "DE");
+                  onCountryChange?.(a.country || "DE");
                 }
               }}
               style={{
@@ -736,7 +738,7 @@ function CheckoutForm({ clientSecret, cartId, items, subtotalCents, amountToPayC
             <Label>{t("country")}</Label>
             <select
               value={country.value}
-              onChange={(e) => country.onChange({ target: { value: e.target.value } })}
+              onChange={(e) => { country.onChange({ target: { value: e.target.value } }); onCountryChange?.(e.target.value); }}
               autoComplete="country"
               style={{
                 padding: "10px 12px",
@@ -899,7 +901,8 @@ export default function CheckoutPage() {
   const items = cart?.items || [];
 
   const prefix = useMarketPrefix();
-  const countryCode = (prefix?.split("/").filter(Boolean)[0] || "de").toUpperCase();
+  const marketCountryCode = (prefix?.split("/").filter(Boolean)[0] || "de").toUpperCase();
+  const [shippingCountry, setShippingCountry] = useState(marketCountryCode);
 
   const [allThresholds, setAllThresholds] = useState(null);
   useEffect(() => {
@@ -915,7 +918,7 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
-  const freeShippingThreshold = allThresholds?.[countryCode] ?? allThresholds?.["DE"] ??
+  const freeShippingThreshold = allThresholds?.[shippingCountry] ?? allThresholds?.["DE"] ??
     (typeof process !== "undefined" && process.env.NEXT_PUBLIC_FREE_SHIPPING_THRESHOLD_CENTS
       ? Number(process.env.NEXT_PUBLIC_FREE_SHIPPING_THRESHOLD_CENTS) : null);
   const effectiveSubtotal = subtotalCents - bonusDiscountCents;
@@ -926,7 +929,7 @@ export default function CheckoutPage() {
     if (!groupId) continue;
     const group = (shippingGroups || []).find((g) => g.id === groupId);
     if (!group?.prices) continue;
-    const p = group.prices[countryCode] ?? group.prices["DE"] ?? 0;
+    const p = group.prices[shippingCountry] ?? group.prices["DE"] ?? 0;
     if (shippingCents === null || p > shippingCents) shippingCents = p;
   }
   const isFreeShipping = freeShippingThreshold != null && effectiveSubtotal >= freeShippingThreshold;
@@ -1106,6 +1109,8 @@ export default function CheckoutPage() {
                     subtotalCents={subtotalCents}
                     amountToPayCents={payCents}
                     shippingCents={isFreeShipping ? 0 : (shippingCents ?? 0)}
+                    onCountryChange={setShippingCountry}
+                    defaultCountry={marketCountryCode}
                   />
                 </Elements>
               )}

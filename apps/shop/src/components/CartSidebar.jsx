@@ -297,6 +297,7 @@ function calcShipping(items, shippingGroups, country = "DE") {
     if (!groupId) continue;
     const group = (shippingGroups || []).find((g) => g.id === groupId);
     if (!group?.prices) continue;
+    console.log("[calcShipping] country:", country, "group.prices:", group.prices, "groupId:", groupId);
     const priceCents = group.prices[country] ?? group.prices["DE"] ?? 0;
     if (priceCents > maxCents) maxCents = priceCents;
     found = true;

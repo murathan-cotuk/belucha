@@ -10,6 +10,7 @@ export async function GET(req) {
       { cache: "no-store" }
     );
     const data = await r.json().catch(() => ({}));
+    console.log('[store-seller-settings API] free_shipping_thresholds:', JSON.stringify(data?.free_shipping_thresholds));
     return NextResponse.json(
       {
         store_name: data?.store_name || "",

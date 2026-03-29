@@ -2202,12 +2202,15 @@ async function start() {
         const client = getProductsDbClient()
         if (!client) return res.status(500).json({ message: 'Database unavailable' })
         await client.connect()
+        const thresholdsJson = free_shipping_thresholds ? JSON.stringify(free_shipping_thresholds) : null
+        console.log('[sellerSettingsPATCH] saving free_shipping_thresholds:', thresholdsJson)
         await client.query(
-          `INSERT INTO admin_hub_seller_settings (seller_id, store_name, free_shipping_thresholds, updated_at) VALUES ($1, $2, $3, now())
-           ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, free_shipping_thresholds = COALESCE($3, admin_hub_seller_settings.free_shipping_thresholds), updated_at = now()`,
-          [sellerId, store_name || null, free_shipping_thresholds ? JSON.stringify(free_shipping_thresholds) : null]
+          `INSERT INTO admin_hub_seller_settings (seller_id, store_name, free_shipping_thresholds, updated_at) VALUES ($1, $2, $3::jsonb, now())
+           ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, free_shipping_thresholds = COALESCE($3::jsonb, admin_hub_seller_settings.free_shipping_thresholds), updated_at = now()`,
+          [sellerId, store_name || null, thresholdsJson]
         )
         await client.end()
+        console.log('[sellerSettingsPATCH] saved OK')
         res.json({ store_name: store_name || '', free_shipping_thresholds })
       } catch (err) {
         console.error('sellerSettingsPATCH:', err)
@@ -2232,8 +2235,10 @@ async function start() {
         const row = r.rows && r.rows[0]
         const store_name = row && row.store_name != null ? String(row.store_name) : ''
         const free_shipping_thresholds = (row && row.free_shipping_thresholds) || null
+        console.log('[storeSellerSettingsGET] free_shipping_thresholds:', JSON.stringify(free_shipping_thresholds))
         res.json({ store_name, free_shipping_thresholds })
       } catch (err) {
+        console.error('[storeSellerSettingsGET] error:', err && err.message)
         res.json({ store_name: '', free_shipping_thresholds: null })
       }
     }

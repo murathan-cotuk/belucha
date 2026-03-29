@@ -63,7 +63,10 @@ export function CartProvider({ children }) {
 
   useEffect(() => {
     getMedusaClient().request("/store/shipping-groups")
-      .then((d) => setShippingGroups(d?.groups || []))
+      .then((d) => {
+        console.log("[CartContext] shippingGroups loaded:", JSON.stringify(d?.groups));
+        setShippingGroups(d?.groups || []);
+      })
       .catch(() => {});
   }, []);
 
