@@ -12,6 +12,7 @@ import {
   TrustBar,
   RecommendCarousel,
 } from "@/components/landing";
+import LandingContainers from "@/components/landing/LandingContainers";
 import { getMedusaClient } from "@/lib/medusa-client";
 import { useMedusaProducts } from "@/hooks/useMedusa";
 import Breadcrumbs from "@/components/Breadcrumbs";
@@ -36,6 +37,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-white">
       <ShopHeader />
       <main className="flex-grow bg-white">
+        <LandingContainers />
         <HeroSection collections={collections} />
         <CategoryShowcase
           categories={categories.length ? categories : collections}

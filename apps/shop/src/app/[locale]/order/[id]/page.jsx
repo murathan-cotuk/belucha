@@ -2,12 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import styled from "styled-components";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { useParams } from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
-import { formatPriceCents } from "@/lib/format";
+import { formatPriceCents, getLocalizedCartLineTitle } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { tokens } from "@/design-system/tokens";
 
@@ -148,6 +148,7 @@ function formatDate(dateStr) {
 
 export default function OrderConfirmationPage() {
   const t = useTranslations("order");
+  const locale = useLocale();
   const params = useParams();
   const orderId = params?.id || "";
 
@@ -219,7 +220,7 @@ export default function OrderConfirmationPage() {
                       )}
                     </Thumb>
                     <div style={{ flex: 1 }}>
-                      <ItemTitle>{item.title}</ItemTitle>
+                      <ItemTitle>{getLocalizedCartLineTitle(item, locale)}</ItemTitle>
                       <ItemMeta>× {item.quantity}</ItemMeta>
                     </div>
                     <ItemTotal>

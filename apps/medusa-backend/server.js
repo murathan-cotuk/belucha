@@ -765,6 +765,13 @@ async function start() {
         `).catch(() => {})
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_product ON store_product_reviews(product_id)').catch(() => {})
         await client.query('CREATE INDEX IF NOT EXISTS idx_store_product_reviews_customer ON store_product_reviews(customer_id)').catch(() => {})
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS admin_hub_landing_page (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    containers JSONB NOT NULL DEFAULT '[]',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+`).catch(() => {})
         await client.end()
         console.log('Admin Hub: admin_hub_menus, admin_hub_menu_locations, admin_hub_media, admin_hub_pages, admin_hub_collections, admin_hub_seller_settings, admin_hub_brands, store_carts, store_cart_items tabloları hazır')
       } catch (migErr) {
@@ -2344,6 +2351,23 @@ async function start() {
               }
               if (Object.keys(m).length > 0) image_urls = m
             }
+            const vMeta = v.metadata && typeof v.metadata === 'object' ? v.metadata : {}
+            const vMediaResolved = Array.isArray(vMeta.media)
+              ? vMeta.media.map((u) => resolveUploadUrl(u)).filter(Boolean)
+              : []
+            // Resolve locale-specific media inside translations
+            const vMetaOut = { ...vMeta }
+            if (vMeta.translations && typeof vMeta.translations === 'object') {
+              const trOut = {}
+              for (const [loc, tr] of Object.entries(vMeta.translations)) {
+                if (tr && typeof tr === 'object') {
+                  trOut[loc] = { ...tr }
+                  if (Array.isArray(tr.media)) trOut[loc].media = tr.media.map((u) => resolveUploadUrl(u)).filter(Boolean)
+                }
+              }
+              vMetaOut.translations = trOut
+            }
+            if (vMediaResolved.length > 0) vMetaOut.media = vMediaResolved
             const row = {
               id: p.id + '-v-' + i,
               product_id: p.id,
@@ -2358,6 +2382,7 @@ async function start() {
               manage_inventory: true,
               image_url: resolveUploadUrl(v.image_url || v.image || null) || null,
               swatch_image_url: resolveUploadUrl(v.swatch_image_url || v.swatch_image || null) || null,
+              metadata: vMetaOut,
             }
             if (image_urls) row.image_urls = image_urls
             return row
@@ -2442,7 +2467,13 @@ async function start() {
             const t = (p.title || '').toLowerCase()
             const d = (p.description || '').toLowerCase()
             const h = (p.handle || '').toLowerCase()
-            return t.includes(searchQ) || d.includes(searchQ) || h.includes(searchQ)
+            const sku = (p.sku || '').toLowerCase()
+            const ean = (p.metadata?.ean != null ? String(p.metadata.ean) : '').toLowerCase()
+            if (t.includes(searchQ) || d.includes(searchQ) || h.includes(searchQ) || sku.includes(searchQ) || ean.includes(searchQ)) return true
+            // Search variant SKUs and EANs
+            return Array.isArray(p.variants) && p.variants.some((v) =>
+              (v.sku || '').toLowerCase().includes(searchQ) || (v.ean != null ? String(v.ean) : '').toLowerCase().includes(searchQ)
+            )
           }).slice(0, limitForSearch)
         }
         const sellerIds = [...new Set(list.map((p) => (p.seller_id || 'default').toString().trim() || 'default').filter(Boolean))]
@@ -2638,11 +2669,12 @@ async function start() {
       if (!cartRow) return null
       const itemsRes = await client.query(
         `SELECT ci.id, ci.variant_id, ci.product_id, ci.quantity, ci.unit_price_cents, ci.title, ci.thumbnail, ci.product_handle,
-         p.metadata->>'shipping_group_id' AS shipping_group_id,
-         p.title AS product_title,
-         p.metadata AS product_metadata
+         COALESCE(p1.metadata->>'shipping_group_id', p2.metadata->>'shipping_group_id') AS shipping_group_id,
+         COALESCE(p1.title, p2.title) AS product_title,
+         COALESCE(p1.metadata, p2.metadata) AS product_metadata
          FROM store_cart_items ci
-         LEFT JOIN admin_hub_products p ON p.id::text = ci.product_id
+         LEFT JOIN admin_hub_products p1 ON p1.id::text = ci.product_id
+         LEFT JOIN admin_hub_products p2 ON p1.id IS NULL AND p2.handle = ci.product_handle
          WHERE ci.cart_id = $1 ORDER BY ci.created_at`,
         [cartId]
       )
@@ -2839,7 +2871,7 @@ async function start() {
         } else {
           await client.query(
             'INSERT INTO store_cart_items (cart_id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-            [cartId, variantId, productId, quantity, unitPriceCents, title, thumb, handle]
+            [cartId, variantId, String(product.id || productId), quantity, unitPriceCents, title, thumb, handle]
           )
         }
         await clearCartBonusReserve(client, cartId)
@@ -3014,19 +3046,31 @@ async function start() {
       if (!oRow) return null
 
       const itemsRes = await client.query(
-        'SELECT id, variant_id, product_id, quantity, unit_price_cents, title, thumbnail, product_handle FROM store_order_items WHERE order_id = $1 ORDER BY created_at',
+        `SELECT oi.id, oi.variant_id, oi.product_id, oi.quantity, oi.unit_price_cents, oi.title, oi.thumbnail, oi.product_handle,
+         COALESCE(p1.title, p2.title) AS product_title,
+         COALESCE(p1.metadata, p2.metadata) AS product_metadata
+         FROM store_order_items oi
+         LEFT JOIN admin_hub_products p1 ON p1.id::text = oi.product_id
+         LEFT JOIN admin_hub_products p2 ON p1.id IS NULL AND p2.handle = oi.product_handle
+         WHERE oi.order_id = $1 ORDER BY oi.created_at`,
         [orderId]
       )
-      const items = (itemsRes.rows || []).map((r) => ({
-        id: r.id,
-        variant_id: r.variant_id,
-        product_id: r.product_id,
-        quantity: r.quantity,
-        unit_price_cents: r.unit_price_cents,
-        title: r.title,
-        thumbnail: r.thumbnail,
-        product_handle: r.product_handle,
-      }))
+      const items = (itemsRes.rows || []).map((r) => {
+        let pm = r.product_metadata
+        if (pm != null && typeof pm === 'string') { try { pm = JSON.parse(pm) } catch (_) { pm = null } }
+        return {
+          id: r.id,
+          variant_id: r.variant_id,
+          product_id: r.product_id,
+          quantity: r.quantity,
+          unit_price_cents: r.unit_price_cents,
+          title: r.title,
+          thumbnail: r.thumbnail,
+          product_handle: r.product_handle,
+          product_title: r.product_title || null,
+          product_metadata: pm && typeof pm === 'object' ? pm : null,
+        }
+      })
 
       return {
         id: oRow.id,
@@ -6589,6 +6633,45 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
     httpApp.get('/store/pages/:slug', storePageBySlugGET)
     console.log('Store routes: GET /store/pages, GET /store/pages/:slug')
 
+    // ── Landing Page CMS ──────────────────────────────────────────────────
+    const landingPageGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        const r = await client.query('SELECT containers, updated_at FROM admin_hub_landing_page WHERE id = 1')
+        res.json({ containers: r.rows[0]?.containers || [], updated_at: r.rows[0]?.updated_at || null })
+      } catch (err) {
+        console.error('Landing page GET error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      } finally {
+        await client.end().catch(() => {})
+      }
+    }
+    const landingPagePUT = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        const containers = Array.isArray(req.body?.containers) ? req.body.containers : []
+        await client.query(
+          `INSERT INTO admin_hub_landing_page (id, containers, updated_at) VALUES (1, $1, NOW())
+           ON CONFLICT (id) DO UPDATE SET containers = $1, updated_at = NOW()`,
+          [JSON.stringify(containers)]
+        )
+        res.json({ ok: true, containers })
+      } catch (err) {
+        console.error('Landing page PUT error:', err)
+        res.status(500).json({ message: (err && err.message) || 'Internal server error' })
+      } finally {
+        await client.end().catch(() => {})
+      }
+    }
+    httpApp.get('/admin-hub/landing-page', landingPageGET)
+    httpApp.put('/admin-hub/landing-page', landingPagePUT)
+    httpApp.get('/store/landing-page', landingPageGET)
+    console.log('Landing page routes: GET/PUT /admin-hub/landing-page, GET /store/landing-page')
+
     // ── Notifications ─────────────────────────────────────────────────────
     const adminHubNotificationsUnreadGET = async (req, res) => {
       const dbUrl = (process.env.DATABASE_URL || '').replace(/^postgresql:\/\//, 'postgres://')
@@ -6659,14 +6742,25 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
         client = new Client({ connectionString: dbUrl, ssl: dbUrl.includes('render.com') ? { rejectUnauthorized: false } : false })
         await client.connect()
         const orderId = req.query.order_id || null
-        let q = `SELECT m.*, o.order_number FROM store_messages m LEFT JOIN store_orders o ON o.id = m.order_id`
+        let q = `SELECT m.*,
+          o.order_number, o.status AS order_status, o.order_status AS order_order_status,
+          o.total_cents AS order_total_cents, o.first_name AS order_first_name,
+          o.last_name AS order_last_name, o.email AS order_email
+          FROM store_messages m LEFT JOIN store_orders o ON o.id = m.order_id`
         const params = []
         if (orderId) { params.push(orderId); q += ` WHERE m.order_id = $1::uuid` }
-        q += ' ORDER BY m.created_at DESC LIMIT 100'
+        q += ' ORDER BY m.created_at ASC LIMIT 200'
         const r = await client.query(q, params)
         const unreadR = await client.query(`SELECT COUNT(*)::int AS c FROM store_messages WHERE sender_type = 'customer' AND is_read_by_seller = false`)
         await client.end()
-        res.json({ messages: r.rows.map(row => ({ ...row, order_number: row.order_number ? Number(row.order_number) : null })), unread: unreadR.rows[0]?.c || 0 })
+        res.json({
+          messages: r.rows.map(row => ({
+            ...row,
+            order_number: row.order_number ? Number(row.order_number) : null,
+            order_total_cents: row.order_total_cents != null ? Number(row.order_total_cents) : null,
+          })),
+          unread: unreadR.rows[0]?.c || 0,
+        })
       } catch (e) {
         if (client) try { await client.end() } catch (_) {}
         res.status(500).json({ message: e?.message || 'Error' })

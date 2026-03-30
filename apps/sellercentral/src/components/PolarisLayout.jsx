@@ -95,6 +95,7 @@ function getMenuItemsMain(t) {
         { url: "/content/categories", label: t("categories") },
         { url: "/content/brands", label: t("brands") },
         { url: "/content/metaobjects", label: t("metaobjects") },
+        { url: "/content/landing-page", label: "Landing Page" },
         { url: "/content/pages", label: t("pages") },
         { url: "/content/blog-posts", label: t("blogPosts") },
       ],
@@ -465,7 +466,7 @@ export default function PolarisLayout({ children }) {
     <Navigation location={navLocation} onDismiss={() => setShowMobileNav(false)}>
       <Navigation.Section
         items={menuMain.map((item) => ({
-          url: item.url,
+          url: item.subNavigationItems?.length ? undefined : item.url,
           label: item.label,
           icon: item.icon,
           subNavigationItems: item.subNavigationItems,

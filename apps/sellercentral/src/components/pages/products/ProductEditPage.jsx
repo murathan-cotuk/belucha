@@ -879,6 +879,24 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
     });
   };
 
+  /** Patch a key inside variant.metadata (for media array etc.) */
+  const updateMatrixVariantMeta = (optionValues, metaKey, value) => {
+    const key = Array.isArray(optionValues) ? optionValues.join("\u0000") : "";
+    setProduct((prev) => {
+      const variants = [...(prev?.variants || [])];
+      const idx = variants.findIndex(
+        (v) => Array.isArray(v.option_values) && v.option_values.join("\u0000") === key
+      );
+      if (idx < 0) return prev;
+      const cur = variants[idx];
+      const m = { ...(cur.metadata && typeof cur.metadata === "object" ? cur.metadata : {}) };
+      if (value == null || (Array.isArray(value) && value.length === 0)) delete m[metaKey];
+      else m[metaKey] = value;
+      variants[idx] = { ...cur, metadata: m };
+      return { ...prev, variants };
+    });
+  };
+
   // Group-level helpers — all go through applyVariantGroups
   const vg_addGroup = () =>
     applyVariantGroups([...variantGroups, { name: "", options: [{ value: "", swatch_image: "", labels: {} }] }]);
@@ -1302,35 +1320,29 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                 }}
               />
 
-              {/* ── Variant image picker ── */}
+              {/* ── Variant image picker (multiple) ── */}
               <MediaPickerModal
                 open={variantImgPickerTarget !== null}
                 onClose={() => setVariantImgPickerTarget(null)}
                 title={
                   variantImgPickerTarget
-                    ? `Görsel (${locale.toUpperCase()}) — ${variantImgPickerTarget.join(" / ")}`
-                    : "Varyant görseli"
+                    ? `Görseller — ${variantImgPickerTarget.join(" / ")}`
+                    : "Varyant görselleri"
                 }
-                multiple={false}
+                multiple={true}
                 onSelect={(urls) => {
-                  if (!variantImgPickerTarget || !urls[0]) {
+                  if (!variantImgPickerTarget || !urls.length) {
                     setVariantImgPickerTarget(null);
                     return;
                   }
-                  if (locale === "de") {
-                    updateMatrixVariant(variantImgPickerTarget, "image_url", urls[0]);
-                  } else {
-                    const row = (product?.variants || []).find(
-                      (v) =>
-                        Array.isArray(v.option_values) &&
-                        v.option_values.join("\u0000") === variantImgPickerTarget.join("\u0000")
-                    );
-                    const map = {
-                      ...(row?.image_urls && typeof row.image_urls === "object" ? row.image_urls : {}),
-                      [locale]: urls[0],
-                    };
-                    updateMatrixVariant(variantImgPickerTarget, "image_urls", map);
-                  }
+                  const row = (product?.variants || []).find(
+                    (v) =>
+                      Array.isArray(v.option_values) &&
+                      v.option_values.join("\u0000") === variantImgPickerTarget.join("\u0000")
+                  );
+                  const existing = Array.isArray(row?.metadata?.media) ? row.metadata.media : [];
+                  const merged = [...existing, ...urls].slice(0, 8);
+                  updateMatrixVariantMeta(variantImgPickerTarget, "media", merged);
                   setVariantImgPickerTarget(null);
                 }}
               />
@@ -1706,13 +1718,6 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                         </thead>
                         <tbody>
                           {matrixRows.map((v, vi) => {
-                            const raw = variantImageUrlForLocale(v, locale);
-                            const effectiveImg = raw ? resolveMediaUrl(raw) : null;
-                            const isOverride =
-                              locale === "de"
-                                ? !!v.image_url
-                                : !!(v.image_urls && v.image_urls[locale]);
-
                             return (
                               <tr key={vi}>
                                 <td style={{ verticalAlign: "middle" }}>
@@ -1749,48 +1754,48 @@ export default function ProductEditPage({ product: initialProduct, idOrHandle, i
                                   );
                                 })}
 
-                                {/* Image */}
+                                  {/* Images (multiple) */}
                                 <td>
-                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                                    <button
-                                      type="button"
-                                      className={`vg-img-thumb${isOverride ? " is-override" : ""}`}
-                                      style={{ cursor: "pointer", padding: 0, border: isOverride ? "2px solid var(--p-color-border-info)" : "1px solid var(--p-color-border)" }}
-                                      onClick={() => openVariantImgPicker(v.option_values)}
-                                      title="Click to choose image"
-                                    >
-                                      {effectiveImg
-                                        ? <img src={effectiveImg} alt="" />
-                                        : <span style={{ fontSize: 9, color: "var(--p-color-text-subdued)" }}>+</span>}
-                                    </button>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 80 }}>
-                                      {isOverride && (
-                                        <button
-                                          type="button"
-                                          className="vg-clear-override"
-                                          onClick={() => {
-                                            if (locale === "de") {
-                                              updateMatrixVariant(v.option_values, "image_url", "");
-                                            } else {
-                                              const map = {
-                                                ...(v.image_urls && typeof v.image_urls === "object"
-                                                  ? v.image_urls
-                                                  : {}),
-                                              };
-                                              delete map[locale];
-                                              updateMatrixVariant(
-                                                v.option_values,
-                                                "image_urls",
-                                                Object.keys(map).length ? map : undefined
-                                              );
-                                            }
-                                          }}
-                                        >
-                                          Löschen
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
+                                  {(() => {
+                                    const variantImgs = Array.isArray(v.metadata?.media) ? v.metadata.media : [];
+                                    return (
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", minWidth: 80 }}>
+                                        {variantImgs.map((imgUrl, imgIdx) => (
+                                          <div key={imgIdx} style={{ position: "relative", width: 44, height: 44, flexShrink: 0 }}>
+                                            <img
+                                              src={resolveMediaUrl(imgUrl)}
+                                              alt=""
+                                              style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 4, border: "1px solid var(--p-color-border)", display: "block" }}
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const next = variantImgs.filter((_, i) => i !== imgIdx);
+                                                updateMatrixVariantMeta(v.option_values, "media", next.length ? next : null);
+                                              }}
+                                              style={{
+                                                position: "absolute", top: -5, right: -5, width: 16, height: 16,
+                                                borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)",
+                                                color: "#fff", fontSize: 10, lineHeight: 1, cursor: "pointer",
+                                                display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                                              }}
+                                            >×</button>
+                                          </div>
+                                        ))}
+                                        {variantImgs.length < 8 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openVariantImgPicker(v.option_values)}
+                                            style={{
+                                              width: 44, height: 44, borderRadius: 4, border: "2px dashed var(--p-color-border)",
+                                              background: "transparent", cursor: "pointer", fontSize: 18, color: "var(--p-color-text-subdued)",
+                                              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                                            }}
+                                          >+</button>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
 
                                 {/* SKU */}

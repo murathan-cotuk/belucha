@@ -11,7 +11,7 @@ import { CartContext } from "@/context/CartContext";
 import { formatPriceCents, getLocalizedProduct } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { storefrontProductHandle } from "@/lib/product-url-handle";
-import { localizedProductMediaList, variantImageUrlForLocale } from "@/lib/product-locale-media";
+import { localizedProductMediaList, variantImageUrlForLocale, variantMediaForLocale, variantLocaleContent } from "@/lib/product-locale-media";
 import { optionDisplayLabel, optionCanonicalValue, variationGroupDisplayName } from "@/lib/variation-labels";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import { useMarketPrefix } from "@/context/MarketPrefixContext";
@@ -792,14 +792,16 @@ export default function ProductTemplate() {
     ? findVariantIndexByMap(variants, variationGroups, selectedOptions)
     : selectedVariantIndex;
   const variant = variants[effectiveVariantIndex] ?? variants[selectedVariantIndex] ?? variants[0];
-  const variantImageUrl = (() => {
-    const raw = variant ? variantImageUrlForLocale(variant, locale) : "";
-    return raw ? resolveImageUrl(raw) : null;
-  })();
-  // When variant has its own image, gallery shows only that image; otherwise show product images
-  const displayImages = variantImageUrl
-    ? [{ url: variantImageUrl, alt: variant?.title || displayTitle }]
+  // Variant media: prefer metadata.media array, fall back to single image_url
+  const variantMediaList = variant ? variantMediaForLocale(variant, locale).map((u) => resolveImageUrl(u)).filter(Boolean) : [];
+  // When variant has its own images, gallery shows those; otherwise show product images
+  const displayImages = variantMediaList.length > 0
+    ? variantMediaList.map((url) => ({ url, alt: variant?.title || displayTitle }))
     : images;
+  // Variant-specific locale content overrides (title, description, bullets)
+  const variantContent = variant ? variantLocaleContent(variant, locale) : {};
+  const effectiveTitle = variantContent.title || displayTitle;
+  const effectiveDescription = variantContent.description || displayDescription;
   const mainImage = displayImages[selectedImage]?.url || variantImageUrl || (product.thumbnail ? resolveImageUrl(product.thumbnail) : null) || "https://via.placeholder.com/600";
   const priceCents =
     variant?.prices?.[0]?.amount != null
@@ -814,7 +816,10 @@ export default function ProductTemplate() {
   const discountPercent = hasSale && priceCents > 0 && saleCents < priceCents
     ? Math.round(((priceCents - saleCents) / priceCents) * 100)
     : null;
-  const bulletPoints = Array.isArray(meta.bullet_points) ? meta.bullet_points.filter(Boolean) : [];
+  const productBullets = Array.isArray(meta.bullet_points) ? meta.bullet_points.filter(Boolean) : [];
+  const bulletPoints = (variantContent.bullet_points && variantContent.bullet_points.length > 0)
+    ? variantContent.bullet_points.filter(Boolean)
+    : productBullets;
   const reviewCount = productReviews.length > 0 ? productReviews.length : (meta.review_count != null ? Number(meta.review_count) : 0);
   const reviewAvg = productReviews.length > 0
     ? productReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / productReviews.length
@@ -841,7 +846,7 @@ export default function ProductTemplate() {
     "Shop";
   const returnDays = meta.return_days != null ? meta.return_days : 14;
   const returnCost = meta.return_cost === false || meta.return_kostenlos === true ? "kostenlos" : (meta.return_cost || "kostenlos");
-  const titleDisplay = (displayTitle || "").slice(0, 120);
+  const titleDisplay = (effectiveTitle || displayTitle || "").slice(0, 120);
 
   const goPrev = () => setSelectedImage((i) => (i <= 0 ? displayImages.length - 1 : i - 1));
   const goNext = () => setSelectedImage((i) => (i >= displayImages.length - 1 ? 0 : i + 1));
@@ -1190,11 +1195,11 @@ export default function ProductTemplate() {
         </RightCol>
       </ThreeCol>
 
-      {(displayDescription || product.subtitle) && (
+      {(effectiveDescription || product.subtitle) && (
         <DescriptionSection
           id="description"
           dangerouslySetInnerHTML={{
-            __html: sanitizeHtml(displayDescription || product.subtitle || "") || "",
+            __html: sanitizeHtml(effectiveDescription || product.subtitle || "") || "",
           }}
         />
       )}

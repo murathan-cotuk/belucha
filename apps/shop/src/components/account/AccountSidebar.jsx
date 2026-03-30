@@ -15,6 +15,7 @@ const NAV = [
   { label: "Merkzettel", icon: "♥", href: "/merkzettel" },
   { label: "Adressen", icon: "📍", href: "/addresses" },
   { label: "Zahlungsmethoden", icon: "💳", href: "/payment-methods" },
+  { label: "Nachrichten", icon: "✉️", href: "/nachrichten" },
   { label: "Bewertungen", icon: "💬", href: "/reviews" },
   { label: "Bonuspunkte", icon: "⭐", href: "/bonus" },
 ];
