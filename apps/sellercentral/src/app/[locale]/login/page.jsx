@@ -26,6 +26,7 @@ export default function Login() {
       localStorage.setItem("sellerId", data.user.seller_id);
       localStorage.setItem("storeName", data.user.store_name || "");
       localStorage.setItem("sellerIsSuperuser", data.user.is_superuser ? "true" : "false");
+      localStorage.setItem("sellerPermissions", data.user.permissions ? JSON.stringify(data.user.permissions) : "null");
       localStorage.setItem("sellerLoggedIn", "true");
       router.push("/dashboard");
     } catch (err) {

@@ -791,6 +791,29 @@ class MedusaAdminClient {
   async testSmtpSettings() {
     return this.request('/admin-hub/v1/smtp-settings/test', { method: 'POST' })
   }
+  async getTransactions(params = {}) {
+    const qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''
+    return this.request(`/admin-hub/v1/transactions${qs}`)
+  }
+  async getPayouts(params = {}) {
+    const qs = Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : ''
+    return this.request(`/admin-hub/v1/payouts${qs}`)
+  }
+  async createPayout(data) {
+    return this.request('/admin-hub/v1/payouts', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updatePayout(id, data) {
+    return this.request(`/admin-hub/v1/payouts/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  async getSellerProfile() {
+    return this.request('/admin-hub/v1/seller/profile')
+  }
+  async updateSellerIban(iban) {
+    return this.request('/admin-hub/v1/seller/iban', { method: 'PATCH', body: JSON.stringify({ iban }) })
+  }
+  async inviteUser(email) {
+    return this.request('/admin-hub/users/invite', { method: 'POST', body: JSON.stringify({ email }) })
+  }
 
   // ── Seller Auth ─────────────────────────────────────────────────────────────
   async loginSeller(email, password) {
@@ -813,6 +836,18 @@ class MedusaAdminClient {
 
   async getSellerUsers() {
     return this.request('/admin-hub/users');
+  }
+
+  async createSellerUser(data) {
+    return this.request('/admin-hub/users', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateSellerUser(userId, data) {
+    return this.request(`/admin-hub/users/${userId}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async deleteSellerUser(userId) {
+    return this.request(`/admin-hub/users/${userId}`, { method: 'DELETE' });
   }
 
   async setSellerUserSuperuser(userId, isSuperuser) {

@@ -15,7 +15,8 @@ import { ProfileIcon, CreditCardIcon, NotificationIcon, LockIcon, ReceiptIcon } 
 
 const settingsItems = [
   { href: "/settings/account", icon: ProfileIcon, title: "Account", description: "Manage your account and preferences" },
-  { href: "/settings/payment", icon: CreditCardIcon, title: "Payment methods", description: "Add and manage payment methods" },
+  { href: "/settings/payments", icon: CreditCardIcon, title: "Zahlungen & IBAN", description: "IBAN für Auszahlungen und Transaktionsübersicht" },
+  { href: "/settings/users-permissions", icon: ProfileIcon, title: "Benutzer & Rechte", description: "Seller-Konten einladen und verwalten" },
   { href: "/settings/notifications", icon: NotificationIcon, title: "Notifications", description: "Configure notification preferences" },
   { href: "/settings/security", icon: LockIcon, title: "Security", description: "Password and security settings" },
   { href: "/settings/billing", icon: ReceiptIcon, title: "Billing", description: "Invoices and billing history" },

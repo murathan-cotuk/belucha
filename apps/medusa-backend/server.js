@@ -607,6 +607,38 @@ async function start() {
           );
         `).catch(() => {})
         await client.query(`ALTER TABLE admin_hub_seller_settings ADD COLUMN IF NOT EXISTS notifications_seen_at timestamp;`).catch(() => {})
+        await client.query(`ALTER TABLE seller_users ADD COLUMN IF NOT EXISTS iban text;`).catch(() => {})
+        await client.query(`ALTER TABLE seller_users ADD COLUMN IF NOT EXISTS permissions jsonb DEFAULT NULL;`).catch(() => {})
+        await client.query(`ALTER TABLE seller_users ADD COLUMN IF NOT EXISTS commission_rate numeric(5,4) NOT NULL DEFAULT 0.10;`).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS seller_payouts (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            seller_id varchar(255) NOT NULL,
+            period_start date NOT NULL,
+            period_end date NOT NULL,
+            total_cents bigint NOT NULL DEFAULT 0,
+            commission_cents bigint NOT NULL DEFAULT 0,
+            payout_cents bigint NOT NULL DEFAULT 0,
+            iban text,
+            status varchar(30) NOT NULL DEFAULT 'offen',
+            proof_url text,
+            paid_at timestamp,
+            notes text,
+            created_at timestamp DEFAULT now(),
+            updated_at timestamp DEFAULT now()
+          );
+        `).catch(() => {})
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS seller_invitations (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            email varchar(255) UNIQUE NOT NULL,
+            invited_by_seller_id varchar(255) NOT NULL,
+            token varchar(255) UNIQUE NOT NULL,
+            expires_at timestamp NOT NULL,
+            accepted_at timestamp,
+            created_at timestamp DEFAULT now()
+          );
+        `).catch(() => {})
         await client.query(`
           CREATE TABLE IF NOT EXISTS store_customer_discounts (
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -2555,7 +2587,7 @@ async function start() {
       if (!client) return res.status(503).json({ message: 'Database not configured' })
       try {
         await client.connect()
-        const r = await client.query('SELECT id, email, password_hash, store_name, seller_id, is_superuser FROM seller_users WHERE email = $1', [email])
+        const r = await client.query('SELECT id, email, password_hash, store_name, seller_id, is_superuser, permissions FROM seller_users WHERE email = $1', [email])
         await client.end()
         const user = r.rows[0]
         if (!user) return res.status(401).json({ message: 'Invalid email or password' })
@@ -2569,7 +2601,7 @@ async function start() {
           user.is_superuser = true
         }
         const token = signSellerToken({ id: user.id, email: user.email, seller_id: user.seller_id, is_superuser: shouldBeSuperuser, store_name: user.store_name || '' })
-        res.json({ token, user: { id: user.id, email: user.email, seller_id: user.seller_id, is_superuser: shouldBeSuperuser, store_name: user.store_name || '' } })
+        res.json({ token, user: { id: user.id, email: user.email, seller_id: user.seller_id, is_superuser: shouldBeSuperuser, store_name: user.store_name || '', permissions: user.permissions || null } })
       } catch (err) {
         try { await client.end() } catch (_) {}
         console.error('sellerAuthLoginPOST:', err)
@@ -2617,10 +2649,111 @@ async function start() {
       }
     }
 
+    // POST /admin-hub/users — create seller user directly (superuser only)
+    const sellerUserCreatePOST = async (req, res) => {
+      const body = req.body || {}
+      const email = (body.email || '').trim().toLowerCase()
+      const password = (body.password || '').toString()
+      const store_name = (body.store_name || '').trim()
+      const is_superuser = !!body.is_superuser
+      const permissions = body.permissions || null
+      if (!email || !password) return res.status(400).json({ message: 'Email and password required' })
+      if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters' })
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        const existing = await client.query('SELECT id FROM seller_users WHERE email = $1', [email])
+        if (existing.rows.length) { await client.end(); return res.status(409).json({ message: 'An account with this email already exists' }) }
+        const password_hash = hashSellerPassword(password)
+        const seller_id = `seller_${require('crypto').randomBytes(8).toString('hex')}`
+        const r = await client.query(
+          `INSERT INTO seller_users (email, password_hash, store_name, seller_id, is_superuser, permissions)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, email, store_name, seller_id, is_superuser, permissions, created_at`,
+          [email, password_hash, store_name || null, seller_id, is_superuser, permissions ? JSON.stringify(permissions) : null]
+        )
+        if (store_name) {
+          await client.query(
+            `INSERT INTO admin_hub_seller_settings (seller_id, store_name, updated_at) VALUES ($1, $2, now())
+             ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, updated_at = now()`,
+            [seller_id, store_name]
+          ).catch(() => {})
+        }
+        await client.end()
+        res.json({ user: r.rows[0] })
+      } catch (err) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: err?.message || 'Create failed' })
+      }
+    }
+
+    // PATCH /admin-hub/users/:id — update user (store_name, permissions, password, is_superuser)
+    const sellerUserUpdatePATCH = async (req, res) => {
+      const { id } = req.params
+      const body = req.body || {}
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        const sets = ['updated_at = now()']
+        const params = []
+        if (body.store_name !== undefined) { params.push(body.store_name || null); sets.push(`store_name = $${params.length}`) }
+        if (body.is_superuser !== undefined) { params.push(!!body.is_superuser); sets.push(`is_superuser = $${params.length}`) }
+        if (body.permissions !== undefined) { params.push(body.permissions ? JSON.stringify(body.permissions) : null); sets.push(`permissions = $${params.length}`) }
+        if (body.password && body.password.length >= 6) { params.push(hashSellerPassword(body.password)); sets.push(`password_hash = $${params.length}`) }
+        params.push(id)
+        const r = await client.query(
+          `UPDATE seller_users SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING id, email, store_name, seller_id, is_superuser, permissions, created_at`,
+          params
+        )
+        await client.end()
+        if (!r.rows.length) return res.status(404).json({ message: 'User not found' })
+        // Also sync store_name to seller settings
+        const u = r.rows[0]
+        if (body.store_name !== undefined && u.seller_id) {
+          const c2 = getSellerDbClient()
+          try {
+            await c2.connect()
+            await c2.query(
+              `INSERT INTO admin_hub_seller_settings (seller_id, store_name, updated_at) VALUES ($1, $2, now()) ON CONFLICT (seller_id) DO UPDATE SET store_name = $2, updated_at = now()`,
+              [u.seller_id, body.store_name || '']
+            )
+            await c2.end()
+          } catch (_) {}
+        }
+        res.json({ user: u })
+      } catch (err) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: err?.message })
+      }
+    }
+
+    // DELETE /admin-hub/users/:id — delete user (superuser only)
+    const sellerUserDeleteDELETE = async (req, res) => {
+      const { id } = req.params
+      const myId = req.sellerUser?.id
+      if (id === myId) return res.status(400).json({ message: 'Cannot delete yourself' })
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'Database not configured' })
+      try {
+        await client.connect()
+        await client.query('DELETE FROM seller_users WHERE id = $1', [id])
+        await client.end()
+        res.json({ success: true })
+      } catch (err) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: err?.message })
+      }
+    }
+
     httpApp.post('/admin-hub/auth/register', sellerAuthRegisterPOST)
     httpApp.post('/admin-hub/auth/login', sellerAuthLoginPOST)
     httpApp.get('/admin-hub/auth/me', requireSellerAuth, sellerAuthMeGET)
     httpApp.get('/admin-hub/users', requireSellerAuth, requireSuperuser, sellerUsersGET)
+    httpApp.post('/admin-hub/users', requireSellerAuth, requireSuperuser, sellerUserCreatePOST)
+    httpApp.patch('/admin-hub/users/:id', requireSellerAuth, requireSuperuser, sellerUserUpdatePATCH)
+    httpApp.delete('/admin-hub/users/:id', requireSellerAuth, requireSuperuser, sellerUserDeleteDELETE)
     httpApp.patch('/admin-hub/users/:id/superuser', requireSellerAuth, requireSuperuser, sellerUserSuperuserPATCH)
     console.log('Admin Hub routes: seller auth + users')
 
@@ -7469,6 +7602,243 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
     httpApp.get('/admin-hub/v1/smtp-settings', adminHubSmtpSettingsGET)
     httpApp.patch('/admin-hub/v1/smtp-settings', adminHubSmtpSettingsPATCH)
     httpApp.post('/admin-hub/v1/smtp-settings/test', adminHubSmtpSettingsTestPOST)
+
+    // ── Transactions ────────────────────────────────────────────────────────────
+    // GET /admin-hub/v1/transactions — list eligible orders as transactions
+    const adminHubTransactionsGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const isSuperuser = req.sellerUser?.is_superuser || false
+        const callerSellerId = req.sellerUser?.seller_id
+        const filterSellerId = req.query.seller_id || (!isSuperuser ? callerSellerId : null)
+        const limitDays = parseInt(req.query.payout_days || '14', 10)
+        const params = []
+        const where = []
+        // Only paid orders
+        where.push(`o.payment_status = 'bezahlt'`)
+        // Only delivered 14+ days ago (eligible)
+        where.push(`o.delivery_date IS NOT NULL AND o.delivery_date <= now() - interval '${limitDays} days'`)
+        if (filterSellerId) { params.push(filterSellerId); where.push(`o.seller_id = $${params.length}`) }
+        const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+        const r = await client.query(
+          `SELECT o.id, o.order_number, o.seller_id, o.total_cents, o.shipping_cents, o.discount_cents,
+                  o.payment_status, o.delivery_status, o.delivery_date, o.created_at,
+                  o.first_name, o.last_name, o.email, o.currency,
+                  s.store_name, s.commission_rate, s.iban
+           FROM store_orders o
+           LEFT JOIN seller_users s ON s.seller_id = o.seller_id
+           ${whereClause}
+           ORDER BY o.delivery_date DESC
+           LIMIT 500`,
+          params
+        )
+        const transactions = r.rows.map(row => {
+          const commRate = parseFloat(row.commission_rate ?? 0.10)
+          const total = row.total_cents || 0
+          const commission = Math.round(total * commRate)
+          const payout = total - commission
+          return {
+            id: row.id,
+            order_number: row.order_number,
+            seller_id: row.seller_id,
+            store_name: row.store_name || row.seller_id,
+            total_cents: total,
+            commission_rate: commRate,
+            commission_cents: commission,
+            payout_cents: payout,
+            iban: isSuperuser ? row.iban : undefined,
+            delivery_date: row.delivery_date,
+            created_at: row.created_at,
+            first_name: row.first_name,
+            last_name: row.last_name,
+            currency: row.currency || 'EUR',
+          }
+        })
+        // Group by seller if superuser
+        const summary = {}
+        for (const t of transactions) {
+          const sid = t.seller_id
+          if (!summary[sid]) summary[sid] = { seller_id: sid, store_name: t.store_name, total_cents: 0, commission_cents: 0, payout_cents: 0, order_count: 0, iban: t.iban }
+          summary[sid].total_cents += t.total_cents
+          summary[sid].commission_cents += t.commission_cents
+          summary[sid].payout_cents += t.payout_cents
+          summary[sid].order_count += 1
+        }
+        await client.end()
+        res.json({ transactions, summary: Object.values(summary), count: transactions.length })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /admin-hub/v1/payouts — list payout records
+    const adminHubPayoutsGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const isSuperuser = req.sellerUser?.is_superuser || false
+        const callerSellerId = req.sellerUser?.seller_id
+        const filterSellerId = req.query.seller_id || (!isSuperuser ? callerSellerId : null)
+        const params = []
+        let where = ''
+        if (filterSellerId) { params.push(filterSellerId); where = `WHERE seller_id = $1` }
+        const r = await client.query(
+          `SELECT p.*, s.store_name FROM seller_payouts p LEFT JOIN seller_users s ON s.seller_id = p.seller_id ${where} ORDER BY p.period_start DESC LIMIT 200`,
+          params
+        )
+        await client.end()
+        res.json({ payouts: r.rows, count: r.rows.length })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // POST /admin-hub/v1/payouts — create payout (superuser only)
+    const adminHubPayoutsPOST = async (req, res) => {
+      if (!req.sellerUser?.is_superuser) return res.status(403).json({ message: 'Superuser access required' })
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const { seller_id, period_start, period_end, total_cents, commission_cents, payout_cents, iban, notes } = req.body || {}
+        if (!seller_id || !period_start || !period_end) return res.status(400).json({ message: 'seller_id, period_start, period_end required' })
+        const r = await client.query(
+          `INSERT INTO seller_payouts (seller_id, period_start, period_end, total_cents, commission_cents, payout_cents, iban, notes, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'offen') RETURNING *`,
+          [seller_id, period_start, period_end, total_cents || 0, commission_cents || 0, payout_cents || 0, iban || null, notes || null]
+        )
+        await client.end()
+        res.json({ payout: r.rows[0] })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // PATCH /admin-hub/v1/payouts/:id — update payout status / proof (superuser only)
+    const adminHubPayoutsPATCH = async (req, res) => {
+      if (!req.sellerUser?.is_superuser) return res.status(403).json({ message: 'Superuser access required' })
+      const { id } = req.params
+      const client = getDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const { status, proof_url, notes, paid_at } = req.body || {}
+        const sets = ['updated_at = now()']
+        const params = []
+        if (status !== undefined) { params.push(status); sets.push(`status = $${params.length}`) }
+        if (proof_url !== undefined) { params.push(proof_url); sets.push(`proof_url = $${params.length}`) }
+        if (notes !== undefined) { params.push(notes); sets.push(`notes = $${params.length}`) }
+        if (paid_at !== undefined || status === 'bezahlt') { params.push(paid_at || new Date().toISOString()); sets.push(`paid_at = $${params.length}`) }
+        params.push(id)
+        const r = await client.query(`UPDATE seller_payouts SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params)
+        await client.end()
+        if (!r.rows.length) return res.status(404).json({ message: 'Payout not found' })
+        res.json({ payout: r.rows[0] })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // PATCH /admin-hub/v1/seller/iban — set own IBAN
+    const adminHubSellerIbanPATCH = async (req, res) => {
+      const sellerId = req.sellerUser?.seller_id
+      if (!sellerId) return res.status(401).json({ message: 'Unauthorized' })
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const { iban } = req.body || {}
+        await client.query('UPDATE seller_users SET iban = $1, updated_at = now() WHERE seller_id = $2', [iban || null, sellerId])
+        await client.end()
+        res.json({ success: true })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // GET /admin-hub/v1/seller/profile — get own profile (iban, commission_rate, etc.)
+    const adminHubSellerProfileGET = async (req, res) => {
+      const sellerId = req.sellerUser?.seller_id
+      if (!sellerId) return res.status(401).json({ message: 'Unauthorized' })
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const r = await client.query('SELECT id, email, store_name, seller_id, is_superuser, iban, commission_rate, created_at FROM seller_users WHERE seller_id = $1', [sellerId])
+        await client.end()
+        const user = r.rows[0]
+        if (!user) return res.status(404).json({ message: 'User not found' })
+        res.json({ user })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    // POST /admin-hub/users/invite — invite a new seller user
+    const adminHubUsersInvitePOST = async (req, res) => {
+      const inviterSellerId = req.sellerUser?.seller_id
+      if (!inviterSellerId) return res.status(401).json({ message: 'Unauthorized' })
+      const client = getSellerDbClient()
+      if (!client) return res.status(503).json({ message: 'DB not configured' })
+      try {
+        await client.connect()
+        const { email } = req.body || {}
+        if (!email) { await client.end(); return res.status(400).json({ message: 'Email required' }) }
+        const normalEmail = email.trim().toLowerCase()
+        // Check if already registered
+        const existing = await client.query('SELECT id FROM seller_users WHERE email = $1', [normalEmail])
+        if (existing.rows.length) { await client.end(); return res.status(409).json({ message: 'User already exists with this email' }) }
+        // Create/replace invitation token
+        const token = require('crypto').randomBytes(32).toString('hex')
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        await client.query(
+          `INSERT INTO seller_invitations (email, invited_by_seller_id, token, expires_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (email) DO UPDATE SET token = $3, expires_at = $4, invited_by_seller_id = $2, accepted_at = NULL`,
+          [normalEmail, inviterSellerId, token, expiresAt]
+        )
+        await client.end()
+        // Try to send invitation email
+        const inviteUrl = `${process.env.NEXT_PUBLIC_SELLERCENTRAL_URL || 'http://localhost:3001'}/register?invite=${token}&email=${encodeURIComponent(normalEmail)}`
+        try {
+          const dbClient2 = getDbClient()
+          if (dbClient2) {
+            await dbClient2.connect()
+            const transport = await getSmtpTransport(dbClient2)
+            await dbClient2.end()
+            if (transport) {
+              await transport.sendMail({
+                to: normalEmail,
+                subject: 'Einladung zur Belucha Seller Platform',
+                text: `Sie wurden eingeladen, der Belucha Seller Platform beizutreten.\n\nRegistrierungslink: ${inviteUrl}\n\nDieser Link ist 7 Tage gültig.`,
+                html: `<p>Sie wurden eingeladen, der <strong>Belucha Seller Platform</strong> beizutreten.</p><p><a href="${inviteUrl}">Jetzt registrieren</a></p><p>Dieser Link ist 7 Tage gültig.</p>`
+              })
+            }
+          }
+        } catch (_) { /* email sending is best-effort */ }
+        res.json({ success: true, invite_url: inviteUrl })
+      } catch (e) {
+        try { await client.end() } catch (_) {}
+        res.status(500).json({ message: e?.message || 'Error' })
+      }
+    }
+
+    httpApp.get('/admin-hub/v1/transactions', requireSellerAuth, adminHubTransactionsGET)
+    httpApp.get('/admin-hub/v1/payouts', requireSellerAuth, adminHubPayoutsGET)
+    httpApp.post('/admin-hub/v1/payouts', requireSellerAuth, adminHubPayoutsPOST)
+    httpApp.patch('/admin-hub/v1/payouts/:id', requireSellerAuth, adminHubPayoutsPATCH)
+    httpApp.patch('/admin-hub/v1/seller/iban', requireSellerAuth, adminHubSellerIbanPATCH)
+    httpApp.get('/admin-hub/v1/seller/profile', requireSellerAuth, adminHubSellerProfileGET)
+    httpApp.post('/admin-hub/users/invite', requireSellerAuth, adminHubUsersInvitePOST)
 
     httpApp.listen(PORT, HOST, () => {
       console.log(`\n✅ Medusa v2 backend başarıyla başlatıldı!`)

@@ -118,12 +118,23 @@ function getMenuItemsMain(t) {
 }
 
 function getMenuItemsSettings(t, isSuperuser = false) {
-  return [{ url: "/settings", label: t("settings"), icon: SettingsIcon }];
+  return [{
+    url: "/settings",
+    label: t("settings"),
+    icon: SettingsIcon,
+    subNavigationItems: [
+      { url: "/settings/general", label: "Allgemein" },
+      { url: "/settings/payments", label: "Zahlungen & IBAN" },
+      { url: "/settings/users-permissions", label: "Benutzer & Rechte" },
+      { url: "/settings/notifications", label: "Benachrichtigungen" },
+      { url: "/settings/security", label: "Sicherheit" },
+    ],
+  }];
 }
 
 // Parent nav URLs that should expand/collapse sub-menus on click (no page navigation)
 const PARENT_NAV_URLS = new Set([
-  "/products", "/marketing", "/content", "/analytics", "/customers-menu",
+  "/products", "/marketing", "/content", "/analytics", "/customers-menu", "/settings",
 ]);
 
 const NextLink = forwardRef(function NextLink({ url, children, external, onClick, ...rest }, ref) {
@@ -184,6 +195,10 @@ export default function PolarisLayout({ children }) {
   const [isSuperuser, setIsSuperuser] = useState(
     typeof window !== "undefined" && localStorage.getItem("sellerIsSuperuser") === "true"
   );
+  const [userPermissions, setUserPermissions] = useState(() => {
+    if (typeof window === "undefined") return null;
+    try { return JSON.parse(localStorage.getItem("sellerPermissions") || "null"); } catch { return null; }
+  });
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifData, setNotifData] = useState(null);
   const [msgUnread, setMsgUnread] = useState(0);
@@ -244,6 +259,17 @@ export default function PolarisLayout({ children }) {
       const superuser = localStorage.getItem("sellerIsSuperuser") === "true";
       setIsAuthenticated(true);
       setIsSuperuser(superuser);
+      // Load permissions from profile (cache in localStorage)
+      const cachedPerms = localStorage.getItem("sellerPermissions");
+      if (cachedPerms) {
+        try { setUserPermissions(JSON.parse(cachedPerms)); } catch { setUserPermissions(null); }
+      }
+      // Fetch fresh profile to get latest permissions
+      getMedusaAdminClient().getSellerProfile().then((d) => {
+        const perms = d?.user?.permissions || null;
+        localStorage.setItem("sellerPermissions", perms ? JSON.stringify(perms) : "null");
+        setUserPermissions(perms);
+      }).catch(() => {});
       // Redirect non-superusers away from blocked routes
       if (!superuser && SELLER_BLOCKED_ROUTES.has(pathname)) {
         router.replace("/dashboard");
@@ -278,6 +304,7 @@ export default function PolarisLayout({ children }) {
     localStorage.removeItem("storeName");
     localStorage.removeItem("sellerToken");
     localStorage.removeItem("sellerIsSuperuser");
+    localStorage.removeItem("sellerPermissions");
     router.push("/login");
   }, [router]);
 
@@ -515,11 +542,17 @@ export default function PolarisLayout({ children }) {
 
   const filterNavForRole = (items) => {
     if (isSuperuser) return items;
-    return items.map((item) => {
-      if (!item.subNavigationItems) return item;
-      const filteredSubs = item.subNavigationItems.filter((s) => !SELLER_BLOCKED_NAV.has(s.url));
-      return { ...item, subNavigationItems: filteredSubs };
-    });
+    // If user has custom permissions, use those; otherwise use default blocked set
+    const isAllowed = (url) => {
+      if (userPermissions) return userPermissions.some((p) => url === p || url.startsWith(p + "/"));
+      return !SELLER_BLOCKED_NAV.has(url);
+    };
+    return items
+      .filter((item) => isAllowed(item.url) || item.subNavigationItems?.some((s) => isAllowed(s.url)))
+      .map((item) => {
+        if (!item.subNavigationItems) return item;
+        return { ...item, subNavigationItems: item.subNavigationItems.filter((s) => isAllowed(s.url)) };
+      });
   };
 
   const menuMain = filterNavForRole(getMenuItemsMain(t));
@@ -554,11 +587,22 @@ export default function PolarisLayout({ children }) {
       <Navigation.Section
         fill
         separator
-        items={menuSettings.map((item) => ({
-          url: item.url,
-          label: item.label,
-          icon: item.icon,
-        }))}
+        items={menuSettings.map((item) => {
+          const hasSub = item.subNavigationItems?.length > 0;
+          const shouldToggleOnly = hasSub && PARENT_NAV_URLS.has(item.url);
+          const childIsActive = hasSub && item.subNavigationItems.some((s) => navLocation.startsWith(s.url));
+          const isSelected = hasSub ? (shouldToggleOnly && expandedLabel === item.label) || childIsActive : undefined;
+          return {
+            url: item.url,
+            label: item.label,
+            icon: item.icon,
+            subNavigationItems: item.subNavigationItems,
+            selected: isSelected,
+            onClick: shouldToggleOnly
+              ? () => setExpandedLabel((prev) => prev === item.label ? null : item.label)
+              : undefined,
+          };
+        })}
       />
     </Navigation>
   );

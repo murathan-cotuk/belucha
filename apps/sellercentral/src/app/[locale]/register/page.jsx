@@ -1,14 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 
 export default function Register() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [storeName, setStoreName] = useState("");
   const [email, setEmail] = useState("");
+  const [isInvited, setIsInvited] = useState(false);
+
+  useEffect(() => {
+    const inviteEmail = searchParams?.get("email");
+    if (inviteEmail) { setEmail(inviteEmail); setIsInvited(true); }
+  }, [searchParams]);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -43,8 +50,8 @@ export default function Register() {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6" }}>
       <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: 12, padding: "40px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Become a Seller</h1>
-          <p style={{ color: "#6b7280", fontSize: 15, margin: 0 }}>Join Belucha and start selling today</p>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>{isInvited ? "Einladung annehmen" : "Become a Seller"}</h1>
+          <p style={{ color: "#6b7280", fontSize: 15, margin: 0 }}>{isInvited ? "Erstellen Sie Ihr Seller-Konto" : "Join Belucha and start selling today"}</p>
         </div>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div>
@@ -63,9 +70,10 @@ export default function Register() {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => !isInvited && setEmail(e.target.value)}
               required
-              style={{ width: "100%", padding: "10px 14px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 15, outline: "none", boxSizing: "border-box" }}
+              readOnly={isInvited}
+              style={{ width: "100%", padding: "10px 14px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 15, outline: "none", boxSizing: "border-box", background: isInvited ? "#f9fafb" : "#fff" }}
               placeholder="you@example.com"
             />
           </div>
