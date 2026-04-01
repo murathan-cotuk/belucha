@@ -35,7 +35,7 @@ export async function GET(request) {
         );
         if (found) return NextResponse.json({ collection: found, collections });
       }
-      return NextResponse.json({ collection: null, collections: [] }, { status: 404 });
+      return NextResponse.json({ collection: null, collections: [] });
     }
 
     const res = await fetch(`${base}/store/collections`, {

@@ -2,10 +2,10 @@
 
 import React from "react";
 
-/* Brand colours — matches theme #ff971c */
-const C_BASE   = "#ff971c";
-const C_DARK   = "#ef8200";
-const C_ACTIVE = "#ef8200";
+/* Brand colours — fallback values; overridden by ShopStylesInjector via CSS variables */
+const C_BASE   = "var(--shop-primary, #ff971c)";
+const C_DARK   = "var(--shop-accent, #ef8200)";
+const C_ACTIVE = "var(--shop-accent, #ef8200)";
 
 export function ToCartButton({ type = "button", children, disabled, onClick, style, className = "" }) {
   return (

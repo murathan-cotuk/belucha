@@ -2,6 +2,7 @@
 
 import ShopHeader from "@/components/ShopHeader";
 import Footer from "@/components/Footer";
+import LandingContainers from "@/components/landing/LandingContainers";
 import { ProductGrid } from "@/components/ProductGrid";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
@@ -109,11 +110,6 @@ const ColHeader = styled.div`
 
 /* ─── Breadcrumb ─────────────────────────────────────────── */
 const Breadcrumb = styled.nav`
-  padding: 10px 32px;
-  max-width: 1440px;
-  margin: 0 auto;
-  width: 100%;
-  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -123,8 +119,6 @@ const Breadcrumb = styled.nav`
 
   a { color: #999; text-decoration: none; transition: color 0.12s; &:hover { color: #111; } }
   b { color: #444; font-weight: 500; }
-
-  @media (max-width: 600px) { padding: 8px 16px; }
 `;
 
 /* ─── Sort bar (top, sticky) ─────────────────────────────── */
@@ -142,11 +136,19 @@ const SortBarInner = styled.div`
   margin: 0 auto;
   padding: 0 32px;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: 0;
+  gap: 20px;
 
   @media (max-width: 600px) { padding: 0 16px; }
+`;
+
+const SortBarLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
 `;
 
 /* Mobile-only filter toggle */
@@ -211,14 +213,14 @@ const SortSelect = styled.select`
 const ContentWrap = styled.div`
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 32px 80px;
+  padding: 14px 32px 80px;
   width: 100%;
   box-sizing: border-box;
   display: flex;
   gap: 32px;
   align-items: flex-start;
 
-  @media (max-width: 767px) { padding: 0 16px 60px; }
+  @media (max-width: 767px) { padding: 10px 16px 60px; }
 `;
 
 /* Left filter sidebar */
@@ -226,8 +228,8 @@ const Sidebar = styled.aside`
   width: 220px;
   flex-shrink: 0;
   position: sticky;
-  top: ${HEADER_H + 56}px;
-  max-height: calc(100vh - ${HEADER_H + 56}px);
+  top: ${HEADER_H + 68}px;
+  max-height: calc(100vh - ${HEADER_H + 68}px);
   overflow-y: auto;
 
   /* Mobile: hidden overlay drawer */
@@ -270,16 +272,38 @@ const SidebarHead = styled.div`
 `;
 
 const FilterGroup = styled.div`
-  margin-bottom: 24px;
+  border-bottom: 1px solid #eceae7;
 `;
 
-const FilterGroupTitle = styled.div`
+const FilterGroupTitle = styled.button`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  background: none;
+  border: none;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #111;
-  margin-bottom: 10px;
+  cursor: pointer;
+  text-align: left;
+`;
+
+const FilterGroupBody = styled.div`
+  display: ${(p) => (p.$open ? "block" : "none")};
+  padding: 0 0 12px;
+`;
+
+const FilterChevron = styled.span`
+  font-size: 14px;
+  line-height: 1;
+  color: #666;
+  transform: rotate(${(p) => (p.$open ? "180deg" : "0deg")});
+  transition: transform 0.18s ease;
 `;
 
 const CheckRow = styled.label`
@@ -360,6 +384,46 @@ const ResultBar = styled.div`
   letter-spacing: 0.04em;
 `;
 
+function normalizeFacetKey(key) {
+  const raw = String(key || "").trim().toLowerCase().replace(/\s+/g, "_");
+  if (!raw) return "";
+  if (["farbe", "color", "colour", "farben"].includes(raw)) return "farbe";
+  if (["groesse", "größe", "size", "sizes"].includes(raw)) return "groesse";
+  if (["material", "materials", "stoff"].includes(raw)) return "material";
+  return raw;
+}
+
+function variationGroupFacetKey(group, fallbackIndex) {
+  const raw = group?.key || group?.name || group?.title || `option_${fallbackIndex + 1}`;
+  return normalizeFacetKey(raw);
+}
+
+function inferFacetKeyFromValue(value, fallbackKey = "") {
+  const s = String(value || "").trim();
+  const lower = s.toLowerCase();
+  if (!s) return normalizeFacetKey(fallbackKey);
+
+  const sizeTokens = new Set([
+    "xxs", "xs", "s", "m", "l", "xl", "xxl", "xxxl",
+    "2xs", "3xs", "2xl", "3xl", "4xl", "5xl",
+  ]);
+  const colorTokens = new Set([
+    "blue", "green", "pink", "red", "yellow", "orange", "purple", "violet",
+    "black", "white", "grey", "gray", "brown", "beige", "navy", "gold",
+    "silver", "rose", "rosa", "pinke", "pembe", "blau", "gruen", "grün",
+    "rot", "gelb", "orange", "lila", "schwarz", "weiss", "weiß", "grau",
+    "braun", "beige", "marine", "gold", "silber",
+  ]);
+
+  if (sizeTokens.has(lower)) return "groesse";
+  if (/^\d{1,3}$/.test(s)) return "groesse";
+  if (/^\d{1,3}([.,]\d+)?\s?(cm|mm|kg|g|ml|l|eu|us|uk)$/.test(lower)) return "groesse";
+  if (/^\d{2,3}\/\d{2,3}$/.test(s)) return "groesse";
+  if (colorTokens.has(lower)) return "farbe";
+
+  return normalizeFacetKey(fallbackKey);
+}
+
 /* ─── Pagination ─────────────────────────────────────────── */
 const Pager = styled.div`
   display: flex;
@@ -428,6 +492,7 @@ export default function CollectionPage() {
   const handle = params?.handle ? String(params.handle) : undefined;
 
   const [collection,  setCollection]  = useState(null);
+  const [cmsPage,     setCmsPage]     = useState(null);
   const [products,    setProducts]    = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState(null);
@@ -436,6 +501,7 @@ export default function CollectionPage() {
   const [page,        setPage]        = useState(1);
   const [filters,     setFilters]     = useState({});
   const [panelOpen,   setPanelOpen]   = useState(false);
+  const [openFilterGroups, setOpenFilterGroups] = useState({});
   const [recommendedProducts, setRecommendedProducts] = useState([]);
 
   const bodyRef = useRef(null);
@@ -465,12 +531,26 @@ export default function CollectionPage() {
         setError(null);
 
         const colRes = await fetch(`/api/store-collections?handle=${encodeURIComponent(handle)}`);
-        if (colRes.status === 404) { setNotFoundSt(true); setLoading(false); return; }
         if (!colRes.ok) throw new Error(`HTTP ${colRes.status}`);
 
         const colData = await colRes.json();
         const col = colData?.collection ?? null;
-        if (!col) { setNotFoundSt(true); setLoading(false); return; }
+        if (!col) {
+          // Fallback: try CMS page by menu label slug
+          const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000";
+          const pageRes = await fetch(`${backendUrl}/store/page-by-label-slug/${encodeURIComponent(handle)}`).catch(() => null);
+          if (pageRes?.ok) {
+            const pageData = await pageRes.json().catch(() => null);
+            if (pageData?.id) { setCmsPage(pageData); setLoading(false); return; }
+          }
+          // Fallback 2: try by page slug directly
+          const pageRes2 = await fetch(`${backendUrl}/store/pages/${encodeURIComponent(handle)}`).catch(() => null);
+          if (pageRes2?.ok) {
+            const pageData2 = await pageRes2.json().catch(() => null);
+            if (pageData2?.id) { setCmsPage(pageData2); setLoading(false); return; }
+          }
+          setNotFoundSt(true); setLoading(false); return;
+        }
         setCollection(col);
 
         const qs = new URLSearchParams({ limit: "200" });
@@ -541,13 +621,15 @@ export default function CollectionPage() {
     };
 
     const addValue = (f, key, rawVal) => {
+      const normalizedKey = normalizeFacetKey(key);
+      if (!normalizedKey || SKIP.has(normalizedKey) || normalizedKey.startsWith("_")) return;
       const vals = Array.isArray(rawVal) ? rawVal : [rawVal];
       vals.forEach(x => {
         if (x == null || typeof x === "object") return;
         const s = String(x).trim();
         if (!isCleanValue(s)) return;
-        if (!f[key]) f[key] = new Set();
-        f[key].add(s);
+        if (!f[normalizedKey]) f[normalizedKey] = new Set();
+        f[normalizedKey].add(s);
       });
     };
 
@@ -557,18 +639,52 @@ export default function CollectionPage() {
 
       // 1. Flat metadata keys
       Object.entries(meta).forEach(([k, v]) => {
-        if (SKIP.has(k) || k.startsWith("_")) return;
+        const nk = normalizeFacetKey(k);
+        if (SKIP.has(nk) || nk.startsWith("_")) return;
         if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object") return; // skip arrays of objects
         if (v !== null && typeof v === "object" && !Array.isArray(v)) return; // skip plain objects
-        addValue(f, k, v);
+        addValue(f, nk, v);
       });
 
       // 2. metafields array: [{key, value}, ...]
       if (Array.isArray(meta.metafields)) {
         meta.metafields.forEach(({ key, value } = {}) => {
-          if (!key || value == null || value === "") return;
-          if (SKIP.has(key) || key.startsWith("_")) return;
-          addValue(f, key, value);
+          const nk = normalizeFacetKey(key);
+          if (!nk || value == null || value === "") return;
+          if (SKIP.has(nk) || nk.startsWith("_")) return;
+          addValue(f, nk, value);
+        });
+      }
+
+      // 3. variant metadata + variant metafields + option values
+      if (Array.isArray(p.variants)) {
+        p.variants.forEach((variant) => {
+          const variantMeta = typeof variant?.metadata === "object" && variant.metadata ? variant.metadata : {};
+
+          Object.entries(variantMeta).forEach(([k, v]) => {
+            const nk = normalizeFacetKey(k);
+            if (SKIP.has(nk) || nk.startsWith("_")) return;
+            if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object") return;
+            if (v !== null && typeof v === "object" && !Array.isArray(v)) return;
+            addValue(f, nk, v);
+          });
+
+          if (Array.isArray(variantMeta.metafields)) {
+            variantMeta.metafields.forEach(({ key, value } = {}) => {
+              const nk = normalizeFacetKey(key);
+              if (!nk || value == null || value === "") return;
+              if (SKIP.has(nk) || nk.startsWith("_")) return;
+              addValue(f, nk, value);
+            });
+          }
+
+          if (Array.isArray(variant?.option_values)) {
+            const groups = Array.isArray(p.variation_groups) ? p.variation_groups : [];
+            variant.option_values.forEach((value, idx) => {
+              const groupKey = inferFacetKeyFromValue(value, variationGroupFacetKey(groups[idx], idx));
+              addValue(f, groupKey, value);
+            });
+          }
         });
       }
     });
@@ -581,6 +697,23 @@ export default function CollectionPage() {
   })();
 
   const hasFacets = Object.keys(facets).length > 0;
+
+  useEffect(() => {
+    const facetKeys = Object.keys(facets);
+    setOpenFilterGroups((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      facetKeys.forEach((key) => {
+        if (!(key in next)) {
+          next[key] = Boolean(filters[key]?.length);
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [facets, filters]);
 
   /* ── Filter ── */
   const toggle = (key, val) => {
@@ -598,15 +731,26 @@ export default function CollectionPage() {
     if (!vals?.length) return;
     filtered = filtered.filter(p => {
       const meta = p.metadata || {};
+      const normalizedKey = normalizeFacetKey(k);
       // 1. Direct metadata key
       const direct = meta[k];
       if (direct != null && (Array.isArray(direct) ? direct : [direct]).some(x => vals.includes(String(x).trim()))) return true;
+      const directNormalized = meta[normalizedKey];
+      if (directNormalized != null && (Array.isArray(directNormalized) ? directNormalized : [directNormalized]).some(x => vals.includes(String(x).trim()))) return true;
       // 2. metafields array [{key, value}, ...]
       if (Array.isArray(meta.metafields) && meta.metafields.some(mf => mf?.key === k && vals.includes(String(mf.value ?? "").trim()))) return true;
-      // 3. variant option_values — e.g. filter "farbe: Rot" matches variants with "Rot" option
+      if (Array.isArray(meta.metafields) && meta.metafields.some(mf => normalizeFacetKey(mf?.key) === normalizedKey && vals.includes(String(mf.value ?? "").trim()))) return true;
+      // 3. variant metadata + option_values
       if (Array.isArray(p.variants) && p.variants.some(v => {
+        const variantMeta = typeof v?.metadata === "object" && v.metadata ? v.metadata : {};
+        const directVariant = variantMeta[k];
+        if (directVariant != null && (Array.isArray(directVariant) ? directVariant : [directVariant]).some(x => vals.includes(String(x).trim()))) return true;
+        const directVariantNormalized = variantMeta[normalizedKey];
+        if (directVariantNormalized != null && (Array.isArray(directVariantNormalized) ? directVariantNormalized : [directVariantNormalized]).some(x => vals.includes(String(x).trim()))) return true;
+        if (Array.isArray(variantMeta.metafields) && variantMeta.metafields.some(mf => normalizeFacetKey(mf?.key) === normalizedKey && vals.includes(String(mf.value ?? "").trim()))) return true;
         const ov = Array.isArray(v.option_values) ? v.option_values : [];
-        return ov.some(x => vals.includes(String(x).trim()));
+        const groups = Array.isArray(p.variation_groups) ? p.variation_groups : [];
+        return ov.some((x, idx) => inferFacetKeyFromValue(x, variationGroupFacetKey(groups[idx], idx)) === normalizedKey && vals.includes(String(x).trim()));
       })) return true;
       return false;
     });
@@ -635,6 +779,20 @@ export default function CollectionPage() {
   const title     = collection?.display_title || collection?.title || handle || "";
   const rawBanner = collection?.banner || collection?.banner_image_url || collection?.image_url || "";
   const bannerUrl = rawBanner ? resolveImageUrl(rawBanner) : "";
+
+  if (cmsPage) return (
+    <PageWrap>
+      <ShopHeader />
+      <Main style={{ paddingTop: HEADER_H }}>
+        <LandingContainers pageId={String(cmsPage.id)} />
+        {cmsPage.body ? (
+          <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}
+            dangerouslySetInnerHTML={{ __html: sanitize(cmsPage.body) }} />
+        ) : null}
+      </Main>
+      <Footer />
+    </PageWrap>
+  );
 
   if (notFoundSt) notFound();
 
@@ -696,35 +854,35 @@ export default function CollectionPage() {
           <ColHeader><h1>{title}</h1></ColHeader>
         )}
 
-        {/* ── Breadcrumb ── */}
-        <Breadcrumb aria-label="Breadcrumb">
-          <Link href={`/${locale}`}>Home</Link>
-          <span style={{ color: "#ccc" }}>/</span>
-          <b>{title}</b>
-        </Breadcrumb>
-
         {/* ── Sort bar (sticky) ── */}
         <SortBar>
           <SortBarInner>
-            {/* Mobile filter toggle */}
-            {hasFacets && (
-              <FilterBtn
-                type="button"
-                $active={panelOpen || activeCount > 0}
-                onClick={() => setPanelOpen(o => !o)}
-                aria-expanded={panelOpen}
-              >
-                <svg viewBox="0 0 16 12">
-                  <line x1="0" y1="2"  x2="16" y2="2" />
-                  <line x1="0" y1="6"  x2="16" y2="6" />
-                  <line x1="0" y1="10" x2="16" y2="10"/>
-                  <circle cx="5"  cy="2"  r="1.5" fill="#111" stroke="none"/>
-                  <circle cx="11" cy="6"  r="1.5" fill="#111" stroke="none"/>
-                  <circle cx="5"  cy="10" r="1.5" fill="#111" stroke="none"/>
-                </svg>
-                Filter {activeCount > 0 ? `(${activeCount})` : ""}
-              </FilterBtn>
-            )}
+            <SortBarLeft>
+              {/* Mobile filter toggle */}
+              {hasFacets && (
+                <FilterBtn
+                  type="button"
+                  $active={panelOpen || activeCount > 0}
+                  onClick={() => setPanelOpen(o => !o)}
+                  aria-expanded={panelOpen}
+                >
+                  <svg viewBox="0 0 16 12">
+                    <line x1="0" y1="2"  x2="16" y2="2" />
+                    <line x1="0" y1="6"  x2="16" y2="6" />
+                    <line x1="0" y1="10" x2="16" y2="10"/>
+                    <circle cx="5"  cy="2"  r="1.5" fill="#111" stroke="none"/>
+                    <circle cx="11" cy="6"  r="1.5" fill="#111" stroke="none"/>
+                    <circle cx="5"  cy="10" r="1.5" fill="#111" stroke="none"/>
+                  </svg>
+                  Filter {activeCount > 0 ? `(${activeCount})` : ""}
+                </FilterBtn>
+              )}
+              <Breadcrumb aria-label="Breadcrumb">
+                <Link href={`/${locale}`}>Home</Link>
+                <span style={{ color: "#ccc" }}>/</span>
+                <b>{title}</b>
+              </Breadcrumb>
+            </SortBarLeft>
             <SortWrap>
               <SortLabel>Sort:</SortLabel>
               <SortSelect
@@ -765,21 +923,26 @@ export default function CollectionPage() {
 
               {Object.entries(facets).map(([key, vals]) => (
                 <FilterGroup key={key}>
-                  <FilterGroupTitle>{({
-                    brand_name: "Marke", farbe: "Farbe", colour: "Colour", color: "Color",
-                    material: "Material", size: "Größe", groesse: "Größe",
-                    typ: "Typ", style: "Style", gender: "Gender",
-                    age_group: "Altersgruppe", season: "Saison",
-                  })[key] ?? key.replace(/_/g, " ")}</FilterGroupTitle>
-                  {vals.map(val => {
-                    const on = (filters[key] || []).includes(val);
-                    return (
-                      <CheckRow key={val} $on={on}>
-                        <input type="checkbox" checked={on} onChange={() => toggle(key, val)} />
-                        {val}
-                      </CheckRow>
-                    );
-                  })}
+                  <FilterGroupTitle type="button" onClick={() => setOpenFilterGroups((prev) => ({ ...prev, [key]: !prev[key] }))}>
+                    <span>{({
+                      brand_name: "Marke", farbe: "Farbe", colour: "Colour", color: "Color",
+                      material: "Material", size: "Größe", groesse: "Größe",
+                      typ: "Typ", style: "Style", gender: "Gender",
+                      age_group: "Altersgruppe", season: "Saison",
+                    })[key] ?? key.replace(/_/g, " ")}</span>
+                    <FilterChevron $open={!!openFilterGroups[key]}>⌄</FilterChevron>
+                  </FilterGroupTitle>
+                  <FilterGroupBody $open={!!openFilterGroups[key]}>
+                    {vals.map(val => {
+                      const on = (filters[key] || []).includes(val);
+                      return (
+                        <CheckRow key={val} $on={on}>
+                          <input type="checkbox" checked={on} onChange={() => toggle(key, val)} />
+                          {val}
+                        </CheckRow>
+                      );
+                    })}
+                  </FilterGroupBody>
                 </FilterGroup>
               ))}
 

@@ -19,6 +19,7 @@ import {
 } from "@shopify/polaris";
 import { getMedusaAdminClient } from "@/lib/medusa-admin-client";
 import MediaPickerModal from "@/components/MediaPickerModal";
+import RichTextEditor from "@/components/RichTextEditor";
 
 const BACKEND_URL = (process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000").replace(/\/$/, "");
 
@@ -54,17 +55,17 @@ function newContainer(type) {
   const base = { id, type, visible: true };
   switch (type) {
     case "hero_banner":
-      return { ...base, slides: [{ image: "", title: "", subtitle: "", btn_text: "", btn_url: "", overlay: 0, text_color: "#ffffff", text_position: "center", title_size: "clamp(24px,4vw,56px)", subtitle_size: "clamp(14px,2vw,22px)" }], height: "500px", autoplay: true, delay: 4000 };
+      return { ...base, slides: [{ image: "", title: "", subtitle: "", btn_text: "", btn_url: "", overlay: 0, text_color: "#ffffff", text_position: "center", title_size: "clamp(24px,4vw,56px)", subtitle_size: "clamp(14px,2vw,22px)", content_padding: "32px 48px", btn_bg: "#ff971c", btn_color: "#fff", btn_border: "2px solid #000", btn_radius: 8 }], height: "500px", autoplay: true, delay: 4000 };
     case "text_block":
-      return { ...base, title: "", body: "", btn_text: "", btn_url: "", align: "center", bg_color: "#ffffff", text_color: "#111827" };
+      return { ...base, title: "", body: "", btn_text: "", btn_url: "", align: "center", bg_color: "#ffffff", text_color: "#111827", padding: "48px 24px", btn_bg: "#ff971c", btn_color: "#fff", btn_border: "2px solid #000", btn_radius: 8 };
     case "image_text":
-      return { ...base, image: "", title: "", body: "", btn_text: "", btn_url: "", image_side: "left", bg_color: "#ffffff", text_color: "#111827" };
+      return { ...base, image: "", title: "", body: "", btn_text: "", btn_url: "", image_side: "left", bg_color: "#ffffff", text_color: "#111827", text_align: "left", padding: "48px 24px", btn_bg: "#ff971c", btn_color: "#fff", btn_border: "2px solid #000", btn_radius: 8 };
     case "image_grid":
-      return { ...base, images: [{ url: "", link: "", aspect_ratio: "1/1" }, { url: "", link: "", aspect_ratio: "1/1" }], cols: 2, gap: 16 };
+      return { ...base, images: [{ url: "", link: "", aspect_ratio: "1/1" }, { url: "", link: "", aspect_ratio: "1/1" }], cols: 2, gap: 16, padding: "32px 24px" };
     case "banner_cta":
-      return { ...base, title: "", subtitle: "", btn_text: "", btn_url: "", bg_color: "#ff971c", text_color: "#ffffff", text_position: "center" };
+      return { ...base, title: "", subtitle: "", btn_text: "", btn_url: "", bg_color: "#ff971c", text_color: "#ffffff", text_position: "center", padding: "40px 48px", btn_bg: "#ffffff", btn_color: "#111827", btn_border: "2px solid #000", btn_radius: 8 };
     case "collection_carousel":
-      return { ...base, title: "", collection_id: "", collection_handle: "", items_per_row: 4 };
+      return { ...base, title: "", collection_id: "", collection_handle: "", items_per_row: 4, padding: "32px 24px" };
     default:
       return base;
   }
@@ -126,10 +127,17 @@ function HeroBannerEditor({ container, onChange }) {
     onChange({ ...container, slides });
   };
   const addSlide = () => {
-    onChange({ ...container, slides: [...(container.slides || []), { image: "", title: "", subtitle: "", btn_text: "", btn_url: "", overlay: 0, text_color: "#ffffff", text_position: "center", title_size: "clamp(24px,4vw,56px)", subtitle_size: "clamp(14px,2vw,22px)" }] });
+    onChange({ ...container, slides: [...(container.slides || []), { image: "", title: "", subtitle: "", btn_text: "", btn_url: "", overlay: 0, text_color: "#ffffff", text_position: "center", title_size: "clamp(24px,4vw,56px)", subtitle_size: "clamp(14px,2vw,22px)", content_padding: "32px 48px", btn_bg: "#ff971c", btn_color: "#fff", btn_border: "2px solid #000", btn_radius: 8 }] });
   };
   const removeSlide = (idx) => {
     onChange({ ...container, slides: (container.slides || []).filter((_, i) => i !== idx) });
+  };
+  const moveSlide = (idx, direction) => {
+    const slides = [...(container.slides || [])];
+    const nextIdx = idx + direction;
+    if (nextIdx < 0 || nextIdx >= slides.length) return;
+    [slides[idx], slides[nextIdx]] = [slides[nextIdx], slides[idx]];
+    onChange({ ...container, slides });
   };
 
   return (
@@ -160,9 +168,17 @@ function HeroBannerEditor({ container, onChange }) {
           <BlockStack gap="400">
             <InlineStack align="space-between" blockAlign="center">
               <Text as="h3" variant="headingSm">Folie {idx + 1}</Text>
-              {(container.slides || []).length > 1 && (
-                <Button size="slim" tone="critical" onClick={() => removeSlide(idx)}>Entfernen</Button>
-              )}
+              <InlineStack gap="200">
+                <Button size="slim" disabled={idx === 0} onClick={() => moveSlide(idx, -1)}>
+                  Nach oben
+                </Button>
+                <Button size="slim" disabled={idx === (container.slides || []).length - 1} onClick={() => moveSlide(idx, 1)}>
+                  Nach unten
+                </Button>
+                {(container.slides || []).length > 1 && (
+                  <Button size="slim" tone="critical" onClick={() => removeSlide(idx)}>Entfernen</Button>
+                )}
+              </InlineStack>
             </InlineStack>
 
             <ImageField
@@ -193,22 +209,40 @@ function HeroBannerEditor({ container, onChange }) {
 
             <InlineStack gap="400" wrap={false}>
               <div style={{ flex: 2 }}>
-                <Select label="Textposition" options={TEXT_POSITION_OPTIONS} value={slide.text_position || "center"} onChange={(v) => updateSlide(idx, "text_position", v)} />
+                <Select label="Text-Position" options={TEXT_POSITION_OPTIONS} value={slide.text_position || "center"} onChange={(v) => updateSlide(idx, "text_position", v)} />
               </div>
               <div style={{ flex: 1 }}>
                 <ColorField label="Textfarbe" value={slide.text_color || "#ffffff"} onChange={(v) => updateSlide(idx, "text_color", v)} />
               </div>
               <div style={{ flex: 1 }}>
-                <TextField label="Overlay 0–100 (0 = kein)" type="number" value={String(slide.overlay ?? 0)} onChange={(v) => updateSlide(idx, "overlay", Math.min(100, Math.max(0, Number(v))))} autoComplete="off" />
+                <TextField label="Overlay 0–100" type="number" value={String(slide.overlay ?? 0)} onChange={(v) => updateSlide(idx, "overlay", Math.min(100, Math.max(0, Number(v))))} autoComplete="off" helpText="Wird im Shop derzeit nicht abgedunkelt angezeigt" />
               </div>
             </InlineStack>
 
             <InlineStack gap="400" wrap={false}>
               <div style={{ flex: 1 }}>
-                <TextField label="Titel-Schriftgröße" value={slide.title_size || "clamp(24px,4vw,56px)"} onChange={(v) => updateSlide(idx, "title_size", v)} autoComplete="off" helpText="z.B. 48px" />
+                <TextField label="Titel-Größe" value={slide.title_size || "clamp(24px,4vw,56px)"} onChange={(v) => updateSlide(idx, "title_size", v)} autoComplete="off" helpText="z.B. 48px" />
               </div>
               <div style={{ flex: 1 }}>
-                <TextField label="Untertitel-Schriftgröße" value={slide.subtitle_size || "clamp(14px,2vw,22px)"} onChange={(v) => updateSlide(idx, "subtitle_size", v)} autoComplete="off" helpText="z.B. 20px" />
+                <TextField label="Untertitel-Größe" value={slide.subtitle_size || "clamp(14px,2vw,22px)"} onChange={(v) => updateSlide(idx, "subtitle_size", v)} autoComplete="off" helpText="z.B. 20px" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <TextField label="Inhalts-Padding" value={slide.content_padding || "32px 48px"} onChange={(v) => updateSlide(idx, "content_padding", v)} autoComplete="off" helpText="z.B. 32px 48px" />
+              </div>
+            </InlineStack>
+
+            <InlineStack gap="400" wrap={false}>
+              <div style={{ flex: 1 }}>
+                <ColorField label="Button-Hintergrund" value={slide.btn_bg || "#ff971c"} onChange={(v) => updateSlide(idx, "btn_bg", v)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <ColorField label="Button-Textfarbe" value={slide.btn_color || "#ffffff"} onChange={(v) => updateSlide(idx, "btn_color", v)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <TextField label="Button-Rahmen" value={slide.btn_border || "2px solid #000"} onChange={(v) => updateSlide(idx, "btn_border", v)} autoComplete="off" helpText="z.B. none" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <TextField label="Button-Radius" value={String(slide.btn_radius ?? 8)} onChange={(v) => updateSlide(idx, "btn_radius", Number(v) || 0)} autoComplete="off" helpText="px" />
               </div>
             </InlineStack>
           </BlockStack>
@@ -225,10 +259,7 @@ function TextBlockEditor({ container, onChange }) {
   return (
     <BlockStack gap="400">
       <TextField label="Überschrift" value={container.title || ""} onChange={(v) => onChange({ ...container, title: v })} placeholder="Überschrift…" autoComplete="off" />
-      <div>
-        <TextField label="Text (HTML)" value={container.body || ""} onChange={(v) => onChange({ ...container, body: v })} placeholder="<p>Text…</p>" multiline={6} autoComplete="off" />
-        <Text as="p" variant="bodySm" tone="subdued">HTML wird unterstützt: &lt;b&gt;, &lt;i&gt;, &lt;a&gt;, &lt;p&gt;, &lt;br&gt; usw.</Text>
-      </div>
+      <RichTextEditor label="Text" value={container.body || ""} onChange={(v) => onChange({ ...container, body: v })} placeholder="Text eingeben…" minHeight="160px" />
       <InlineStack gap="400" wrap={false}>
         <div style={{ flex: 1 }}>
           <TextField label="Button-Text" value={container.btn_text || ""} onChange={(v) => onChange({ ...container, btn_text: v })} autoComplete="off" />
@@ -247,6 +278,23 @@ function TextBlockEditor({ container, onChange }) {
         <div style={{ flex: 1 }}>
           <ColorField label="Textfarbe" value={container.text_color || "#111827"} onChange={(v) => onChange({ ...container, text_color: v })} />
         </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Padding" value={container.padding || "48px 24px"} onChange={(v) => onChange({ ...container, padding: v })} autoComplete="off" helpText="oben/unten links/rechts" />
+        </div>
+      </InlineStack>
+      <InlineStack gap="400" wrap={false}>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Hintergrund" value={container.btn_bg || "#ff971c"} onChange={(v) => onChange({ ...container, btn_bg: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Textfarbe" value={container.btn_color || "#ffffff"} onChange={(v) => onChange({ ...container, btn_color: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Rahmen" value={container.btn_border || "2px solid #000"} onChange={(v) => onChange({ ...container, btn_border: v })} autoComplete="off" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Radius (px)" value={String(container.btn_radius ?? 8)} onChange={(v) => onChange({ ...container, btn_radius: Number(v) || 0 })} autoComplete="off" />
+        </div>
       </InlineStack>
     </BlockStack>
   );
@@ -263,10 +311,7 @@ function ImageTextEditor({ container, onChange }) {
       <ImageField label="Bild" value={container.image} onPick={() => setPickerOpen(true)} onClear={() => onChange({ ...container, image: "" })} />
       <Select label="Bildposition" options={[{ label: "Links", value: "left" }, { label: "Rechts", value: "right" }]} value={container.image_side || "left"} onChange={(v) => onChange({ ...container, image_side: v })} />
       <TextField label="Überschrift" value={container.title || ""} onChange={(v) => onChange({ ...container, title: v })} autoComplete="off" />
-      <div>
-        <TextField label="Text (HTML)" value={container.body || ""} onChange={(v) => onChange({ ...container, body: v })} multiline={4} autoComplete="off" />
-        <Text as="p" variant="bodySm" tone="subdued">HTML wird unterstützt</Text>
-      </div>
+      <RichTextEditor label="Text" value={container.body || ""} onChange={(v) => onChange({ ...container, body: v })} placeholder="Text eingeben…" minHeight="130px" />
       <InlineStack gap="400" wrap={false}>
         <div style={{ flex: 1 }}>
           <TextField label="Button-Text" value={container.btn_text || ""} onChange={(v) => onChange({ ...container, btn_text: v })} autoComplete="off" />
@@ -277,10 +322,30 @@ function ImageTextEditor({ container, onChange }) {
       </InlineStack>
       <InlineStack gap="400" wrap={false}>
         <div style={{ flex: 1 }}>
+          <Select label="Text-Ausrichtung" options={[{ label: "Links", value: "left" }, { label: "Mitte", value: "center" }, { label: "Rechts", value: "right" }]} value={container.text_align || "left"} onChange={(v) => onChange({ ...container, text_align: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
           <ColorField label="Hintergrundfarbe" value={container.bg_color || "#ffffff"} onChange={(v) => onChange({ ...container, bg_color: v })} />
         </div>
         <div style={{ flex: 1 }}>
           <ColorField label="Textfarbe" value={container.text_color || "#111827"} onChange={(v) => onChange({ ...container, text_color: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Padding" value={container.padding || "48px 24px"} onChange={(v) => onChange({ ...container, padding: v })} autoComplete="off" helpText="oben/unten links/rechts" />
+        </div>
+      </InlineStack>
+      <InlineStack gap="400" wrap={false}>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Hintergrund" value={container.btn_bg || "#ff971c"} onChange={(v) => onChange({ ...container, btn_bg: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Textfarbe" value={container.btn_color || "#ffffff"} onChange={(v) => onChange({ ...container, btn_color: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Rahmen" value={container.btn_border || "2px solid #000"} onChange={(v) => onChange({ ...container, btn_border: v })} autoComplete="off" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Radius (px)" value={String(container.btn_radius ?? 8)} onChange={(v) => onChange({ ...container, btn_radius: Number(v) || 0 })} autoComplete="off" />
         </div>
       </InlineStack>
     </BlockStack>
@@ -316,6 +381,9 @@ function ImageGridEditor({ container, onChange }) {
         </div>
         <div style={{ flex: 1 }}>
           <TextField label="Abstand (px)" type="number" value={String(container.gap || 16)} onChange={(v) => onChange({ ...container, gap: Number(v) || 16 })} autoComplete="off" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Padding" value={container.padding || "32px 24px"} onChange={(v) => onChange({ ...container, padding: v })} autoComplete="off" helpText="oben/unten links/rechts" />
         </div>
       </InlineStack>
 
@@ -361,13 +429,30 @@ function BannerCtaEditor({ container, onChange }) {
       </InlineStack>
       <InlineStack gap="400" wrap={false}>
         <div style={{ flex: 2 }}>
-          <Select label="Textposition" options={TEXT_POSITION_OPTIONS} value={container.text_position || "center"} onChange={(v) => onChange({ ...container, text_position: v })} />
+          <Select label="Text-Position" options={TEXT_POSITION_OPTIONS} value={container.text_position || "center"} onChange={(v) => onChange({ ...container, text_position: v })} />
         </div>
         <div style={{ flex: 1 }}>
           <ColorField label="Hintergrundfarbe" value={container.bg_color || "#ff971c"} onChange={(v) => onChange({ ...container, bg_color: v })} />
         </div>
         <div style={{ flex: 1 }}>
           <ColorField label="Textfarbe" value={container.text_color || "#ffffff"} onChange={(v) => onChange({ ...container, text_color: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Padding" value={container.padding || "40px 48px"} onChange={(v) => onChange({ ...container, padding: v })} autoComplete="off" helpText="oben/unten links/rechts" />
+        </div>
+      </InlineStack>
+      <InlineStack gap="400" wrap={false}>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Hintergrund" value={container.btn_bg || "#ffffff"} onChange={(v) => onChange({ ...container, btn_bg: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <ColorField label="Button-Textfarbe" value={container.btn_color || "#111827"} onChange={(v) => onChange({ ...container, btn_color: v })} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Rahmen" value={container.btn_border || "2px solid #000"} onChange={(v) => onChange({ ...container, btn_border: v })} autoComplete="off" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Button-Radius (px)" value={String(container.btn_radius ?? 8)} onChange={(v) => onChange({ ...container, btn_radius: Number(v) || 0 })} autoComplete="off" />
         </div>
       </InlineStack>
     </BlockStack>
@@ -402,12 +487,19 @@ function CollectionCarouselEditor({ container, onChange }) {
           onChange({ ...container, collection_id: id, collection_handle: col?.handle || "" });
         }}
       />
-      <Select
-        label="Produkte pro Reihe"
-        options={[2, 3, 4, 5, 6].map((n) => ({ label: String(n), value: String(n) }))}
-        value={String(container.items_per_row || 4)}
-        onChange={(v) => onChange({ ...container, items_per_row: Number(v) })}
-      />
+      <InlineStack gap="400" wrap={false}>
+        <div style={{ flex: 1 }}>
+          <Select
+            label="Produkte pro Reihe"
+            options={[2, 3, 4, 5, 6].map((n) => ({ label: String(n), value: String(n) }))}
+            value={String(container.items_per_row || 4)}
+            onChange={(v) => onChange({ ...container, items_per_row: Number(v) })}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <TextField label="Padding" value={container.padding || "32px 24px"} onChange={(v) => onChange({ ...container, padding: v })} autoComplete="off" helpText="oben/unten links/rechts" />
+        </div>
+      </InlineStack>
     </BlockStack>
   );
 }
@@ -437,12 +529,18 @@ export default function LandingPageEditor() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
 
+  const DEFAULT_PAGE_ID = "__default__"; // shop ana sayfası — eski tek-satır tablo
+
   useEffect(() => {
-    client.request("/admin-hub/v1/pages").then((r) => {
-      const list = Array.isArray(r?.pages) ? r.pages : [];
-      setPages(list);
-      if (list.length > 0) setSelectedPageId(String(list[0].id));
-    }).catch(() => {});
+    const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000";
+    fetch(`${backendUrl}/admin-hub/v1/pages`)
+      .then((r) => r.json())
+      .then((r) => {
+        const list = Array.isArray(r?.pages) ? r.pages : [];
+        setPages(list);
+        setSelectedPageId(DEFAULT_PAGE_ID); // Varsayılan: ana sayfa
+      })
+      .catch((e) => setErr("Sayfalar yüklenemedi: " + (e?.message || "Bağlantı hatası")));
   }, []);
 
   const loadContainers = useCallback(async (pageId) => {
@@ -450,7 +548,12 @@ export default function LandingPageEditor() {
     setLoading(true);
     setErr("");
     try {
-      const data = await client.getLandingPageContainers(pageId);
+      let data;
+      if (pageId === DEFAULT_PAGE_ID) {
+        data = await client.request("/admin-hub/landing-page");
+      } else {
+        data = await client.getLandingPageContainers(pageId);
+      }
       setContainers(Array.isArray(data?.containers) ? data.containers : []);
     } catch (_) {
       setContainers([]);
@@ -469,7 +572,14 @@ export default function LandingPageEditor() {
     setErr("");
     setSaved(false);
     try {
-      await client.saveLandingPageContainers(selectedPageId, containers);
+      if (selectedPageId === DEFAULT_PAGE_ID) {
+        await client.request("/admin-hub/landing-page", {
+          method: "PUT",
+          body: JSON.stringify({ containers }),
+        });
+      } else {
+        await client.saveLandingPageContainers(selectedPageId, containers);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
     } catch (e) {
@@ -502,6 +612,7 @@ export default function LandingPageEditor() {
   const typeInfo = (type) => CONTAINER_TYPES.find((t) => t.type === type) || { label: type };
   const pageOptions = [
     { label: "— Sayfa seç —", value: "" },
+    { label: "Ana Sayfa (Shop Anasayfa)", value: "__default__" },
     ...pages.map((p) => ({ label: `${p.title || "Sayfa"} (/${p.slug || p.id})`, value: String(p.id) })),
   ];
 

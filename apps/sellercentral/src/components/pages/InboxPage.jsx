@@ -154,7 +154,7 @@ export default function InboxPage() {
               const isActive = selected && (selected.order_id || "__no_order__") === (thread.order_id || "__no_order__");
               const customerName = [thread.order_first_name, thread.order_last_name].filter(Boolean).join(" ") || thread.order_email || "Kunde";
               return (
-                <div key={thread.order_id || "__no_order__"} style={{ borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                <div key={thread.order_id || "__no_order__"} style={{ borderBottom: "1px solid #e1e3e5" }}>
                   <button
                     onClick={() => handleSelectThread(thread)}
                     style={{

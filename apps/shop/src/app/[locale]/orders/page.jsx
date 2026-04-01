@@ -410,7 +410,7 @@ export default function OrdersPage() {
       <main style={{ flex: 1 }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 20px 64px" }}>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 28px" }}>Meine Bestellungen</h1>
-          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 24, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, alignItems: "start" }}>
             <AccountSidebar onLogout={() => { logout(); router.push("/"); }} />
             <div>
               {successMsg && (

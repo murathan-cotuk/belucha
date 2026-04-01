@@ -432,7 +432,8 @@ export function ProductCard({ product, activeFilters = {} }) {
   const reviewAvg = meta.review_avg != null ? Number(meta.review_avg) : 0;
   const reviewCount = meta.review_count != null ? Number(meta.review_count) : 0;
 
-  const productUrl = `/produkt/${storefrontProductHandle(product, locale) || product.id}`;
+  const productHandle = storefrontProductHandle(product, locale);
+  const productUrl = productHandle ? `/produkt/${productHandle}` : null;
 
   const handleQuickAdd = async (e) => {
     e.preventDefault();
@@ -478,16 +479,29 @@ export function ProductCard({ product, activeFilters = {} }) {
     <Card>
       {/* ── Image ── */}
       <ImgBlock>
-        <Link href={productUrl} aria-label={displayTitle} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          {imgSrc ? (
-            <>
-              <img className="img-primary" src={imgSrc} alt={displayTitle} loading="lazy" />
-              {imgSrc2 && <img className="img-secondary" src={imgSrc2} alt="" aria-hidden />}
-            </>
-          ) : (
-            <ImgPlaceholder>No image</ImgPlaceholder>
-          )}
-        </Link>
+        {productUrl ? (
+          <Link href={productUrl} aria-label={displayTitle} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+            {imgSrc ? (
+              <>
+                <img className="img-primary" src={imgSrc} alt={displayTitle} loading="lazy" />
+                {imgSrc2 && <img className="img-secondary" src={imgSrc2} alt="" aria-hidden />}
+              </>
+            ) : (
+              <ImgPlaceholder>No image</ImgPlaceholder>
+            )}
+          </Link>
+        ) : (
+          <>
+            {imgSrc ? (
+              <>
+                <img className="img-primary" src={imgSrc} alt={displayTitle} loading="lazy" />
+                {imgSrc2 && <img className="img-secondary" src={imgSrc2} alt="" aria-hidden />}
+              </>
+            ) : (
+              <ImgPlaceholder>No image</ImgPlaceholder>
+            )}
+          </>
+        )}
 
         {/* Badges */}
         <Badges>

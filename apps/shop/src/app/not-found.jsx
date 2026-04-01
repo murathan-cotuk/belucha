@@ -2,8 +2,7 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <html>
-      <body style={{ margin: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#fff", fontFamily: "Montserrat, sans-serif" }}>
+    <div style={{ margin: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#fff", fontFamily: "Montserrat, sans-serif" }}>
         <div className="main_wrapper">
           <div className="main">
             <div className="antenna">
@@ -472,7 +471,6 @@ export default function NotFound() {
             .screenM { display: none; }
           }
         `}</style>
-      </body>
-    </html>
+    </div>
   );
 }

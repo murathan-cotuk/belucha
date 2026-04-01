@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getMedusaClient } from "@/lib/medusa-client";
+import Carousel from "@/components/Carousel";
+import { ProductCard } from "@/components/ProductCard";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000";
 
@@ -11,7 +13,7 @@ function resolveUrl(url) {
   return `${BACKEND_URL}/uploads/${url}`;
 }
 
-function getTextPositionStyle(pos) {
+function getPositionStyle(pos) {
   const map = {
     "top-left":     { alignItems: "flex-start", justifyContent: "flex-start", textAlign: "left" },
     "top-center":   { alignItems: "flex-start", justifyContent: "center",     textAlign: "center" },
@@ -24,6 +26,13 @@ function getTextPositionStyle(pos) {
     "bottom-right": { alignItems: "flex-end",   justifyContent: "flex-end",   textAlign: "right" },
   };
   return map[pos] || map["center"];
+}
+
+// Resolve alignSelf for a button based on justifyContent
+function btnAlignSelf(justifyContent) {
+  if (justifyContent === "flex-start") return "flex-start";
+  if (justifyContent === "flex-end") return "flex-end";
+  return "center";
 }
 
 // ── Hero Banner Slider ────────────────────────────────────────────────────────
@@ -51,23 +60,23 @@ function HeroBanner({ container }) {
   if (slides.length === 0) return null;
 
   const slide = slides[current];
-  const posStyle = getTextPositionStyle(slide.text_position || "center");
+  const posStyle = getPositionStyle(slide.text_position || "center");
+  const contentPad = slide.content_padding || "32px 48px";
 
   return (
-    <div style={{ position: "relative", width: "100%", height, overflow: "hidden", background: "#111" }}>
+    <div style={{ position: "relative", width: "100%", height, overflow: "hidden" }}>
       {/* Slides */}
       {slides.map((s, i) => {
-        const imgContent = (
+        const imgEl = (
           <>
             <img src={resolveUrl(s.image)} alt={s.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            {(s.overlay > 0) && <div style={{ position: "absolute", inset: 0, background: `rgba(0,0,0,${(s.overlay || 0) / 100})` }} />}
           </>
         );
         const wrapStyle = { position: "absolute", inset: 0, opacity: i === current ? 1 : 0, transition: "opacity 0.7s ease" };
         return s.btn_url ? (
-          <a key={i} href={s.btn_url} style={{ ...wrapStyle, display: "block" }}>{imgContent}</a>
+          <a key={i} href={s.btn_url} style={{ ...wrapStyle, display: "block" }}>{imgEl}</a>
         ) : (
-          <div key={i} style={wrapStyle}>{imgContent}</div>
+          <div key={i} style={wrapStyle}>{imgEl}</div>
         );
       })}
 
@@ -75,27 +84,40 @@ function HeroBanner({ container }) {
       {(slide.title || slide.subtitle || slide.btn_text) && (
         <div style={{
           position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-          padding: "32px 48px", pointerEvents: "none",
+          padding: contentPad, pointerEvents: "none",
           ...posStyle,
         }}>
           {slide.title && (
-            <h2 style={{ fontSize: slide.title_size || "clamp(24px,4vw,56px)", fontWeight: 900, color: slide.text_color || "#fff", margin: 0, lineHeight: 1.1, marginBottom: slide.subtitle ? 12 : 0 }}>
+            <h2 style={{
+              fontSize: slide.title_size || "clamp(24px,4vw,56px)", fontWeight: 900,
+              color: slide.text_color || "#fff", margin: 0, lineHeight: 1.1,
+              marginBottom: slide.subtitle ? 12 : (slide.btn_text ? 20 : 0),
+            }}>
               {slide.title}
             </h2>
           )}
           {slide.subtitle && (
-            <p style={{ fontSize: slide.subtitle_size || "clamp(14px,2vw,22px)", color: slide.text_color || "#fff", margin: "0 0 20px", maxWidth: 600 }}>
+            <p style={{
+              fontSize: slide.subtitle_size || "clamp(14px,2vw,22px)",
+              color: slide.subtitle_color || slide.text_color || "#fff",
+              margin: slide.btn_text ? "0 0 20px" : 0, maxWidth: 600,
+            }}>
               {slide.subtitle}
             </p>
           )}
-          {slide.btn_text && slide.btn_url && (
+          {slide.btn_text && (
             <a
-              href={slide.btn_url}
+              href={slide.btn_url || "#"}
               style={{
-                pointerEvents: "auto", display: "inline-block", padding: "12px 28px",
-                background: "#ff971c", color: "#fff", border: "2px solid #000", borderRadius: 8,
-                fontWeight: 800, fontSize: 15, textDecoration: "none", boxShadow: "0 3px 0 2px #000",
-                alignSelf: posStyle.justifyContent === "flex-start" ? "flex-start" : posStyle.justifyContent === "flex-end" ? "flex-end" : "center",
+                pointerEvents: "auto", display: "inline-block",
+                padding: slide.btn_padding || "12px 28px",
+                background: slide.btn_bg || "#ff971c",
+                color: slide.btn_color || "#fff",
+                border: slide.btn_border || "2px solid #000",
+                borderRadius: slide.btn_radius || 8,
+                fontWeight: 800, fontSize: 15, textDecoration: "none",
+                boxShadow: "0 3px 0 2px #000",
+                alignSelf: btnAlignSelf(posStyle.justifyContent),
               }}
             >
               {slide.btn_text}
@@ -127,15 +149,31 @@ function HeroBanner({ container }) {
 // ── Text Block ────────────────────────────────────────────────────────────────
 function TextBlock({ container }) {
   const align = container.align || "center";
+  const pad = container.padding || "48px 24px";
+  const posStyle = getPositionStyle(container.text_position || `center-${align === "left" ? "left" : align === "right" ? "right" : "center"}`);
   return (
-    <div style={{ background: container.bg_color || "#fff", padding: "48px 24px" }}>
+    <div style={{ background: container.bg_color || "#fff", padding: pad }}>
       <div style={{ maxWidth: 800, margin: "0 auto", textAlign: align }}>
-        {container.title && <h2 style={{ fontSize: "clamp(20px,3vw,36px)", fontWeight: 800, color: container.text_color || "#111827", margin: "0 0 16px" }}>{container.title}</h2>}
+        {container.title && (
+          <h2 style={{ fontSize: "clamp(20px,3vw,36px)", fontWeight: 800, color: container.text_color || "#111827", margin: "0 0 16px" }}>
+            {container.title}
+          </h2>
+        )}
         {container.body && (
           <div style={{ fontSize: 16, color: container.text_color || "#374151", lineHeight: 1.7, margin: "0 0 24px" }} dangerouslySetInnerHTML={{ __html: container.body }} />
         )}
         {container.btn_text && container.btn_url && (
-          <a href={container.btn_url} style={{ display: "inline-block", padding: "12px 28px", background: "#ff971c", color: "#fff", border: "2px solid #000", borderRadius: 8, fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 3px 0 2px #000" }}>
+          <a
+            href={container.btn_url}
+            style={{
+              display: "inline-block", padding: container.btn_padding || "12px 28px",
+              background: container.btn_bg || "#ff971c",
+              color: container.btn_color || "#fff",
+              border: container.btn_border || "2px solid #000",
+              borderRadius: container.btn_radius || 8,
+              fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 3px 0 2px #000",
+            }}
+          >
             {container.btn_text}
           </a>
         )}
@@ -148,21 +186,37 @@ function TextBlock({ container }) {
 function ImageText({ container }) {
   const imageLeft = container.image_side !== "right";
   const imgSrc = resolveUrl(container.image);
+  const pad = container.padding || "48px 24px";
+  const textAlign = container.text_align || "left";
   return (
-    <div style={{ background: container.bg_color || "#fff", padding: "48px 24px" }}>
+    <div style={{ background: container.bg_color || "#fff", padding: pad }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", flexDirection: imageLeft ? "row" : "row-reverse", gap: 40, alignItems: "center", flexWrap: "wrap" }}>
         {imgSrc && (
           <div style={{ flex: "0 0 auto", width: "min(45%, 480px)" }}>
             <img src={imgSrc} alt={container.title || ""} style={{ width: "100%", borderRadius: 12, display: "block", border: "2px solid #000", boxShadow: "0 4px 0 2px #000" }} />
           </div>
         )}
-        <div style={{ flex: 1, minWidth: 240 }}>
-          {container.title && <h2 style={{ fontSize: "clamp(20px,2.5vw,32px)", fontWeight: 800, color: container.text_color || "#111827", margin: "0 0 12px" }}>{container.title}</h2>}
+        <div style={{ flex: 1, minWidth: 240, textAlign }}>
+          {container.title && (
+            <h2 style={{ fontSize: "clamp(20px,2.5vw,32px)", fontWeight: 800, color: container.text_color || "#111827", margin: "0 0 12px" }}>
+              {container.title}
+            </h2>
+          )}
           {container.body && (
             <div style={{ fontSize: 16, color: container.text_color || "#374151", lineHeight: 1.7, margin: "0 0 20px" }} dangerouslySetInnerHTML={{ __html: container.body }} />
           )}
           {container.btn_text && container.btn_url && (
-            <a href={container.btn_url} style={{ display: "inline-block", padding: "10px 24px", background: "#ff971c", color: "#fff", border: "2px solid #000", borderRadius: 8, fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 3px 0 2px #000" }}>
+            <a
+              href={container.btn_url}
+              style={{
+                display: "inline-block", padding: container.btn_padding || "10px 24px",
+                background: container.btn_bg || "#ff971c",
+                color: container.btn_color || "#fff",
+                border: container.btn_border || "2px solid #000",
+                borderRadius: container.btn_radius || 8,
+                fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 3px 0 2px #000",
+              }}
+            >
               {container.btn_text}
             </a>
           )}
@@ -176,10 +230,11 @@ function ImageText({ container }) {
 function ImageGrid({ container }) {
   const cols = container.cols || 2;
   const gap = container.gap || 16;
+  const pad = container.padding || "32px 24px";
   const images = (container.images || []).filter((i) => i.url);
   if (!images.length) return null;
   return (
-    <div style={{ padding: "32px 24px", background: "#fff" }}>
+    <div style={{ padding: pad, background: "#fff" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap }}>
         {images.map((img, i) => {
           const ratio = img.aspect_ratio || "1/1";
@@ -193,19 +248,31 @@ function ImageGrid({ container }) {
 
 // ── Banner CTA ────────────────────────────────────────────────────────────────
 function BannerCta({ container }) {
-  const posStyle = getTextPositionStyle(container.text_position || "center");
+  const posStyle = getPositionStyle(container.text_position || "center");
+  const pad = container.padding || "40px 48px";
   return (
-    <div style={{ background: container.bg_color || "#ff971c", padding: "40px 48px", display: "flex", flexDirection: "column", ...posStyle }}>
-      {container.title && <h2 style={{ fontSize: "clamp(20px,3vw,36px)", fontWeight: 900, color: container.text_color || "#fff", margin: "0 0 8px" }}>{container.title}</h2>}
-      {container.subtitle && <p style={{ fontSize: 16, color: container.text_color || "#fff", margin: "0 0 20px", opacity: 0.9 }}>{container.subtitle}</p>}
+    <div style={{ background: container.bg_color || "#ff971c", padding: pad, display: "flex", flexDirection: "column", ...posStyle }}>
+      {container.title && (
+        <h2 style={{ fontSize: "clamp(20px,3vw,36px)", fontWeight: 900, color: container.text_color || "#fff", margin: "0 0 8px" }}>
+          {container.title}
+        </h2>
+      )}
+      {container.subtitle && (
+        <p style={{ fontSize: 16, color: container.subtitle_color || container.text_color || "#fff", margin: "0 0 20px", opacity: 0.9 }}>
+          {container.subtitle}
+        </p>
+      )}
       {container.btn_text && container.btn_url && (
         <a
           href={container.btn_url}
           style={{
-            display: "inline-block", padding: "12px 28px", background: "#fff", color: "#111827",
-            border: "2px solid #000", borderRadius: 8, fontWeight: 800, fontSize: 14,
-            textDecoration: "none", boxShadow: "0 3px 0 2px #000",
-            alignSelf: posStyle.justifyContent === "flex-start" ? "flex-start" : posStyle.justifyContent === "flex-end" ? "flex-end" : "center",
+            display: "inline-block", padding: container.btn_padding || "12px 28px",
+            background: container.btn_bg || "#fff",
+            color: container.btn_color || "#111827",
+            border: container.btn_border || "2px solid #000",
+            borderRadius: container.btn_radius || 8,
+            fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 3px 0 2px #000",
+            alignSelf: btnAlignSelf(posStyle.justifyContent),
           }}
         >
           {container.btn_text}
@@ -219,7 +286,7 @@ function BannerCta({ container }) {
 function CollectionCarousel({ container }) {
   const [products, setProducts] = useState([]);
   const itemsPerRow = container.items_per_row || 4;
-  const itemWidth = `calc(${100 / itemsPerRow}% - 16px)`;
+  const pad = container.padding || "32px 24px";
 
   useEffect(() => {
     if (!container.collection_id && !container.collection_handle) return;
@@ -235,35 +302,18 @@ function CollectionCarousel({ container }) {
   if (!products.length) return null;
 
   return (
-    <div style={{ padding: "32px 24px", background: "#fff" }}>
-      {container.title && (
-        <h2 style={{ fontSize: "clamp(18px,2.5vw,28px)", fontWeight: 800, color: "#111827", margin: "0 0 20px" }}>
-          {container.title}
-        </h2>
-      )}
-      <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 12, scrollbarWidth: "thin" }}>
-        {products.map((p) => {
-          const imgSrc = p.thumbnail || p.images?.[0]?.url || "";
-          const price = p.variants?.[0]?.prices?.[0]?.amount;
-          const priceStr = price != null ? `${(price / 100).toFixed(2).replace(".", ",")} €` : "";
-          const handle = p.handle || p.id;
-          return (
-            <a key={p.id} href={`/produkt/${handle}`} style={{ display: "block", flexShrink: 0, width: itemWidth, minWidth: 140, textDecoration: "none", color: "inherit" }}>
-              <div style={{ aspectRatio: "1", overflow: "hidden", borderRadius: 10, background: "#f4f4f2", marginBottom: 8, border: "1px solid #e5e7eb" }}>
-                {imgSrc ? (
-                  <img src={resolveUrl(imgSrc)} alt={p.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                ) : (
-                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#ccc", fontSize: 12 }}>No image</div>
-                )}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: "#111", marginBottom: 4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                {p.title}
-              </div>
-              {priceStr && <div style={{ fontSize: 13, fontWeight: 700, color: "#111" }}>{priceStr}</div>}
-            </a>
-          );
-        })}
-      </div>
+    <div style={{ padding: pad, background: "#fff" }}>
+      <Carousel
+        title={container.title || "Kollektion"}
+        visibleCount={itemsPerRow}
+        navOnSides
+        gap={16}
+        ariaLabel={container.title || "Collection carousel"}
+      >
+        {products.map((product, i) => (
+          <ProductCard key={product.id || i} product={product} />
+        ))}
+      </Carousel>
     </div>
   );
 }

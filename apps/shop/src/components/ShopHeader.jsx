@@ -38,28 +38,34 @@ const MIDDLE_BAR_BG = "#1b8880";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function slugify(s) {
+  return (s || "")
+    .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+    .toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
 function menuItemHref(item) {
   if (!item) return "#";
   const raw = item.link_value;
   let value = raw;
+  let parsed = null;
+  const itemSlug = String(item.slug || "").trim();
   if (typeof raw === "string" && raw.trim().startsWith("{")) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.handle) value = parsed.handle;
-      else if (parsed.slug) value = parsed.slug;
-      else if (parsed.id) value = parsed.id;
-    } catch (_) {}
+    try { parsed = JSON.parse(raw); } catch (_) {}
+  }
+  if (item.link_type === "page") {
+    const labelSlug = itemSlug || parsed?.label_slug || slugify(item.label);
+    return labelSlug ? `/${labelSlug}` : "#";
+  }
+  if (parsed) {
+    if (itemSlug) value = itemSlug;
+    else if (parsed.handle) value = parsed.handle;
+    else if (parsed.slug) value = parsed.slug;
+  } else if (itemSlug) {
+    value = itemSlug;
   }
   if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
-  if (item.link_type === "page" && value) return `/pages/${value}`;
   if (item.link_type === "product" && value) return `/produkt/${value}`;
   if (item.link_type === "category" || item.link_type === "collection") {
-    if (value && typeof raw === "string" && raw.trim().startsWith("{")) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed.id && UUID_REGEX.test(String(parsed.id).trim())) return `/${parsed.id}`;
-      } catch (_) {}
-    }
     return value ? `/${value}` : "#";
   }
   return value ? `/${String(value).replace(/^\//, "")}` : "#";
@@ -891,6 +897,8 @@ export default function ShopHeader() {
                       <UserDropdownItem href="/orders" onClick={() => setUserMenuOpen(false)}>Meine Bestellungen</UserDropdownItem>
                       <UserDropdownItem href="/merkzettel" onClick={() => setUserMenuOpen(false)}>Merkzettel</UserDropdownItem>
                       <UserDropdownItem href="/addresses" onClick={() => setUserMenuOpen(false)}>Adressen</UserDropdownItem>
+                      <UserDropdownItem href="/payment-methods" onClick={() => setUserMenuOpen(false)}>Zahlungsmethoden</UserDropdownItem>
+                      <UserDropdownItem href="/nachrichten" onClick={() => setUserMenuOpen(false)}>Nachrichten</UserDropdownItem>
                       <UserDropdownItem href="/reviews" onClick={() => setUserMenuOpen(false)}>Bewertungen</UserDropdownItem>
                       <UserDropdownItem href="/bonus" onClick={() => setUserMenuOpen(false)}>Bonuspunkte</UserDropdownItem>
                       <UserDropdownBtn onClick={() => { document.cookie = "belucha_cauth=; path=/; max-age=0; SameSite=Lax"; logout(); setUserMenuOpen(false); }}>Abmelden</UserDropdownBtn>

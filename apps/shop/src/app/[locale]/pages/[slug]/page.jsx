@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { getMedusaClient } from "@/lib/medusa-client";
+import styled from "styled-components";
 
 function sanitizeHtml(html) {
   if (!html || typeof html !== "string") return "";
@@ -73,9 +74,8 @@ export default function CmsPageBySlug() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <SlimBar />
-      <main className="flex-1 container mx-auto px-4 py-12 max-w-3xl">
+      <ShopHeader />
+      <main className="flex-1 container mx-auto px-4 py-12 max-w-3xl" style={{ paddingTop: 128 }}>
         <h1 className="text-3xl font-semibold text-gray-900 mb-6">{page.title}</h1>
         {safeBody ? (
           <div

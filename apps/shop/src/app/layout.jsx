@@ -1,4 +1,5 @@
 import "./globals.css";
+import ShopStylesInjector from "@/components/ShopStylesInjector";
 
 export const metadata = {
   title: {
@@ -29,7 +30,10 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body>{children}</body>
+      <body>
+        <ShopStylesInjector />
+        {children}
+      </body>
     </html>
   );
 }

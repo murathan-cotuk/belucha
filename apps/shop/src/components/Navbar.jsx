@@ -263,22 +263,34 @@ const UserName = styled.div`
 `;
 
 // link_type: 'url' | 'category' | 'collection' | ... → href; link_value may be JSON string
+function slugify(s) {
+  return (s || "")
+    .replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/ß/g, "ss")
+    .toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
 function menuItemHref(item) {
   if (!item) return "#";
   const raw = item.link_value;
   let value = raw;
+  let parsed = null;
+  const itemSlug = String(item.slug || "").trim();
   if (typeof raw === "string" && raw.trim().startsWith("{")) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.handle) value = parsed.handle;
-      else if (parsed.slug) value = parsed.slug;
-      else if (parsed.id) value = parsed.id;
-    } catch (_) {}
+    try { parsed = JSON.parse(raw); } catch (_) {}
+  }
+  if (item.link_type === "page") {
+    const labelSlug = itemSlug || parsed?.label_slug || slugify(item.label);
+    return labelSlug ? `/${labelSlug}` : "#";
+  }
+  if (parsed) {
+    if (itemSlug) value = itemSlug;
+    else if (parsed.handle) value = parsed.handle;
+    else if (parsed.slug) value = parsed.slug;
+  } else if (itemSlug) {
+    value = itemSlug;
   }
   if (item.link_type === "url" && value) return String(value).startsWith("http") ? value : `/${String(value).replace(/^\//, "")}`;
   if ((item.link_type === "category" || item.link_type === "collection") && value) return `/kollektion/${value}`;
   if (item.link_type === "product" && value) return `/produkt/${value}`;
-  if (item.link_type === "page" && value) return `/pages/${value}`;
   return value ? `/${String(value).replace(/^\//, "")}` : "#";
 }
 

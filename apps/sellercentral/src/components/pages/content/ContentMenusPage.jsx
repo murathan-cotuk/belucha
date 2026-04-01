@@ -45,6 +45,10 @@ function slugFromName(name) {
   return titleToHandle(name || "");
 }
 
+function normalizeItemSlug(value) {
+  return titleToHandle(value || "");
+}
+
 function buildMenuTree(items) {
   if (!Array.isArray(items)) return [];
   const byId = new Map(items.map((i) => [i.id, { ...i, children: [] }]));
@@ -146,6 +150,7 @@ function MenuEditorPanel(props) {
     client,
     collections,
     products,
+    pages,
     LINK_TYPES,
     getLinkDisplay,
     TAB_SIZE,
@@ -190,7 +195,7 @@ function MenuEditorPanel(props) {
   const tree = buildMenuTree(items);
   const openInlineAdd = (parentId) => {
     setAddUnderParentId(parentId ?? null);
-    setItemForm({ label: "", link_type: "url", link_value: "", parent_id: parentId ?? "", collection_id: "", product_id: "", page_id: "" });
+    setItemForm({ label: "", slug: "", link_type: "url", link_value: "", parent_id: parentId ?? "", collection_id: "", product_id: "", page_id: "", custom_slug: "" });
     setInlineNewOpen(true);
     setEditingItemId(null);
   };
@@ -200,6 +205,10 @@ function MenuEditorPanel(props) {
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const isNew = panelMode === "new";
   const hasMenuId = !!effectiveMenuId && !isNew;
+
+  // Always-current refs so save/discard callbacks never go stale
+  const latestSaveRef = useRef(null);
+  const latestDiscardRef = useRef(null);
 
   const menuFormDirty = isNew
     ? !!(localMenuName?.trim() || localMenuSlug?.trim())
@@ -222,7 +231,7 @@ function MenuEditorPanel(props) {
   useEffect(() => {
     if (typeof onDirtyChange !== "function") return;
     if (menuFormDirty) {
-      onDirtyChange(true, { save: handleSaveMenuFromPanel, discard: handleDiscardMenuForm });
+      onDirtyChange(true, { save: () => latestSaveRef.current?.(), discard: () => latestDiscardRef.current?.() });
     } else {
       onDirtyChange(false);
     }
@@ -241,6 +250,7 @@ function MenuEditorPanel(props) {
       setMenuSlugManuallyEdited(false);
     }
   };
+  latestDiscardRef.current = handleDiscardMenuForm;
 
   const handleSaveMenuFromPanel = async () => {
     const name = (localMenuName || "").trim();
@@ -270,6 +280,7 @@ function MenuEditorPanel(props) {
       setSaving(false);
     }
   };
+  latestSaveRef.current = handleSaveMenuFromPanel;
 
   const inlineSaveItem = async () => {
     await handleSaveItem();
@@ -524,6 +535,42 @@ function MenuEditorPanel(props) {
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <Text as="span" variant="bodyMd" fontWeight="medium">{node.label || "—"}</Text>
+                                <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 1 }}>
+                                  <span style={{ fontSize: 11, color: "var(--p-color-text-subdued)", fontFamily: "monospace" }}>/</span>
+                                  <input
+                                    type="text"
+                                    key={node.id + "-slug"}
+                                    defaultValue={node.slug || normalizeItemSlug(node.label || "")}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    onBlur={async (e) => {
+                                      const newSlug = normalizeItemSlug(e.target.value || node.label || "");
+                                      e.target.value = newSlug;
+                                      const oldSlug = node.slug || normalizeItemSlug(node.label || "");
+                                      if (newSlug === oldSlug) return;
+                                      const menuId = effectiveMenuId ?? selectedMenuId;
+                                      if (!menuId) return;
+                                      try {
+                                        await client.updateMenuItem(menuId, node.id, { slug: newSlug });
+                                        await fetchItems(menuId);
+                                      } catch {}
+                                    }}
+                                    style={{
+                                      fontSize: 11,
+                                      color: "var(--p-color-text-subdued)",
+                                      border: "none",
+                                      borderBottom: "1px dashed var(--p-color-border-subdued)",
+                                      background: "transparent",
+                                      padding: "0 2px",
+                                      outline: "none",
+                                      width: "auto",
+                                      minWidth: 60,
+                                      maxWidth: 200,
+                                      fontFamily: "monospace",
+                                      cursor: "text",
+                                    }}
+                                  />
+                                </div>
                               </div>
                               <InlineStack gap="100" wrap={false}>
                                 <Button size="slim" variant="plain" tone="subdued" accessibilityLabel="Edit" icon={EditIcon} onClick={(e) => { e.stopPropagation(); if (isClickAfterDrag?.()) return; openEditItem(node); setInlineEditingId(node.id); }} />
@@ -559,7 +606,7 @@ function MenuEditorPanel(props) {
                             flatItems={flatItems}
                             parentOptionsForForm={parentOptionsForForm}
                             onSave={inlineSaveItem}
-                            onCancel={() => { setInlineNewOpen(false); setItemForm({ label: "", link_type: "url", link_value: "", parent_id: "", collection_id: "", product_id: "", page_id: "" }); }}
+                            onCancel={() => { setInlineNewOpen(false); setItemForm({ label: "", slug: "", link_type: "url", link_value: "", parent_id: "", collection_id: "", product_id: "", page_id: "", custom_slug: "" }); }}
                             saving={saving}
                           />
                         </div>
@@ -586,7 +633,29 @@ function InlineItemRow({ itemForm, setItemForm, collections, products, pages, LI
   return (
     <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr auto", gap: "16px", padding: "14px 20px", alignItems: "center", background: "var(--p-color-bg-surface-secondary)", borderRadius: "8px", margin: "8px 12px" }}>
       <span />
-      <TextField label="Label" value={itemForm.label} onChange={(v) => setItemForm((p) => ({ ...p, label: v }))} placeholder="Label" autoComplete="off" labelHidden />
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) minmax(160px, 220px)", gap: 8, alignItems: "center" }}>
+        <TextField
+          label="Label"
+          value={itemForm.label}
+          onChange={(v) => setItemForm((p) => ({
+            ...p,
+            label: v,
+            slug: p.slug === normalizeItemSlug(p.label || "") || !p.slug ? normalizeItemSlug(v) : p.slug,
+            custom_slug: p.custom_slug === normalizeItemSlug(p.label || "") || !p.custom_slug ? normalizeItemSlug(v) : p.custom_slug,
+          }))}
+          placeholder="Label"
+          autoComplete="off"
+          labelHidden
+        />
+        <TextField
+          label="Slug"
+          value={itemForm.slug || ""}
+          onChange={(v) => setItemForm((p) => ({ ...p, slug: normalizeItemSlug(v), custom_slug: normalizeItemSlug(v) }))}
+          placeholder="slug"
+          autoComplete="off"
+          labelHidden
+        />
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <Select label="Link type" options={LINK_TYPES} value={itemForm.link_type} onChange={(v) => setItemForm((p) => ({ ...p, link_type: v }))} labelHidden />
         {itemForm.link_type === "collection" && (
@@ -632,12 +701,14 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
   const [menuSlugManuallyEdited, setMenuSlugManuallyEdited] = useState(false);
   const [itemForm, setItemForm] = useState({
     label: "",
+    slug: "",
     link_type: "url",
     link_value: "",
     parent_id: "",
     collection_id: "",
     product_id: "",
     page_id: "",
+    custom_slug: "",
   });
   const [saving, setSaving] = useState(false);
   const [popoverActiveId, setPopoverActiveId] = useState(null);
@@ -870,11 +941,14 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
     setAddUnderParentId(parentId || null);
     setItemForm({
       label: "",
+      slug: "",
       link_type: "url",
       link_value: "",
       parent_id: parentId || "",
       collection_id: "",
       product_id: "",
+      page_id: "",
+      custom_slug: "",
     });
     setItemModalOpen(true);
   };
@@ -897,20 +971,24 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
         if (v && v.id) product_id = v.id;
       } catch (_) {}
     }
+    let custom_slug = "";
     if (item.link_type === "page" && item.link_value) {
       try {
         const v = JSON.parse(item.link_value);
         if (v && v.id) page_id = String(v.id);
+        if (v && v.label_slug) custom_slug = v.label_slug;
       } catch (_) {}
     }
     setItemForm({
       label: item.label || "",
+      slug: item.slug || custom_slug || normalizeItemSlug(item.label || ""),
       link_type: item.link_type || "url",
       link_value: item.link_type === "url" || item.link_type === "policy" || item.link_type === "blog" || item.link_type === "blog_post" ? (item.link_value || "") : "",
       parent_id: item.parent_id || "",
       collection_id,
       product_id,
       page_id,
+      custom_slug,
     });
     setItemModalOpen(true);
   };
@@ -950,6 +1028,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       setError("Label required");
       return;
     }
+    const itemSlug = normalizeItemSlug(itemForm.slug || label);
     const menuId = effectiveMenuId ?? selectedMenuId;
     if (!menuId) return;
     let link_value = itemForm.link_value;
@@ -961,7 +1040,8 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       link_value = JSON.stringify({ id: p?.id, title: p?.title, handle: p?.handle });
     } else if (itemForm.link_type === "page" && itemForm.page_id) {
       const pg = pages.find((x) => String(x.id) === itemForm.page_id);
-      link_value = JSON.stringify({ id: pg?.id, title: pg?.title, slug: pg?.slug });
+      const labelSlug = normalizeItemSlug(itemForm.custom_slug || itemSlug || label);
+      link_value = JSON.stringify({ id: pg?.id, title: pg?.title, slug: pg?.slug, label_slug: labelSlug });
     } else if (itemForm.link_type !== "url") {
       link_value = itemForm.link_value || "";
     }
@@ -971,6 +1051,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       if (editingItemId) {
         await client.updateMenuItem(menuId, editingItemId, {
           label: itemForm.label,
+          slug: itemSlug,
           link_type: itemForm.link_type || "url",
           link_value: link_value || null,
           parent_id: itemForm.parent_id || null,
@@ -978,6 +1059,7 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
       } else {
         const created = await client.createMenuItem(menuId, {
           label: itemForm.label,
+          slug: itemSlug,
           link_type: itemForm.link_type || "url",
           link_value: link_value || null,
           parent_id: itemForm.parent_id != null && itemForm.parent_id !== "" ? String(itemForm.parent_id) : null,
@@ -1505,9 +1587,22 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
             <TextField
               label="Label (text shown in menu)"
               value={itemForm.label}
-              onChange={(value) => setItemForm((prev) => ({ ...prev, label: value }))}
+              onChange={(value) => setItemForm((prev) => ({
+                ...prev,
+                label: value,
+                slug: prev.slug === normalizeItemSlug(prev.label || "") || !prev.slug ? normalizeItemSlug(value) : prev.slug,
+                custom_slug: prev.custom_slug === normalizeItemSlug(prev.label || "") || !prev.custom_slug ? normalizeItemSlug(value) : prev.custom_slug,
+              }))}
               placeholder="e.g. Sale"
               autoComplete="off"
+            />
+            <TextField
+              label="Slug"
+              value={itemForm.slug || ""}
+              onChange={(value) => setItemForm((prev) => ({ ...prev, slug: normalizeItemSlug(value), custom_slug: prev.link_type === "page" ? normalizeItemSlug(value) : prev.custom_slug }))}
+              placeholder={normalizeItemSlug(itemForm.label) || "e.g. sale"}
+              autoComplete="off"
+              helpText="Saved directly on the menu item."
             />
             <Select
               label="Link type"
@@ -1540,15 +1635,25 @@ export default function ContentMenusPage({ panelMode = null, panelMenuId = null 
               />
             )}
             {itemForm.link_type === "page" && (
-              <Select
-                label="Page"
-                options={[
-                  { label: "— Sayfa seç —", value: "" },
-                  ...pages.map((pg) => ({ label: pg.title || pg.slug, value: String(pg.id) })),
-                ]}
-                value={itemForm.page_id || ""}
-                onChange={(value) => setItemForm((prev) => ({ ...prev, page_id: value }))}
-              />
+              <>
+                <Select
+                  label="Page"
+                  options={[
+                    { label: "— Sayfa seç —", value: "" },
+                    ...pages.map((pg) => ({ label: pg.title || pg.slug, value: String(pg.id) })),
+                  ]}
+                  value={itemForm.page_id || ""}
+                  onChange={(value) => setItemForm((prev) => ({ ...prev, page_id: value }))}
+                />
+                <TextField
+                  label="Slug (URL-Pfad)"
+                  value={itemForm.custom_slug || itemForm.slug || ""}
+                  onChange={(value) => setItemForm((prev) => ({ ...prev, custom_slug: normalizeItemSlug(value), slug: prev.slug || normalizeItemSlug(value) }))}
+                  placeholder={normalizeItemSlug(itemForm.label) || "z.B. footer-item-1"}
+                  autoComplete="off"
+                  helpText="Leer lassen = automatisch aus dem Label generiert"
+                />
+              </>
             )}
             {(itemForm.link_type === "url" || itemForm.link_type === "policy" || itemForm.link_type === "blog" || itemForm.link_type === "blog_post") && (
               <TextField

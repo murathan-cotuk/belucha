@@ -8,5 +8,5 @@ export function storefrontProductHandle(product, locale) {
   const tr = product.metadata?.translations?.[loc];
   const h = (tr?.handle || "").trim();
   if (h) return h;
-  return String(product.handle || product.id || "").trim();
+  return String(product.handle || "").trim();
 }

@@ -278,6 +278,7 @@ async function start() {
             id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
             menu_id uuid NOT NULL REFERENCES admin_hub_menus(id) ON DELETE CASCADE,
             label varchar(255) NOT NULL,
+            slug varchar(255),
             link_type varchar(50) DEFAULT 'url',
             link_value text,
             parent_id uuid REFERENCES admin_hub_menu_items(id) ON DELETE CASCADE,
@@ -289,6 +290,11 @@ async function start() {
         await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_hub_menus_slug ON admin_hub_menus(slug);')
         try {
           await client.query('ALTER TABLE admin_hub_menus ADD COLUMN IF NOT EXISTS location varchar(50) DEFAULT \'main\';')
+        } catch (e) {
+          if (e.code !== '42701') throw e
+        }
+        try {
+          await client.query('ALTER TABLE admin_hub_menu_items ADD COLUMN IF NOT EXISTS slug varchar(255);')
         } catch (e) {
           if (e.code !== '42701') throw e
         }
@@ -1844,13 +1850,14 @@ async function start() {
     const menuItemsGET = async (req, res) => {
       const itemsFromDb = await runWithMenuDb(async (client) => {
         const r = await client.query(
-          'SELECT id, menu_id, label, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE menu_id = $1 ORDER BY sort_order ASC, label ASC',
+          'SELECT id, menu_id, label, slug, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE menu_id = $1 ORDER BY sort_order ASC, label ASC',
           [req.params.menuId]
         )
         return (r.rows || []).map((row) => ({
           id: row.id,
           menu_id: row.menu_id,
           label: row.label,
+          slug: row.slug,
           link_type: row.link_type || 'url',
           link_value: row.link_value,
           parent_id: row.parent_id,
@@ -1876,11 +1883,11 @@ async function start() {
       const menuId = req.params.menuId
       let item = await runWithMenuDb(async (client) => {
         const r = await client.query(
-          'INSERT INTO admin_hub_menu_items (menu_id, label, link_type, link_value, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, menu_id, label, link_type, link_value, parent_id, sort_order',
-          [menuId, b.label, b.link_type || 'url', b.link_value || null, b.parent_id || null, b.sort_order != null ? b.sort_order : 0]
+          'INSERT INTO admin_hub_menu_items (menu_id, label, slug, link_type, link_value, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, menu_id, label, slug, link_type, link_value, parent_id, sort_order',
+          [menuId, b.label, b.slug || null, b.link_type || 'url', b.link_value || null, b.parent_id || null, b.sort_order != null ? b.sort_order : 0]
         )
         const row = r.rows && r.rows[0]
-        return row ? { id: row.id, menu_id: row.menu_id, label: row.label, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
+        return row ? { id: row.id, menu_id: row.menu_id, label: row.label, slug: row.slug, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
       })
       if (item) return res.status(201).json({ item })
       const svc = resolveMenuService()
@@ -1889,6 +1896,7 @@ async function start() {
           item = await svc.createMenuItem({
             menu_id: menuId,
             label: b.label,
+            slug: b.slug || null,
             link_type: b.link_type || 'url',
             link_value: b.link_value || null,
             parent_id: b.parent_id || null,
@@ -1919,19 +1927,20 @@ async function start() {
         const vals = []
         let n = 1
         if (body.label !== undefined) { updates.push(`label = $${n++}`); vals.push(body.label) }
+        if (body.slug !== undefined) { updates.push(`slug = $${n++}`); vals.push(body.slug) }
         if (body.link_type !== undefined) { updates.push(`link_type = $${n++}`); vals.push(body.link_type) }
         if (body.link_value !== undefined) { updates.push(`link_value = $${n++}`); vals.push(body.link_value) }
         if (body.parent_id !== undefined) { updates.push(`parent_id = $${n++}`); vals.push(body.parent_id) }
         if (body.sort_order !== undefined) { updates.push(`sort_order = $${n++}`); vals.push(body.sort_order) }
         if (updates.length === 0) {
-          const r = await client.query('SELECT id, menu_id, label, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE id = $1', [req.params.itemId])
+          const r = await client.query('SELECT id, menu_id, label, slug, link_type, link_value, parent_id, sort_order FROM admin_hub_menu_items WHERE id = $1', [req.params.itemId])
           const row = r.rows && r.rows[0]
-          return row ? { id: row.id, menu_id: row.menu_id, label: row.label, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
+          return row ? { id: row.id, menu_id: row.menu_id, label: row.label, slug: row.slug, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
         }
         vals.push(req.params.itemId)
-        const r = await client.query(`UPDATE admin_hub_menu_items SET ${updates.join(', ')}, updated_at = now() WHERE id = $${n} RETURNING id, menu_id, label, link_type, link_value, parent_id, sort_order`, vals)
+        const r = await client.query(`UPDATE admin_hub_menu_items SET ${updates.join(', ')}, updated_at = now() WHERE id = $${n} RETURNING id, menu_id, label, slug, link_type, link_value, parent_id, sort_order`, vals)
         const row = r.rows && r.rows[0]
-        return row ? { id: row.id, menu_id: row.menu_id, label: row.label, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
+        return row ? { id: row.id, menu_id: row.menu_id, label: row.label, slug: row.slug, link_type: row.link_type || 'url', link_value: row.link_value, parent_id: row.parent_id, sort_order: row.sort_order != null ? row.sort_order : 0 } : null
       })
       if (!item) return res.status(404).json({ message: 'Menu item not found' })
       return res.json({ item })
@@ -5028,7 +5037,27 @@ async function start() {
       }
     }
     httpApp.get('/store/menus', storeMenusGET)
-    console.log('Store route: GET /store/menus')
+
+    // GET /store/page-by-label-slug/:slug — finds a page linked to a menu item by label_slug
+    httpApp.get('/store/page-by-label-slug/:slug', async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.status(404).json({ message: 'Not found' })
+      try {
+        await client.connect()
+        const slug = req.params.slug
+        const r = await client.query(
+          `SELECT link_value FROM admin_hub_menu_items WHERE link_type = 'page' AND link_value::text LIKE $1`,
+          [`%"label_slug":"${slug}"%`]
+        )
+        if (!r.rows[0]) return res.status(404).json({ message: 'Not found' })
+        const lv = JSON.parse(r.rows[0].link_value)
+        if (!lv?.id) return res.status(404).json({ message: 'Not found' })
+        const pr = await client.query('SELECT id, title, slug, body FROM admin_hub_pages WHERE id = $1', [lv.id])
+        if (!pr.rows[0]) return res.status(404).json({ message: 'Not found' })
+        res.json(pr.rows[0])
+      } catch { res.status(404).json({ message: 'Not found' }) } finally { await client.end().catch(() => {}) }
+    })
+    console.log('Store route: GET /store/menus, GET /store/page-by-label-slug/:slug')
 
     // --- Admin Hub Media (GET list, POST upload, GET :id, DELETE :id) ---
     const getDbClient = () => {
@@ -6744,8 +6773,8 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
       try {
         await client.connect()
         const r = await client.query(
-          'SELECT id, title, slug, body, updated_at FROM admin_hub_pages WHERE slug = $1 AND status = $2',
-          [req.params.slug, 'published']
+          'SELECT id, title, slug, body, updated_at FROM admin_hub_pages WHERE slug = $1',
+          [req.params.slug]
         )
         if (r.rows.length === 0) return res.status(404).json({ message: 'Page not found' })
         res.json(r.rows[0])
@@ -6887,7 +6916,8 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
     }
     httpApp.get('/admin-hub/styles', stylesGET)
     httpApp.put('/admin-hub/styles', stylesPUT)
-    console.log('Landing page routes: GET/PUT /admin-hub/landing-page, GET /store/landing-page')
+    httpApp.get('/store/styles', stylesGET) // public — no auth
+    console.log('Landing page routes: GET/PUT /admin-hub/landing-page, GET /store/landing-page, GET /store/styles')
 
     // ── Notifications ─────────────────────────────────────────────────────
     const adminHubNotificationsUnreadGET = async (req, res) => {
@@ -7187,6 +7217,40 @@ ${row.notes ? `<p style="color:#6b7280;font-size:13px">${row.notes}</p>` : ''}
     httpApp.patch('/admin-hub/v1/messages/:id/read', adminHubMessageMarkReadPATCH)
     httpApp.get('/store/messages', storeMessagesGET)
     httpApp.post('/store/messages', storeMessagesPOST)
+
+    const storeMessagesUnreadCountGET = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.json({ count: 0 })
+      try {
+        await client.connect()
+        const email = req.query.email
+        if (!email) return res.json({ count: 0 })
+        const r = await client.query(
+          `SELECT COUNT(*)::int AS c FROM store_messages WHERE recipient_email = $1 AND sender_type = 'seller' AND is_read_by_customer = false`,
+          [email]
+        )
+        res.json({ count: r.rows[0]?.c || 0 })
+      } catch { res.json({ count: 0 }) } finally { await client.end().catch(() => {}) }
+    }
+
+    const storeMessagesMarkReadPATCH = async (req, res) => {
+      const client = getDbClient()
+      if (!client) return res.json({ ok: true })
+      try {
+        await client.connect()
+        const { email, order_id } = req.body || {}
+        if (!email) return res.json({ ok: true })
+        let q = `UPDATE store_messages SET is_read_by_customer = true WHERE recipient_email = $1 AND sender_type = 'seller'`
+        const params = [email]
+        if (order_id) { params.push(order_id); q += ` AND order_id = $2` }
+        else q += ` AND order_id IS NULL`
+        await client.query(q, params)
+        res.json({ ok: true })
+      } catch { res.json({ ok: true }) } finally { await client.end().catch(() => {}) }
+    }
+
+    httpApp.get('/store/messages/unread-count', storeMessagesUnreadCountGET)
+    httpApp.patch('/store/messages/mark-read', storeMessagesMarkReadPATCH)
     httpApp.get('/admin-hub/v1/smtp-settings', adminHubSmtpSettingsGET)
     httpApp.patch('/admin-hub/v1/smtp-settings', adminHubSmtpSettingsPATCH)
     httpApp.post('/admin-hub/v1/smtp-settings/test', adminHubSmtpSettingsTestPOST)
