@@ -38,7 +38,11 @@ export default function Login() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f4f6" }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderRadius: 12, padding: "40px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <span style={{ fontSize: 32, fontWeight: 900, letterSpacing: "0.18em", color: "#111827" }}>BELUCHA</span>
+        </div>
+      <div style={{ background: "#fff", borderRadius: 12, padding: "40px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Seller Login</h1>
           <p style={{ color: "#6b7280", fontSize: 15, margin: 0 }}>Sign in to your seller account</p>
@@ -97,6 +101,7 @@ export default function Login() {
           Don&apos;t have an account?{" "}
           <Link href="/register" style={{ color: "#ff971c", fontWeight: 600, textDecoration: "none" }}>Register here</Link>
         </p>
+      </div>
       </div>
     </div>
   );
