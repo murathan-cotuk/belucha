@@ -1,5 +1,6 @@
 "use client";
 
+import DashboardLayout from "@/components/DashboardLayout";
 import { useState, useEffect, useCallback } from "react";
 import {
   Page, Layout, Card, Text, BlockStack, InlineStack,
@@ -600,10 +601,20 @@ export default function TransactionsPageWrapper() {
   }, []);
 
   if (isSuperuser === null) {
-    return <Page title="Transaktionen"><Box padding="400"><Text tone="subdued">Laden…</Text></Box></Page>;
+    return (
+      <DashboardLayout>
+        <Page title="Transaktionen">
+          <Box padding="400"><Text tone="subdued">Laden…</Text></Box>
+        </Page>
+      </DashboardLayout>
+    );
   }
 
-  return isSuperuser
-    ? <AdminTransactionsView />
-    : <SellerTransactionsView sellerId={sellerId} />;
+  return (
+    <DashboardLayout>
+      {isSuperuser
+        ? <AdminTransactionsView />
+        : <SellerTransactionsView sellerId={sellerId} />}
+    </DashboardLayout>
+  );
 }
