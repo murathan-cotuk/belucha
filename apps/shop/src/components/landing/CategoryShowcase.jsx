@@ -13,10 +13,13 @@ const Section = styled.section`
 `;
 
 const Title = styled.h2`
-  font-family: ${tokens.fontFamily.sans};
-  font-size: ${tokens.fontSize.h2};
-  font-weight: 600;
-  color: ${tokens.dark[900]};
+  font-family: var(--h2-ff, ${tokens.fontFamily.sans});
+  font-size: var(--h2-fs, ${tokens.fontSize.h2});
+  font-weight: var(--h2-fw, 600);
+  font-style: var(--h2-style, normal);
+  color: var(--h2-color, ${tokens.dark[900]});
+  letter-spacing: var(--h2-ls, -0.01em);
+  line-height: var(--h2-lh, 1.2);
   margin-bottom: ${tokens.spacing.xl};
 `;
 

@@ -37,11 +37,13 @@ const TextBlock = styled.div`
 `;
 
 const Headline = styled.h1`
-  font-family: ${tokens.fontFamily.sans};
-  font-size: ${tokens.fontSize.h1};
-  font-weight: 700;
-  line-height: ${tokens.lineHeight.tight};
-  color: ${tokens.dark[900]};
+  font-family: var(--h1-ff, ${tokens.fontFamily.sans});
+  font-size: var(--h1-fs, ${tokens.fontSize.h1});
+  font-weight: var(--h1-fw, 700);
+  font-style: var(--h1-style, normal);
+  line-height: var(--h1-lh, ${tokens.lineHeight.tight});
+  letter-spacing: var(--h1-ls, -0.02em);
+  color: var(--h1-color, ${tokens.dark[900]});
   margin-bottom: ${tokens.spacing.lg};
 `;
 

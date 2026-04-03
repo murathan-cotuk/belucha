@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import {
   Page,
   Layout,
@@ -174,6 +174,8 @@ function removeGoogleFontPreviewLinks(namespace) {
 function FontFamilyDropdown({ label, valueName, families, loading, onSelect, previewNamespace = "x" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const itemRefs = useRef({});
+
   const filtered = useMemo(() => {
     const list = Array.isArray(families) ? families : [];
     const t = q.trim().toLowerCase();
@@ -181,19 +183,36 @@ function FontFamilyDropdown({ label, valueName, families, loading, onSelect, pre
     return list.filter((f) => f.toLowerCase().includes(t));
   }, [families, q]);
 
+  /** Dropdown açılınca seçili font listede üstte ve görünür alanda */
+  const orderedFiltered = useMemo(() => {
+    const list = [...filtered];
+    const v = (valueName || "").trim();
+    if (v && list.includes(v)) {
+      const i = list.indexOf(v);
+      list.splice(i, 1);
+      list.unshift(v);
+    }
+    return list;
+  }, [filtered, valueName]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const v = (valueName || "").trim();
+    if (!v || !orderedFiltered.includes(v)) return;
+    const el = itemRefs.current[v];
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", behavior: "auto" });
+    }
+  }, [open, valueName, orderedFiltered]);
+
   useEffect(() => {
-    if (!open || loading || filtered.length === 0) {
+    if (!open || loading || orderedFiltered.length === 0) {
       removeGoogleFontPreviewLinks(previewNamespace);
       return;
     }
     const timer = setTimeout(() => {
       removeGoogleFontPreviewLinks(previewNamespace);
-      const names = [...filtered];
-      const v = (valueName || "").trim();
-      if (v && names.includes(v)) {
-        names.splice(names.indexOf(v), 1);
-        names.unshift(v);
-      }
+      const names = [...orderedFiltered];
       for (let i = 0; i < names.length; i += GF_PREVIEW_CHUNK) {
         const chunk = names.slice(i, i + GF_PREVIEW_CHUNK);
         const href = buildGoogleFontsPreviewHrefChunk(chunk);
@@ -209,7 +228,7 @@ function FontFamilyDropdown({ label, valueName, families, loading, onSelect, pre
       clearTimeout(timer);
       removeGoogleFontPreviewLinks(previewNamespace);
     };
-  }, [open, loading, filtered, valueName, previewNamespace]);
+  }, [open, loading, orderedFiltered, previewNamespace]);
 
   const display = valueName || "Standard (Theme / System)";
 
@@ -284,11 +303,15 @@ function FontFamilyDropdown({ label, valueName, families, loading, onSelect, pre
                 Schriften werden geladen…
               </Text>
             ) : (
-              filtered.map((f) => {
+              orderedFiltered.map((f) => {
                 const fam = `"${f.replace(/"/g, "")}", system-ui, sans-serif`;
                 return (
                   <button
                     key={f}
+                    ref={(el) => {
+                      if (el) itemRefs.current[f] = el;
+                      else delete itemRefs.current[f];
+                    }}
                     type="button"
                     onClick={() => {
                       onSelect(f);

@@ -32,13 +32,14 @@ const TitleRowLeft = styled.div`
 `;
 
 const Title = styled.h2`
-  font-family: ${tokens.fontFamily.sans};
-  font-size: clamp(1.125rem, 2vw, 1.375rem);
-  font-weight: 600;
-  color: ${tokens.dark[900]};
+  font-family: var(--h2-ff, ${tokens.fontFamily.sans});
+  font-size: var(--h2-fs, clamp(1.125rem, 2vw, 1.375rem));
+  font-weight: var(--h2-fw, 600);
+  font-style: var(--h2-style, normal);
+  color: var(--h2-color, ${tokens.dark[900]});
+  letter-spacing: var(--h2-ls, -0.02em);
+  line-height: var(--h2-lh, 1.3);
   margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
 `;
 
 /* ─── Nav buttons: AAA focus, touch target 44px, subtle depth ───────────── */
