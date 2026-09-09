@@ -18,7 +18,7 @@ function unwrapCategoryImageValue(raw, depth = 0) {
     return unwrapCategoryImageValue(raw.url || raw.src || raw.path || '', depth + 1)
   }
   const s = String(raw).trim()
-  if (!s || s === '[object Object]') return ''
+  if (!s || s === '[object Object]' || s === 'null' || s === 'undefined') return ''
   if (s.startsWith('[')) {
     try {
       const parsed = JSON.parse(s)
@@ -238,7 +238,10 @@ async function loadSlimStoreCategoryTree({ query, resolveUploadUrl }) {
   const refs = await collectPublishedProductCategoryRefs(query)
   annotateCategoryTreeHasProducts(tree, refs)
   const pruned = pruneEmptyCategoryTree(tree)
-  applyProductImageFallback(pruned, refs.thumbsByCatId)
+  // NOTE: no product-thumbnail fallback here. The menu/list image must be the
+  // category's own Kategoriebild/banner (set in Sellercentral › Content ›
+  // Categories) or nothing — borrowing a random product photo produced
+  // misleading thumbnails (e.g. a vape bottle on "Dishwashers").
   return slimStoreCategoryTree(pruned, resolveUploadUrl)
 }
 

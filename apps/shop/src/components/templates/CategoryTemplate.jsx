@@ -778,7 +778,9 @@ const Desc = styled.div`
   line-height: var(--body-lh);
   color: var(--body-color);
   font-family: var(--body-font);
-  max-width: ${(p) => (p.$maxWidth === "full" ? "none" : (p.$maxWidth || "700px"))};
+  max-width: ${(p) => (p.$maxWidth === "full" ? "none" : (p.$maxWidth || "none"))};
+  width: 100%;
+  box-sizing: border-box;
   margin-left: ${(p) => (p.$align === "center" ? "auto" : "0")};
   margin-right: ${(p) => (p.$align === "center" ? "auto" : "0")};
   text-align: ${(p) => (p.$align === "center" ? "center" : "left")};
@@ -813,8 +815,47 @@ const Desc = styled.div`
     line-height: var(--h3-lh);
     margin: 1em 0 0.4em;
   }
+  & h1:first-child,
+  & h2:first-child,
+  & h3:first-child {
+    margin-top: 0;
+  }
   & p { margin: 0 0 0.75em; }
-  a { color: var(--shop-primary, #111); text-decoration: underline; }
+  & p:last-child { margin-bottom: 0; }
+  & strong { font-weight: 600; }
+  & em { font-style: italic; }
+  & a { color: var(--shop-primary, #111); text-decoration: underline; }
+  & blockquote {
+    margin: 0.75em 0;
+    padding-left: 1em;
+    border-left: 4px solid #e5e7eb;
+    color: #6b7280;
+  }
+  /* Tailwind Preflight sets list-style:none and padding:0 — restore HTML lists. */
+  & ul,
+  & ol {
+    margin: 0.5em 0 1em 1.25em;
+    padding-left: 1.25em;
+    padding-inline-start: 1.25em;
+  }
+  & ul {
+    list-style: disc outside;
+  }
+  & ol {
+    list-style: decimal outside;
+  }
+  & ul ul {
+    list-style: circle outside;
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+  & li {
+    display: list-item;
+    margin-bottom: 0.35em;
+  }
+  & li::marker {
+    color: currentColor;
+  }
 `;
 
 function safeUrl(val) {
@@ -1047,7 +1088,7 @@ export default function CategoryTemplate() {
   const colsPerRow      = Number(tmpl.products_per_row) || 4;
   const colsPerRowMobile = Number(tmpl.products_per_row_mobile) || 2;
   const richtextAlign   = tmpl.richtext_align || "left";
-  const richtextMaxW    = tmpl.richtext_max_width || "700px";
+  const richtextMaxW    = tmpl.richtext_max_width || "full";
   const contentPadX     = tmpl.content_padding_x || "32px";
 
   useEffect(() => {

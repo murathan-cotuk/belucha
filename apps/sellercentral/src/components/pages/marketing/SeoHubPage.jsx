@@ -125,14 +125,31 @@ function buildCategoryTree(flat) {
     else roots.push(node);
   }
   const sortDeep = (arr) => {
-    arr.sort((a, b) => String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" }));
+    arr.sort(
+      (a, b) =>
+        (a.sort_order || 0) - (b.sort_order || 0) ||
+        String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" }),
+    );
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
   };
   sortDeep(roots);
   return roots;
 }
 
-/** Product-picker style: drill parent → sub → sub, with search (breadcrumbs). */
+/** Ids of every node from the root down to (and including) `id`. */
+function ancestorPath(byId, id) {
+  const out = [];
+  let cur = id ? byId.get(String(id)) : null;
+  const seen = new Set();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    out.push(cur.id);
+    cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+  }
+  return out.reverse();
+}
+
+/** Indented, expand/collapse category tree (mirrors Content › Categories) with search. */
 function CategorySeoNav({ items, selectedId, onSelect, search, onSearchChange }) {
   const tree = useMemo(() => buildCategoryTree(items), [items]);
   const byId = useMemo(() => {
@@ -147,107 +164,159 @@ function CategorySeoNav({ items, selectedId, onSelect, search, onSearchChange })
     return map;
   }, [tree]);
 
-  const [pathIds, setPathIds] = useState([]);
-
+  // Which parent nodes are expanded. Default: top two levels open so the
+  // hierarchy is visible at a glance instead of a flat wall of names.
+  const [expanded, setExpanded] = useState(() => new Set());
   useEffect(() => {
-    setPathIds([]);
-  }, [items]);
+    const next = new Set();
+    const walk = (nodes, depth) => {
+      for (const n of nodes || []) {
+        if (n.children?.length && depth < 1) next.add(n.id);
+        if (n.children?.length) walk(n.children, depth + 1);
+      }
+    };
+    walk(tree, 0);
+    setExpanded(next);
+  }, [tree]);
 
-  const buildPathIds = (id) => {
-    if (!id || !byId.has(id)) return [];
-    const rev = [];
-    let cur = byId.get(id);
-    while (cur) {
-      rev.push(cur.id);
-      cur = cur.parent_id ? byId.get(cur.parent_id) : null;
-    }
-    return rev.reverse();
-  };
+  // Auto-open every ancestor of the selected node.
+  useEffect(() => {
+    if (!selectedId) return;
+    const path = ancestorPath(byId, selectedId);
+    if (path.length <= 1) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const id of path.slice(0, -1)) next.add(id);
+      return next;
+    });
+  }, [selectedId, byId]);
 
-  const currentNodes = useMemo(() => {
-    if (!pathIds.length) return tree;
-    const last = byId.get(pathIds[pathIds.length - 1]);
-    return last?.children || [];
-  }, [pathIds, byId, tree]);
+  const toggle = (id) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const searchResults = useMemo(() => {
-    const q = String(search || "").trim().toLowerCase();
-    if (!q) return [];
+  const q = String(search || "").trim();
+  const searchRows = useMemo(() => {
+    const needle = q.toLowerCase();
+    if (!needle) return [];
     const rows = [];
     for (const n of byId.values()) {
       const hay = `${n.label || ""} ${n.handle || ""}`.toLowerCase();
-      if (!hay.includes(q)) continue;
-      const breadcrumb = buildPathIds(n.id)
+      if (!hay.includes(needle)) continue;
+      const breadcrumb = ancestorPath(byId, n.id)
         .map((pid) => byId.get(pid)?.label || pid)
         .join(" › ");
-      rows.push({
-        id: n.id,
-        label: n.label,
-        handle: n.handle,
-        breadcrumb,
-        score: n.score,
-        meta_title: n.meta_title,
-      });
+      rows.push({ id: n.id, label: n.label, handle: n.handle, breadcrumb, score: n.score });
     }
     rows.sort((a, b) => a.breadcrumb.localeCompare(b.breadcrumb, undefined, { sensitivity: "base" }));
-    return rows.slice(0, 150);
-  }, [search, byId]);
+    return rows.slice(0, 200);
+  }, [q, byId]);
 
-  const selectNode = (id) => {
-    onSelect?.(id);
-    setPathIds(buildPathIds(id));
+  const renderNode = (node, depth) => {
+    const hasKids = Array.isArray(node.children) && node.children.length > 0;
+    const isOpen = expanded.has(node.id);
+    return (
+      <div key={node.id}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 12px 8px",
+            paddingLeft: 12 + depth * 16,
+            borderBottom: "1px solid #f1f5f9",
+            background: selectedId === node.id ? "#eff6ff" : depth === 0 ? "#fafafa" : "#fff",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => hasKids && toggle(node.id)}
+            aria-label={hasKids ? (isOpen ? "Collapse" : "Expand") : undefined}
+            style={{
+              flexShrink: 0,
+              width: 20,
+              height: 20,
+              border: "none",
+              background: "transparent",
+              cursor: hasKids ? "pointer" : "default",
+              color: "#64748b",
+              fontSize: 12,
+              lineHeight: "20px",
+            }}
+          >
+            {hasKids ? (isOpen ? "▾" : "▸") : ""}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelect?.(node.id)}
+            style={{
+              flex: 1,
+              textAlign: "left",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              minWidth: 0,
+              padding: 0,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+              <span style={{ fontSize: 13, fontWeight: depth === 0 ? 650 : 500, color: "#0f172a" }}>
+                {node.label}
+                {hasKids ? <span style={{ color: "#94a3b8", fontWeight: 400 }}> ({node.children.length})</span> : null}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: SCORE_COLOR[node.score] || "#64748b", textTransform: "uppercase" }}>
+                {node.score === "needs_work" ? "warn" : node.score}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, fontFamily: "ui-monospace, monospace" }}>
+              /{node.handle || "—"}
+            </div>
+          </button>
+        </div>
+        {hasKids && isOpen ? node.children.map((child) => renderNode(child, depth + 1)) : null}
+      </div>
+    );
   };
-
-  const drillInto = (e, node) => {
-    e.stopPropagation();
-    if (!node.children?.length) return;
-    setPathIds(buildPathIds(node.id));
-  };
-
-  const q = String(search || "").trim();
 
   return (
     <div>
-      <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0" }}>
+      <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", display: "flex", gap: 8, alignItems: "center" }}>
         <input
           value={search}
           onChange={(e) => onSearchChange?.(e.target.value)}
           placeholder="Search categories…"
-          style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}
+          style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}
         />
-        {!q && pathIds.length > 0 ? (
-          <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setPathIds((prev) => prev.slice(0, -1))}
-              style={{ border: "none", background: "none", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              onClick={() => setPathIds([])}
-              style={{ border: "none", background: "none", color: "#64748b", cursor: "pointer", fontSize: 12, padding: 0 }}
-            >
-              Root
-            </button>
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              {pathIds.map((id) => byId.get(id)?.label || id).join(" › ")}
-            </span>
-          </div>
+        {!q && tree.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              const all = new Set();
+              const walk = (nodes) => nodes.forEach((n) => { if (n.children?.length) { all.add(n.id); walk(n.children); } });
+              walk(tree);
+              setExpanded((prev) => (prev.size >= all.size ? new Set() : all));
+            }}
+            style={{ border: "1px solid #cbd5e1", background: "#f8fafc", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 600, color: "#475569", padding: "6px 8px", whiteSpace: "nowrap" }}
+          >
+            Expand / collapse all
+          </button>
         ) : null}
       </div>
 
-      <div style={{ maxHeight: "62vh", overflow: "auto" }}>
+      <div style={{ maxHeight: "64vh", overflow: "auto" }}>
         {q ? (
-          searchResults.length === 0 ? (
+          searchRows.length === 0 ? (
             <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No match</div>
           ) : (
-            searchResults.map((row) => (
+            searchRows.map((row) => (
               <button
                 key={row.id}
                 type="button"
-                onClick={() => selectNode(row.id)}
+                onClick={() => onSelect?.(row.id)}
                 style={{
                   display: "block",
                   width: "100%",
@@ -259,7 +328,7 @@ function CategorySeoNav({ items, selectedId, onSelect, search, onSearchChange })
                   cursor: "pointer",
                 }}
               >
-                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 2 }}>{row.breadcrumb}</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 2 }}>{row.breadcrumb || "—"}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 650, color: "#0f172a" }}>{row.label}</div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: SCORE_COLOR[row.score] || "#64748b", textTransform: "uppercase" }}>
@@ -272,70 +341,10 @@ function CategorySeoNav({ items, selectedId, onSelect, search, onSearchChange })
               </button>
             ))
           )
-        ) : currentNodes.length === 0 ? (
+        ) : tree.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No categories</div>
         ) : (
-          currentNodes.map((node) => {
-            const hasKids = Array.isArray(node.children) && node.children.length > 0;
-            return (
-              <div
-                key={node.id}
-                style={{
-                  display: "flex",
-                  alignItems: "stretch",
-                  borderBottom: "1px solid #f1f5f9",
-                  background: selectedId === node.id ? "#eff6ff" : "#fff",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => selectNode(node.id)}
-                  style={{
-                    flex: 1,
-                    textAlign: "left",
-                    padding: "10px 14px",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                    <div style={{ fontSize: 13, fontWeight: pathIds.length === 0 ? 650 : 500, color: "#0f172a" }}>{node.label}</div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: SCORE_COLOR[node.score] || "#64748b", textTransform: "uppercase" }}>
-                      {node.score === "needs_work" ? "warn" : node.score}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3, fontFamily: "ui-monospace, monospace" }}>
-                    /{node.handle || "—"}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {node.meta_title || node.label || "No meta title"}
-                    {hasKids ? ` · ${node.children.length} sub` : ""}
-                  </div>
-                </button>
-                {hasKids ? (
-                  <button
-                    type="button"
-                    title="Open subcategories"
-                    onClick={(e) => drillInto(e, node)}
-                    style={{
-                      width: 44,
-                      border: "none",
-                      borderLeft: "1px solid #f1f5f9",
-                      background: "transparent",
-                      cursor: "pointer",
-                      color: "#475569",
-                      fontSize: 18,
-                      fontWeight: 600,
-                    }}
-                  >
-                    ›
-                  </button>
-                ) : null}
-              </div>
-            );
-          })
+          tree.map((node) => renderNode(node, 0))
         )}
       </div>
     </div>

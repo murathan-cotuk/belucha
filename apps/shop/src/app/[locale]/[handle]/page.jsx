@@ -732,8 +732,30 @@ const Desc = styled.div`
   & h3:first-child {
     margin-top: 0;
   }
-  p { margin: 0 0 0.75em; }
-  a { color: var(--shop-primary, #111); text-decoration: underline; }
+  & p { margin: 0 0 0.75em; }
+  & p:last-child { margin-bottom: 0; }
+  & strong { font-weight: 600; }
+  & a { color: var(--shop-primary, #111); text-decoration: underline; }
+  & ul,
+  & ol {
+    margin: 0.5em 0 1em 1.25em;
+    padding-left: 1.25em;
+    padding-inline-start: 1.25em;
+  }
+  & ul { list-style: disc outside; }
+  & ol { list-style: decimal outside; }
+  & ul ul {
+    list-style: circle outside;
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+  & li {
+    display: list-item;
+    margin-bottom: 0.35em;
+  }
+  & li::marker {
+    color: currentColor;
+  }
 `;
 
 /* ─────────────────────────────────────────────────────────── *

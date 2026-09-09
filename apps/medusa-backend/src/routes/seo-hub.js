@@ -231,11 +231,12 @@ async function listCategories(client, { q, limit, offset }) {
   }
   params.push(limit, offset)
   const r = await client.query(
-    `SELECT id, name, slug, parent_id, seo_title, seo_description, long_content, metadata, updated_at,
+    `SELECT id, name, slug, parent_id, sort_order, seo_title, seo_description, long_content, metadata, updated_at,
             COUNT(*) OVER()::int AS total
        FROM admin_hub_categories ${where}
       ORDER BY
         CASE WHEN parent_id IS NULL OR TRIM(COALESCE(parent_id::text, '')) = '' THEN 0 ELSE 1 END,
+        COALESCE(sort_order, 0) ASC,
         name ASC
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
@@ -255,6 +256,7 @@ async function listCategories(client, { q, limit, offset }) {
         label: row.name,
         handle: row.slug,
         parent_id: parentRaw || null,
+        sort_order: Number.isFinite(row.sort_order) ? row.sort_order : 0,
         updated_at: row.updated_at,
         meta_title: title,
         meta_description: description,

@@ -106,6 +106,7 @@ function collectDescendantIdsFromFlatList(flatCategories, rootId) {
 function safeStoredUrl(val) {
   if (!val || typeof val !== "string") return "";
   const s = val.trim();
+  if (!s || s === "null" || s === "undefined" || s === "[object Object]") return "";
   if (s.startsWith("[")) {
     try {
       const arr = JSON.parse(s);

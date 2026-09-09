@@ -252,7 +252,7 @@ export const DEFAULT_SHOP_STYLES = {
     products_per_row: 4,
     products_per_row_mobile: 2,
     richtext_align: "left",
-    richtext_max_width: "700px",
+    richtext_max_width: "full",
     content_padding_x: "32px",
     filter_checkbox_size: 10,
   },

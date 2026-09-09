@@ -18,6 +18,19 @@ const requireSuperuser = (req, res, next) => {
   next()
 }
 
+/**
+ * Normalize an incoming image/URL value to a real string or null.
+ * Guards against the classic `String(null)` → "null" bug: when the client
+ * clears an image it sends JSON `null`, which must become SQL NULL, never the
+ * 4-char string "null" (which then renders as a broken <img src=".../null">).
+ */
+const normalizeUrlOrNull = (v) => {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s || s === 'null' || s === 'undefined' || s === '[object Object]') return null
+  return s
+}
+
 const slugFromImportKeyPg = (key) =>
   (String(key || '').toLowerCase().trim()
     .replace(/\|/g, '-').replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -200,6 +213,15 @@ const adminHubCategoryByIdPUT_fallbackPg = async (req, res) => {
     let mergedMeta = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {}
     if (body.metadata !== undefined && body.metadata !== null && typeof body.metadata === 'object') {
       mergedMeta = { ...mergedMeta, ...body.metadata }
+      // Cleared images arrive as null/"" — collapse them to real null so a removed
+      // Kategoriebild/banner does not linger in the jsonb blob (and never as "null").
+      for (const k of ['image_url', 'banner_image_url', 'banner_video_url']) {
+        if (k in mergedMeta) {
+          const n = normalizeUrlOrNull(mergedMeta[k])
+          if (n === null) delete mergedMeta[k]
+          else mergedMeta[k] = n
+        }
+      }
     }
     const next = {
       name: body.name !== undefined ? String(body.name).trim() : row.name,
@@ -213,7 +235,7 @@ const adminHubCategoryByIdPUT_fallbackPg = async (req, res) => {
       seo_title: body.seo_title !== undefined ? (body.seo_title === '' ? null : String(body.seo_title)) : row.seo_title,
       seo_description: body.seo_description !== undefined ? (body.seo_description === '' ? null : String(body.seo_description)) : row.seo_description,
       long_content: body.long_content !== undefined ? (body.long_content === '' ? null : String(body.long_content)) : row.long_content,
-      banner_image_url: body.banner_image_url !== undefined ? (body.banner_image_url === '' ? null : String(body.banner_image_url)) : row.banner_image_url,
+      banner_image_url: body.banner_image_url !== undefined ? normalizeUrlOrNull(body.banner_image_url) : row.banner_image_url,
       metadata: Object.keys(mergedMeta).length ? mergedMeta : null,
     }
     const ur = await client.query(

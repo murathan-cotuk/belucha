@@ -33,6 +33,14 @@ function slugFromName(name) {
   return titleToHandle(name || "");
 }
 
+/** Guard against legacy rows where a cleared image was stored as the literal "null". */
+function cleanUrl(val) {
+  if (val == null) return "";
+  const s = String(val).trim();
+  if (!s || s === "null" || s === "undefined" || s === "[object Object]") return "";
+  return s;
+}
+
 /** Parse semicolon-separated hierarchical CSV into a flat create list (key, label, parentKey, sortOrder). */
 function parseCategoriesCsvToCreateList(csvText) {
   const lines = (csvText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -280,8 +288,8 @@ export default function ContentCategoriesPage() {
       meta_description: cat.seo_description || (cat.metadata && cat.metadata.meta_description) || "",
       keywords: (cat.metadata && cat.metadata.keywords) || "",
       richtext: cat.long_content || (cat.metadata && cat.metadata.richtext) || "",
-      image_url: (cat.metadata && cat.metadata.image_url) || "",
-      banner_image_url: cat.banner_image_url ?? "",
+      image_url: cleanUrl(cat.metadata && cat.metadata.image_url),
+      banner_image_url: cleanUrl(cat.banner_image_url ?? (cat.metadata && cat.metadata.banner_image_url)),
     });
     setModalOpen(true);
   };

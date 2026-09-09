@@ -18,6 +18,14 @@ const { getPooledClient } = require('../db-pool')
 // Postgres TCP+TLS handshake per request (see src/db-pool.js).
 const getDbClient = () => getPooledClient()
 
+/** Legacy rows may hold the literal strings "null"/"undefined" where an image was cleared. */
+const cleanImageValue = (v) => {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s || s === 'null' || s === 'undefined' || s === '[object Object]') return null
+  return v
+}
+
 const storeCollectionsGET = async (req, res) => {
   const handleQuery = (req.query.handle || req.query.slug || '').toString().trim()
   let client
@@ -96,7 +104,7 @@ const storeCategoriesGET = async (req, res) => {
         await localizeSingleCategoryForRequest(category, req, null)
         const meta = category.metadata && typeof category.metadata === 'object' ? category.metadata : {}
         const collectionId = category.has_collection && meta.collection_id ? meta.collection_id : null
-        const rawBanner = category.banner_image_url != null ? category.banner_image_url : meta.banner_image_url
+        const rawBanner = cleanImageValue(category.banner_image_url) ?? cleanImageValue(meta.banner_image_url)
         const cat = {
           id: category.id, name: category.name, slug: category.slug,
           title: category.name, handle: category.slug,
@@ -124,7 +132,7 @@ const storeCategoriesGET = async (req, res) => {
       await localizeSingleCategoryForRequest(category, req, client)
       await client.end()
       const meta = category.metadata && typeof category.metadata === 'object' ? category.metadata : {}
-      const rawBanner = category.banner_image_url != null ? category.banner_image_url : meta.banner_image_url
+      const rawBanner = cleanImageValue(category.banner_image_url) ?? cleanImageValue(meta.banner_image_url)
       const cat = {
         id: category.id, name: category.name, slug: category.slug,
         title: category.name, handle: category.slug,
